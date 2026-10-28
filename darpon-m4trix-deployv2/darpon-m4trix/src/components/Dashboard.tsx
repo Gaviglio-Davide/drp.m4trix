@@ -40,17 +40,21 @@ import {
   Package,
   Pencil,
   Plus,
+  Sparkles,
   Trash2,
+  Wand2,
 } from 'lucide-react'
 import { useWorld, type ProjectMeta } from '@/lib/world-store'
 import { fetchAuth } from '@/lib/http'
 import ImportedModels from '@/components/ImportedModels'
 import StructuresLab from '@/components/StructuresLab'
+import WorldGen from '@/components/WorldGen'
+import DarpxAI from '@/components/DarpxAI'
 import ProfileDialog from '@/components/ProfileDialog'
 import { SITE_DEFAULTS, type SiteConfig } from '@/lib/site'
 
 // I 3 reparti della home: mondi, modelli importati, strutture
-type Tab = 'mondi' | 'importati' | 'strutture'
+type Tab = 'mondi' | 'importati' | 'strutture' | 'genera' | 'darpx'
 
 const CARD_ITEM = {
   hidden: { opacity: 0, y: 18, scale: 0.98 },
@@ -215,8 +219,10 @@ export default function Dashboard() {
           {(
             [
               { id: 'mondi' as Tab, icon: <Cube className="h-4 w-4" />, label: 'I miei mondi' },
+              { id: 'genera' as Tab, icon: <Wand2 className="h-4 w-4" />, label: 'Genera' },
               { id: 'importati' as Tab, icon: <Package className="h-4 w-4" />, label: 'Progetti importati' },
               { id: 'strutture' as Tab, icon: <Hammer className="h-4 w-4" />, label: 'Strutture' },
+              { id: 'darpx' as Tab, icon: <Sparkles className="h-4 w-4" />, label: 'Darpx.ai' },
             ]
           ).map(t => (
             <button
@@ -420,6 +426,12 @@ export default function Dashboard() {
 
         {/* REPARTO: modelli 3D importati dall'utente (disponibili in ogni editor) */}
         {tab === 'importati' && <ImportedModels />}
+
+        {/* REPARTO: generatore procedurale di città, villaggi e paesaggi */}
+        {tab === 'genera' && <WorldGen />}
+
+        {/* REPARTO: Darpx.ai — immagine → mondo, testo → 3D */}
+        {tab === 'darpx' && <DarpxAI />}
 
         {/* REPARTO: progettazione strutture, separata dalla creazione dei mondi */}
         {tab === 'strutture' && <StructuresLab />}

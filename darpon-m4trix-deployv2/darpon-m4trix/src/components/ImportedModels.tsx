@@ -69,7 +69,14 @@ export default function ImportedModels() {
   const uploadFiles = async (files: FileList) => {
     const list = Array.from(files).filter(f => /\.(glb|gltf)$/i.test(f.name))
     if (!list.length) {
-      toast.error('Formato non supportato: carica file .glb o .gltf')
+      const meshyFiles = Array.from(files).filter(f => /\.meshy$/i.test(f.name))
+      if (meshyFiles.length) {
+        toast.error(
+          'I file .meshy di Meshy sono cifrati e non si possono usare: scarica il modello in GLB (i link GLB che ti ho preparato) e carica quello 📦'
+        )
+      } else {
+        toast.error('Formato non supportato: carica file .glb o .gltf')
+      }
       return
     }
     setProgress({ done: 0, total: list.length })

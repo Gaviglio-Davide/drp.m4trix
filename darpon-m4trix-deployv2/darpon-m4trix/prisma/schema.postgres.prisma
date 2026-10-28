@@ -16,6 +16,7 @@ model User {
   passwordHash String
   name         String?
   accentColor  String?
+  meshyKey     String?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
   projects     Project[]

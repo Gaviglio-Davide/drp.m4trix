@@ -9,6 +9,18 @@ import {
 import { fetchAuth } from './http'
 import type { StructurePiece } from './assets'
 import type { WorldStyle } from './scene-theme'
+import {
+  newTerrain,
+  encodeTerrain,
+  decodeTerrain,
+  terrainHeightAt,
+  brushApply,
+  type Terrain,
+  type BrushMode,
+} from './terrain'
+
+export const GRID_HALF = 30 // playable grid: -GRID_HALF..GRID_HALF (mappa grande 61x61)
+export { T_GRID_HALF, T_SIZE, terrainHeightAt, type Terrain, type BrushMode } from './terrain'
 
 export type WorldObject = {
   id: string
@@ -34,6 +46,8 @@ export type ProjectState = {
   customAssets: CustomAsset[]
   playerAsset?: string | null
   worldStyle?: WorldStyle
+  terrain?: string | null // heightmap base64 (opzionale, retrocompatibile)
+  skyboxUrl?: string | null // panorama personalizzato (opzionale)
 }
 
 export type SessionUser = {
@@ -58,9 +72,10 @@ export type SaveSnapshot = {
   createdAt: string
 }
 
-export const GRID_HALF = 30 // playable grid: -GRID_HALF..GRID_HALF (mappa grande 61x61)
-
 export type View = 'landing' | 'dashboard' | 'editor'
+
+export const BRUSH_NONE = 'none' as const
+export type ActiveBrush = BrushMode | 'none'
 
 type Store = {
   view: View
@@ -85,6 +100,14 @@ type Store = {
   playerAsset: string | null
   worldStyle: WorldStyle
 
+  // terreno scolpito (pennello)
+  terrain: Terrain | null
+  terrainVersion: number
+  brush: ActiveBrush
+  brushSize: number
+  brushFlow: number
+  skyboxUrl: string | null
+
   // theme
   accent: string
 
@@ -108,6 +131,14 @@ type Store = {
   setSaveStatus: (s: 'idle' | 'saving' | 'saved') => void
   setPlayerAsset: (id: string | null) => void
   setWorldStyle: (s: WorldStyle) => void
+
+  setBrush: (b: ActiveBrush) => void
+  setBrushSize: (n: number) => void
+  setBrushFlow: (n: number) => void
+  applyBrushAt: (x: number, z: number) => void
+  clearTerrain: () => void
+  receiveTerrain: (t: Terrain | null) => void
+  setSkybox: (url: string | null) => void
 
   addObject: (o: Omit<WorldObject, 'id'>) => void
   removeObject: (x: number, z: number) => void
@@ -145,6 +176,12 @@ export const useWorld = create<Store>((set, get) => ({
   loadingProject: false,
   playerAsset: null,
   worldStyle: 'cartoon' as WorldStyle,
+  terrain: null,
+  terrainVersion: 0,
+  brush: 'none' as ActiveBrush,
+  brushSize: 2.5,
+  brushFlow: 0.18,
+  skyboxUrl: null,
 
   setView: v => set({ view: v }),
   setUser: u => set({ user: u }),
@@ -177,6 +214,10 @@ export const useWorld = create<Store>((set, get) => ({
       customAssets: state.customAssets,
       playerAsset: state.playerAsset ?? null,
       worldStyle: state.worldStyle ?? 'cartoon',
+      terrain: state.terrain ? decodeTerrain(state.terrain) : null,
+      terrainVersion: 0,
+      brush: 'none',
+      skyboxUrl: state.skyboxUrl ?? null,
       history: [],
       dying: [],
       playMode: false,
@@ -192,6 +233,10 @@ export const useWorld = create<Store>((set, get) => ({
       customAssets: [],
       playerAsset: null,
       worldStyle: 'cartoon',
+      terrain: null,
+      terrainVersion: 0,
+      brush: 'none',
+      skyboxUrl: null,
       playMode: false,
       view: 'dashboard',
       saveStatus: 'idle',
@@ -204,6 +249,22 @@ export const useWorld = create<Store>((set, get) => ({
       playerAsset: s.playerAsset ?? null,
       worldStyle: s.worldStyle ?? 'cartoon',
     }),
+
+  setBrush: b => set({ brush: b, selectedAsset: b === 'none' ? get().selectedAsset : null }),
+  setBrushSize: n => set({ brushSize: Math.min(8, Math.max(1, n)) }),
+  setBrushFlow: n => set({ brushFlow: Math.min(0.6, Math.max(0.03, n)) }),
+  applyBrushAt: (x, z) => {
+    const { terrain, brush, brushSize, brushFlow } = get()
+    if (brush === 'none') return
+    const t = terrain ?? newTerrain()
+    brushApply(t, x, z, brushSize, brushFlow, brush)
+    set({ terrain: t, terrainVersion: get().terrainVersion + 1 })
+  },
+  clearTerrain: () =>
+    set({ terrain: newTerrain(), terrainVersion: get().terrainVersion + 1 }),
+  receiveTerrain: t =>
+    set({ terrain: t, terrainVersion: get().terrainVersion + 1 }),
+  setSkybox: url => set({ skyboxUrl: url }),
 
   selectAsset: id => set({ selectedAsset: id, playMode: false }),
   setGhostRot: r => set({ ghostRot: ((r % 4) + 4) % 4 }),
@@ -298,6 +359,11 @@ export function parseState(s: string | undefined | null): ProjectState {
       customAssets: Array.isArray(p.customAssets) ? p.customAssets : [],
       playerAsset: typeof p.playerAsset === 'string' ? p.playerAsset : null,
       worldStyle: p.worldStyle === 'medievale' ? 'medievale' : 'cartoon',
+      terrain:
+        typeof p.terrain === 'string' && p.terrain.length > 16
+          ? p.terrain
+          : null,
+      skyboxUrl: typeof p.skyboxUrl === 'string' ? p.skyboxUrl : null,
     }
   } catch {
     return { objects: [], customAssets: [] }
@@ -305,8 +371,16 @@ export function parseState(s: string | undefined | null): ProjectState {
 }
 
 export function serializeState(): string {
-  const { objects, customAssets, playerAsset, worldStyle } = useWorld.getState()
-  return JSON.stringify({ objects, customAssets, playerAsset, worldStyle })
+  const { objects, customAssets, playerAsset, worldStyle, terrain, skyboxUrl } =
+    useWorld.getState()
+  return JSON.stringify({
+    objects,
+    customAssets,
+    playerAsset,
+    worldStyle,
+    terrain: encodeTerrain(terrain),
+    ...(skyboxUrl ? { skyboxUrl } : {}),
+  })
 }
 
 // Palette accogliente per i muri; i tetti derivano dalle coppie

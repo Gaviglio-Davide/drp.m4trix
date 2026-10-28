@@ -29,11 +29,15 @@ import {
   Check,
   CloudUpload,
   HelpCircle,
+  Eraser,
   Hammer,
+  Hand,
   Loader2,
+  Mountain,
   Play,
   RotateCcw,
   Save,
+  Shovel,
   Square,
   Undo2,
   UserRound,
@@ -107,6 +111,15 @@ export default function Editor() {
   const playerAsset = useWorld(s => s.playerAsset)
   const setPlayerAsset = useWorld(s => s.setPlayerAsset)
   const ghostScale = useWorld(s => s.ghostScale)
+  const brush = useWorld(s => s.brush)
+  const brushSize = useWorld(s => s.brushSize)
+  const brushFlow = useWorld(s => s.brushFlow)
+  const setBrush = useWorld(s => s.setBrush)
+  const setBrushSize = useWorld(s => s.setBrushSize)
+  const setBrushFlow = useWorld(s => s.setBrushFlow)
+  const clearTerrain = useWorld(s => s.clearTerrain)
+  const skyboxUrl = useWorld(s => s.skyboxUrl)
+  const setSkybox = useWorld(s => s.setSkybox)
   const setGhostScale = useWorld(s => s.setGhostScale)
 
   const [name, setName] = useState('')
@@ -398,11 +411,94 @@ export default function Editor() {
           <Button
             variant={cameraMode ? 'default' : 'ghost'}
             size="sm"
-            title="Modalità camera (trascina per ruotare)"
+            title="Modalità camera (oppure trascina col tasto DESTRO per ruotare)"
             onClick={toggleCameraMode}
           >
             <Camera className="h-4 w-4" />
           </Button>
+          {!playMode && (
+            <>
+              <div className="mx-0.5 h-6 w-px bg-black/10" />
+              <Button
+                variant={brush === 'raise' ? 'default' : 'ghost'}
+                size="sm"
+                title="Terreno: alza (trascina per creare colline e montagne)"
+                onClick={() => setBrush(brush === 'raise' ? 'none' : 'raise')}
+              >
+                <Mountain className="h-4 w-4" />
+                <span className="hidden lg:inline">Alza</span>
+              </Button>
+              <Button
+                variant={brush === 'lower' ? 'default' : 'ghost'}
+                size="sm"
+                title="Terreno: scava (laghi, fiumi, valli: sotto -0.3 appare l'acqua!)"
+                onClick={() => setBrush(brush === 'lower' ? 'none' : 'lower')}
+              >
+                <Shovel className="h-4 w-4" />
+                <span className="hidden lg:inline">Scava</span>
+              </Button>
+              <Button
+                variant={brush === 'flatten' ? 'default' : 'ghost'}
+                size="sm"
+                title="Terreno: spiana verso il livello zero"
+                onClick={() => setBrush(brush === 'flatten' ? 'none' : 'flatten')}
+              >
+                <Eraser className="h-4 w-4" />
+                <span className="hidden lg:inline">Spiana</span>
+              </Button>
+              <Button
+                variant={brush !== 'none' ? 'default' : 'ghost'}
+                size="sm"
+                title="Pennello spento: piazza e modifica gli oggetti"
+                onClick={() => setBrush('none')}
+              >
+                <Hand className="h-4 w-4" />
+                <span className="hidden lg:inline">Oggetti</span>
+              </Button>
+              {brush !== 'none' && (
+                <div className="ml-1 flex items-center gap-2 rounded-xl bg-stone-100/90 px-2 py-1">
+                  <label className="flex items-center gap-1 text-[11px] font-medium text-stone-600">
+                    Ø
+                    <input
+                      type="range"
+                      min={1}
+                      max={8}
+                      step={0.5}
+                      value={brushSize}
+                      onChange={e => setBrushSize(Number(e.target.value))}
+                      className="w-16 accent-stone-700"
+                    />
+                    <span className="w-6 tabular-nums">{brushSize.toFixed(1)}</span>
+                  </label>
+                  <label className="flex items-center gap-1 text-[11px] font-medium text-stone-600">
+                    ○
+                    <input
+                      type="range"
+                      min={0.04}
+                      max={0.6}
+                      step={0.02}
+                      value={brushFlow}
+                      onChange={e => setBrushFlow(Number(e.target.value))}
+                      className="w-14 accent-stone-700"
+                    />
+                  </label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-[11px]"
+                    title="Riporta tutto il terreno a livello zero"
+                    onClick={() => {
+                      clearTerrain()
+                      toast.success('Terreno azzerato')
+                    }}
+                  >
+                    <RotateCcw className="h-3 w-3" /> Azzera
+                  </Button>
+                </div>
+              )}
+              <div className="mx-0.5 h-6 w-px bg-black/10" />
+            </>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -492,6 +588,20 @@ export default function Editor() {
             <span className="mr-1">{getTheme(worldStyle).icon}</span>
             <span className="hidden sm:inline">{getTheme(worldStyle).label}</span>
           </Button>
+          {skyboxUrl && (
+            <Button
+              variant="ghost"
+              size="sm"
+              title="Il cielo è un'immagine Darpx.ai: torna al cielo normale"
+              onClick={() => {
+                setSkybox(null)
+                toast.success('Cielo normale ripristinato')
+              }}
+            >
+              🖼️✕
+              <span className="hidden lg:inline">Cielo</span>
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -665,7 +775,7 @@ export default function Editor() {
                   <b>dimensione</b> (0.5x – 3x)
                 </li>
                 <li>
-                  <b>Clic destro</b> (anche trascinando) → rimuove gli oggetti
+                  <b>Clic destro</b> su un oggetto → lo rimuove
                 </li>
                 <li>
                   <b>Tasto R</b> → ruota l&apos;anteprima · <b>C</b> → cambia
@@ -699,6 +809,13 @@ export default function Editor() {
       {/* bottom palette */}
       {!playMode && (
         <div className="absolute inset-x-0 bottom-0 z-10 flex justify-center p-3">
+          {!playMode && (
+            <div className="pointer-events-none mb-14 hidden rounded-full bg-black/55 px-4 py-1.5 text-[11px] font-medium text-white/90 shadow-lg backdrop-blur md:block">
+              {brush !== 'none'
+                ? 'Pennello terreno attivo: trascina col sinistro per scolpire'
+                : '🖱️ Tasto destro = ruota la visuale · click destro su un oggetto = elimina · rotella = zoom · R = ruota'}
+            </div>
+          )}
           <div className="flex max-w-full flex-col gap-2 rounded-3xl bg-white/85 p-3 shadow-2xl ring-1 ring-black/5 backdrop-blur">
             {/* color chips */}
             <div className="flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5">

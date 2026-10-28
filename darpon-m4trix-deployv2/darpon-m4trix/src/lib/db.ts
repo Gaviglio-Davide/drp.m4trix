@@ -29,10 +29,17 @@ async function ensureSchema(): Promise<void> {
     "passwordHash" TEXT NOT NULL,
     "name" TEXT,
     "accentColor" TEXT,
+    "meshyKey" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     CONSTRAINT "User_pkey" PRIMARY KEY ("id")
   )`)
+  // migrazione leggera per installazioni esistenti: chiave Meshy cifrata (Darpx.ai)
+  await db
+    .$executeRawUnsafe(
+      `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "meshyKey" TEXT`
+    )
+    .catch(() => {})
   await db.$executeRawUnsafe(
     `CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email")`
   )

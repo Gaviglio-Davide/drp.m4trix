@@ -1,0 +1,66 @@
+AGGIORNAMENTO v4 - darpon.m4trix
+================================
+
+COSA C'E' DI NUOVO
+1) GIRA LA VISUALE (finalmente!)
+   - Tasto DESTRO del mouse = ruota la visuale (trascina pure!)
+   - Rotella = zoom · due dita su cellulare = ruota + zoom
+   - Click destro SECCO su un oggetto = lo elimina
+   - Se' e' anche la vecchia "Modalita' camera" (bottone macchina fotografica)
+
+2) REPARTO "GENERA" (nuovo, nella home)
+   - Citta' medievali, villaggi, fortezze e paesaggi generati in un click
+   - Scegli tipo, dimensione, densita' e "variante" (bottello dado)
+   - Anteprima dei numeri (edifici/strade/alberi/mura) PRIMA di creare
+   - Il mondo generato si apre nell'editor: e' un mondo normale,
+     lo cambi come vuoi
+
+3) REPARTO "DARPX.AI" (nuovo, nella home)
+   A. IMMAGINE -> MONDO
+      - Carica una foto qualsiasi: Darpx la analizza (colori, luce,
+        paesaggio) e costruisce un mondo 3D coerente con colline,
+        laghi, boschi e lampioni se e' notturna
+      - Opzione: usa l'immagine anche come CIELO del mondo (panorama)
+      - NelEditor trovi il bottone "Cielo" con la X per tornare al
+        cielo normale
+   B. TESTO -> 3D (personaggi, mostri, case, oggetti)
+      - Serve la tua chiave API Meshy (gratis: meshy.ai -> Account ->
+        API). La incolli una volta e resta salvata CIFRATA nel DB
+      - Scrivi cosa vuoi ("un cavaliere con armatura dorata"...),
+        scegli lo stile e premi Genera: in ~1 minuto il modello
+        compare in "Progetti importati" e nella barra oggetti
+
+4) EDITOR: TERRENO SCOLPITO (colline, laghi, valli)
+   - Nuova barra terreno: [Montagna Alza] [Pala Scava] [Gomma Spiana]
+     [Mano Oggetti]
+   - Trascina col sinistro per scolpire: alza colline, scava valli e
+     LAGHI (scavando sotto il livello dell'acqua compare il lago!),
+     spiana dove vuoi
+   - Slider dimensione pennello (diametro) e forza; bottone "Azzera"
+     per tornare al terreno piatto
+   - Gli oggetti e le case si posano SOPRA il terreno; in "Gioca"
+     il personaggio cammina su e giu' per i dislivelli davvero
+
+5) FIX VARI
+   - I file .meshy di Meshy ora spiegano perche' non si possono
+     caricare (servono i GLB)
+   - I mondi vecchi si aprono come sempre: tutto retrocompatibile
+
+COME AGGIORNARE IL SITO (5 minuti, come l'altra volta)
+1. Apri: https://github.com/Gaviglio-Davide/drp.m4trix/upload/main/darpon-m4trix-deployv2/darpon-m4trix
+2. Estrai questo ZIP: dentro trovi la cartella "darpon-m4trix-deployv2".
+   Entra fino a vedere le cartelle "prisma" e "src" e questo file.
+3. Trascina DENTRO la pagina GitHub le cartelle "prisma" e "src"
+   (e volendo anche questo LEGGIMI) -> "Commit changes".
+   Attenzione ai nomi con la MAIUSCOLA giusta: non rinominare nulla!
+4. Vercel: deploy automatico (o Deployments -> "..." -> Redeploy).
+5. Browser: Ctrl+Shift+R. Fine!
+
+NOTE TECNICHE
+- Nessuna nuova variabile d'ambiente obbligatoria. La chiave Meshy
+  si inserisce dalla pagina Darpx.ai e viene salvata cifrata
+  (AES-256-GCM derivata da AUTH_SECRET).
+- Il terreno e' salvato dentro lo state del progetto (base64):
+  i mondi vecchi senza terreno restano piatti e continuano a funzionare.
+- Il database si aggiorna da solo: la colonna "meshyKey" viene creata
+  automaticamente al primo avvio.

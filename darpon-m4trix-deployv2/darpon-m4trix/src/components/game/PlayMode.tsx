@@ -11,10 +11,11 @@ import * as THREE from 'three'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Sky, useGLTF } from '@react-three/drei'
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js'
-import { useWorld, GRID_HALF, type WorldObject as WO } from '@/lib/world-store'
+import { useWorld, GRID_HALF, terrainHeightAt, type WorldObject as WO } from '@/lib/world-store'
 import { getAssetDef } from '@/lib/assets'
 import { getTheme } from '@/lib/scene-theme'
-import { IslandEnvironment, SunLight } from './EditorScene'
+import { SkyDome, SculptedTerrain } from './EditorScene'
+import { IslandEnvironment, SunLight } from './EditorScene' // re-export parity
 
 const SPEED = 3.2
 const RUN_SPEED = 6.2
@@ -94,14 +95,15 @@ function blockedCells(): Set<string> {
   return s
 }
 
-/** Altezza del terreno alla cella (colline, strade rialzate...) */
+/** Altezza del terreno alla cella: heightmap scolpita + asset calpestabili */
 function groundHeightAt(x: number, z: number): number {
-  const { objects, customAssets } = useWorld.getState()
+  const { objects, customAssets, terrain } = useWorld.getState()
+  const base = terrain ? terrainHeightAt(terrain, x, z) : 0
   const o = objects.find(p => p.x === Math.round(x) && p.z === Math.round(z))
-  if (!o) return 0
+  if (!o) return base
   const def = getAssetDef(o.asset, customAssets)
-  if (!def || !def.walkable) return 0
-  return def.walkHeight ?? 0
+  if (!def || !def.walkable) return base
+  return base + (def.walkHeight ?? 0)
 }
 
 /** Logica di movimento/camera condivisa tra i personaggi */
@@ -335,15 +337,22 @@ function PlayerGlb({ url }: { url: string }) {
 function PlacedWorld() {
   const objects = useWorld(s => s.objects)
   const customAssets = useWorld(s => s.customAssets)
+  const terrain = useWorld(s => s.terrain)
+  const version = useWorld(s => s.terrainVersion)
+  const groundY = useMemo(() => {
+    void version
+    return (x: number, z: number) => terrainHeightAt(terrain, x, z)
+  }, [terrain, version])
   return (
     <group>
+      <SculptedTerrain />
       {objects.map((o: WO) => {
         const def = getAssetDef(o.asset, customAssets)
         if (!def) return null
         const AssetRender = def.render
         return (
-          <group key={o.id} position={[o.x, 0, o.z]}>
-            <AssetRender color={o.color} rot={o.rot} />
+          <group key={o.id} position={[o.x, groundY(o.x, o.z), o.z]}>
+            <AssetRender color={o.color} rot={o.rot} scale={o.scale} />
           </group>
         )
       })}
@@ -396,11 +405,15 @@ function PlayScene() {
       <color attach="background" args={[theme.sky]} />
       {/* nebbia lontana: il terreno non "svanisce" più sotto i piedi */}
       <fog attach="fog" args={[theme.fogColor, theme.fogNear, theme.fogFar]} />
-      <Sky
-        sunPosition={theme.sunPosition}
-        turbidity={theme.turbidity}
-        rayleigh={theme.rayleigh}
-      />
+      {useWorld.getState().skyboxUrl ? (
+        <SkyDome />
+      ) : (
+        <Sky
+          sunPosition={theme.sunPosition}
+          turbidity={theme.turbidity}
+          rayleigh={theme.rayleigh}
+        />
+      )}
       <SunLight />
       <IslandEnvironment />
       <PlacedWorld />
