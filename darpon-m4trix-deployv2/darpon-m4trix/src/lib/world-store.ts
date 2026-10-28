@@ -17,6 +17,7 @@ export type WorldObject = {
   z: number
   rot: number // 0..3 quarters
   color: number // palette index
+  scale?: number // moltiplicatore dimensione (modelli GLB importati)
 }
 
 export type CustomAsset = {
@@ -25,6 +26,7 @@ export type CustomAsset = {
   url?: string
   kind?: 'glb' | 'structure'
   pieces?: StructurePiece[]
+  scale?: number // dimensione predefinita (modelli GLB importati)
 }
 
 export type ProjectState = {
@@ -56,7 +58,7 @@ export type SaveSnapshot = {
   createdAt: string
 }
 
-export const GRID_HALF = 14 // playable grid: -GRID_HALF..GRID_HALF
+export const GRID_HALF = 30 // playable grid: -GRID_HALF..GRID_HALF (mappa grande 61x61)
 
 export type View = 'landing' | 'dashboard' | 'editor'
 
@@ -72,6 +74,7 @@ type Store = {
   selectedAsset: string | null
   ghostRot: number
   ghostColor: number
+  ghostScale: number
   hoverCell: [number, number] | null
   history: WorldObject[][]
   dying: { obj: WorldObject; at: number }[]
@@ -98,6 +101,7 @@ type Store = {
   selectAsset: (id: string | null) => void
   setGhostRot: (r: number) => void
   setGhostColor: (c: number) => void
+  setGhostScale: (s: number) => void
   setHoverCell: (c: [number, number] | null) => void
   setPlayMode: (b: boolean) => void
   toggleCameraMode: () => void
@@ -108,6 +112,7 @@ type Store = {
   addObject: (o: Omit<WorldObject, 'id'>) => void
   removeObject: (x: number, z: number) => void
   cycleColor: (x: number, z: number) => void
+  cycleScale: (x: number, z: number) => void
   rotateObject: (x: number, z: number) => void
   clearWorld: () => void
   undo: () => void
@@ -130,6 +135,7 @@ export const useWorld = create<Store>((set, get) => ({
   selectedAsset: 'casa',
   ghostRot: 0,
   ghostColor: 0,
+  ghostScale: 1,
   hoverCell: null,
   history: [],
   dying: [],
@@ -202,6 +208,7 @@ export const useWorld = create<Store>((set, get) => ({
   selectAsset: id => set({ selectedAsset: id, playMode: false }),
   setGhostRot: r => set({ ghostRot: ((r % 4) + 4) % 4 }),
   setGhostColor: c => set({ ghostColor: ((c % PALETTE.length) + PALETTE.length) % PALETTE.length }),
+  setGhostScale: s => set({ ghostScale: Math.min(3, Math.max(0.2, s)) }),
   setHoverCell: c => set({ hoverCell: c }),
   setPlayMode: b => set({ playMode: b }),
   toggleCameraMode: () => set({ cameraMode: !get().cameraMode }),
@@ -239,6 +246,21 @@ export const useWorld = create<Store>((set, get) => ({
           ? { ...p, color: (p.color + 1) % PALETTE.length }
           : p
       ),
+    })
+  },
+  cycleScale: (x, z) => {
+    // cicla le dimensioni dei modelli 3D importati piazzati
+    const SCALES = [0.5, 1, 1.5, 2, 3]
+    const { objects, history } = get()
+    set({
+      history: [...history.slice(-49), objects],
+      objects: objects.map(p => {
+        if (p.x !== x || p.z !== z) return p
+        const cur = p.scale ?? 1
+        const idx = SCALES.findIndex(s => Math.abs(s - cur) < 0.01)
+        const next = SCALES[(idx + 1 + SCALES.length) % SCALES.length]
+        return { ...p, scale: next }
+      }),
     })
   },
   rotateObject: (x, z) => {

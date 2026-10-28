@@ -64,6 +64,7 @@ function PlacedObjects() {
               <AssetRender
                 color={o.color}
                 rot={o.rot}
+                scale={o.scale}
                 links={
                   o.asset === 'strada' ? RoadLinksFor(o, objects) : undefined
                 }
@@ -79,7 +80,7 @@ function PlacedObjects() {
         return (
           <group key={`d${obj.id}${at}`} position={[obj.x, 0, obj.z]}>
             <DieOut>
-              <AssetRender color={obj.color} rot={obj.rot} />
+              <AssetRender color={obj.color} rot={obj.rot} scale={obj.scale} />
             </DieOut>
           </group>
         )
@@ -95,6 +96,7 @@ function GhostPreview() {
   const selectedAsset = useWorld(s => s.selectedAsset)
   const ghostRot = useWorld(s => s.ghostRot)
   const ghostColor = useWorld(s => s.ghostColor)
+  const ghostScale = useWorld(s => s.ghostScale)
   const objects = useWorld(s => s.objects)
   const customAssets = useWorld(s => s.customAssets)
   const cameraMode = useWorld(s => s.cameraMode)
@@ -110,7 +112,11 @@ function GhostPreview() {
   return (
     <group position={[hoverCell[0], 0, hoverCell[1]]}>
       <GhostGroup>
-        <AssetRender color={ghostColor} rot={ghostRot} />
+        <AssetRender
+          color={ghostColor}
+          rot={ghostRot}
+          scale={def.isGlb ? ghostScale : undefined}
+        />
       </GhostGroup>
       <mesh position={[0, 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[0.96, 0.96]} />
@@ -130,7 +136,7 @@ function GhostPreview() {
 function CameraRig() {
   const { camera } = useThree()
   useEffect(() => {
-    camera.position.set(10, 12, 16)
+    camera.position.set(13, 15, 20)
     camera.lookAt(0, 0, 0)
   }, [camera])
   return null
@@ -143,7 +149,7 @@ function Controls() {
       makeDefault
       enablePan={false}
       minDistance={5}
-      maxDistance={60}
+      maxDistance={85}
       maxPolarAngle={Math.PI / 2.15}
       target={[0, 0, 0]}
       mouseButtons={{
@@ -162,11 +168,14 @@ function InputPlane() {
   const selectedAsset = useWorld(s => s.selectedAsset)
   const ghostRot = useWorld(s => s.ghostRot)
   const ghostColor = useWorld(s => s.ghostColor)
+  const ghostScale = useWorld(s => s.ghostScale)
   const cameraMode = useWorld(s => s.cameraMode)
   const addObject = useWorld(s => s.addObject)
   const removeObject = useWorld(s => s.removeObject)
   const cycleColor = useWorld(s => s.cycleColor)
+  const cycleScale = useWorld(s => s.cycleScale)
   const setHoverCell = useWorld(s => s.setHoverCell)
+  const customAssets = useWorld(s => s.customAssets)
 
   const drag = useRef<{ button: number; lastCell: string; moved: number } | null>(null)
 
@@ -180,12 +189,14 @@ function InputPlane() {
     }
     if (occupied) return
     if (!selectedAsset) return
+    const def = getAssetDef(selectedAsset, customAssets)
     addObject({
       asset: selectedAsset,
       x: cell[0],
       z: cell[1],
       rot: ghostRot,
       color: ghostColor,
+      ...(def?.isGlb ? { scale: ghostScale } : {}),
     })
   }
 
@@ -219,8 +230,12 @@ function InputPlane() {
         const key = `${cell[0]},${cell[1]}`
         const isClick = drag.current.moved === 0 && drag.current.lastCell === key
         if (isClick && e.button === 0) {
-          const occupied = objects.some(o => `${o.x},${o.z}` === key)
-          if (occupied) cycleColor(cell[0], cell[1])
+          const hit = objects.find(o => `${o.x},${o.z}` === key)
+          if (hit) {
+            const def = getAssetDef(hit.asset, customAssets)
+            if (def?.isGlb) cycleScale(cell[0], cell[1])
+            else cycleColor(cell[0], cell[1])
+          }
         }
         drag.current = null
       }}
@@ -271,11 +286,11 @@ export function SunLight() {
         intensity={t.sunIntensity}
         castShadow
         shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-32}
-        shadow-camera-right={32}
-        shadow-camera-top={32}
-        shadow-camera-bottom={-32}
-        shadow-camera-far={90}
+        shadow-camera-left={-46}
+        shadow-camera-right={46}
+        shadow-camera-top={46}
+        shadow-camera-bottom={-46}
+        shadow-camera-far={110}
       />
       <ambientLight intensity={t.ambientIntensity} />
       <hemisphereLight args={[t.hemiSky, t.hemiGround, t.hemiIntensity]} />

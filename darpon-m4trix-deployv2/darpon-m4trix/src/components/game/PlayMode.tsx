@@ -94,10 +94,21 @@ function blockedCells(): Set<string> {
   return s
 }
 
+/** Altezza del terreno alla cella (colline, strade rialzate...) */
+function groundHeightAt(x: number, z: number): number {
+  const { objects, customAssets } = useWorld.getState()
+  const o = objects.find(p => p.x === Math.round(x) && p.z === Math.round(z))
+  if (!o) return 0
+  const def = getAssetDef(o.asset, customAssets)
+  if (!def || !def.walkable) return 0
+  return def.walkHeight ?? 0
+}
+
 /** Logica di movimento/camera condivisa tra i personaggi */
 function usePlayerMotion(zFlip: number) {
   const group = useRef<THREE.Group>(null)
   const pos = useRef(new THREE.Vector3(0, 0, 2))
+  const groundY = useRef(0)
   const facing = useRef(Math.PI)
   const moving = useRef(false)
   const walkT = useRef(0)
@@ -138,6 +149,10 @@ function usePlayerMotion(zFlip: number) {
       const nz = pos.current.z + dz
       if (canStand(nx, pos.current.z)) pos.current.x = nx
       if (canStand(pos.current.x, nz)) pos.current.z = nz
+      // segue dolcemente il dislivello (colline, strade rialzate)
+      const targetY = groundHeightAt(pos.current.x, pos.current.z)
+      groundY.current += (targetY - groundY.current) * Math.min(1, dt * 10)
+      pos.current.y = groundY.current
       const targetRot = Math.atan2(dx, dz)
       let diff = targetRot - facing.current
       while (diff > Math.PI) diff -= Math.PI * 2
@@ -156,10 +171,10 @@ function usePlayerMotion(zFlip: number) {
     const camX = pos.current.x + Math.sin(camYawRef.current) * CAM_DIST
     const camZ = pos.current.z + Math.cos(camYawRef.current) * CAM_DIST
     camera.position.lerp(
-      new THREE.Vector3(camX, CAM_HEIGHT, camZ),
+      new THREE.Vector3(camX, CAM_HEIGHT + groundY.current, camZ),
       Math.min(1, dt * 5)
     )
-    camera.lookAt(pos.current.x, 1.2, pos.current.z)
+    camera.lookAt(pos.current.x, 1.2 + groundY.current, pos.current.z)
   })
 
   return { group, walkT, moving }

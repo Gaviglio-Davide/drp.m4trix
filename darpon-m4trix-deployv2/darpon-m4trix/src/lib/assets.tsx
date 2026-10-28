@@ -13,6 +13,7 @@ export type AssetRenderProps = {
   color: number
   rot: number
   links?: RoadLinks
+  scale?: number // moltiplicatore dimensione (solo modelli GLB)
 }
 
 export type AssetDef = {
@@ -21,6 +22,7 @@ export type AssetDef = {
   icon: string
   desc?: string
   walkable?: boolean
+  walkHeight?: number // altezza della superficie calpestabile (modalità Gioca)
   isGlb?: boolean
   glbUrl?: string
   render: (props: AssetRenderProps) => ReactNode
@@ -218,6 +220,97 @@ function Muro({ color, rot }: AssetRenderProps) {
         <boxGeometry args={[1.0, 0.07, 0.26]} />
         <meshStandardMaterial color={trimShade(wall, -0.1)} roughness={0.9} />
       </mesh>
+    </group>
+  )
+}
+
+function MuroAlto({ color, rot }: AssetRenderProps) {
+  // Blocco murario alto e pieno: occupa il CENTRO del quadrato
+  // (non le linee della griglia), stile fortificazione.
+  const wall = PALETTE[color % PALETTE.length]
+  return (
+    <group rotation={[0, (rot * Math.PI) / 2, 0]}>
+      <mesh position={[0, 0.8, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.94, 1.6, 0.94]} />
+        <meshStandardMaterial color={wall} roughness={0.9} />
+      </mesh>
+      <mesh position={[0, 0.06, 0]} castShadow receiveShadow>
+        <boxGeometry args={[1, 0.12, 1]} />
+        <meshStandardMaterial color={trimShade(wall, -0.12)} roughness={0.95} />
+      </mesh>
+      {([[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]] as const).map(([mx, mz]) => (
+        <mesh key={`${mx}-${mz}`} position={[mx, 1.72, mz]} castShadow>
+          <boxGeometry args={[0.24, 0.24, 0.24]} />
+          <meshStandardMaterial color={trimShade(wall, -0.06)} roughness={0.9} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+function Collina() {
+  // collinetta erbosa bassa, perfetta per spezzare la pianura
+  return (
+    <group>
+      <mesh position={[0, 0.18, 0]} scale={[1, 0.7, 1]} castShadow receiveShadow>
+        <sphereGeometry args={[0.52, 16, 12]} />
+        <meshStandardMaterial color="#7cae5e" roughness={1} />
+      </mesh>
+      <mesh position={[0.16, 0.36, 0.12]} scale={[1, 0.75, 1]} castShadow>
+        <sphereGeometry args={[0.26, 12, 10]} />
+        <meshStandardMaterial color="#8abd69" roughness={1} />
+      </mesh>
+    </group>
+  )
+}
+
+function CollinaAlta() {
+  // collina imponente con cresta rocciosa e pino: il mondo diventa verticale
+  return (
+    <group>
+      <mesh position={[0, 0.42, 0]} scale={[1, 1.5, 1]} castShadow receiveShadow>
+        <sphereGeometry args={[0.55, 16, 12]} />
+        <meshStandardMaterial color="#6f9e52" roughness={1} />
+      </mesh>
+      <mesh position={[0.04, 1.06, -0.02]} rotation={[0.3, 0.4, 0.15]} castShadow>
+        <icosahedronGeometry args={[0.2, 0]} />
+        <meshStandardMaterial color="#9a9a94" roughness={1} />
+      </mesh>
+      <mesh position={[-0.24, 0.85, 0.18]} castShadow>
+        <coneGeometry args={[0.13, 0.36, 8]} />
+        <meshStandardMaterial color="#437a3e" roughness={0.9} />
+      </mesh>
+      <mesh position={[0.24, 0.72, 0.2]} castShadow>
+        <coneGeometry args={[0.1, 0.3, 8]} />
+        <meshStandardMaterial color="#4d8a47" roughness={0.9} />
+      </mesh>
+    </group>
+  )
+}
+
+function StradaRialzata({ rot }: AssetRenderProps) {
+  // strada sopraelevata in pietra: passa sopra colline e dislivelli
+  const stone = '#a8a29a'
+  return (
+    <group rotation={[0, (rot * Math.PI) / 2, 0]}>
+      <mesh position={[0, 0.25, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.98, 0.5, 0.98]} />
+        <meshStandardMaterial color={stone} roughness={0.95} />
+      </mesh>
+      <mesh position={[0, 0.52, 0]} receiveShadow>
+        <boxGeometry args={[0.9, 0.08, 0.9]} />
+        <meshStandardMaterial color="#8d8578" roughness={1} />
+      </mesh>
+      <mesh position={[0, 0.568, 0]}>
+        <boxGeometry args={[0.05, 0.006, 0.6]} />
+        <meshStandardMaterial color="#e8e2d2" roughness={1} />
+      </mesh>
+      {[-0.42, 0.42].map(x => (
+        <mesh key={x} position={[x, 0.63, 0]} castShadow>
+          <boxGeometry args={[0.09, 0.18, 0.98]} />
+          <meshStandardMaterial color={trimShade(stone, -0.1)} roughness={0.95} />
+        </mesh>
+      ))}
     </group>
   )
 }
@@ -528,21 +621,21 @@ export function StructureModel({
 
 // ---------- GLB custom ----------
 
-export function GlbModel({ url, rot }: { url: string; rot: number }) {
+export function GlbModel({ url, rot, scale = 1 }: { url: string; rot: number; scale?: number }) {
   const { scene } = useGLTF(url)
   const cloned = useMemo(() => {
     const c = skeletonClone(scene)
     const box = new THREE.Box3().setFromObject(c)
     const size = box.getSize(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.y, size.z, 0.001)
-    const s = 1.4 / maxDim
+    const s = (1.4 / maxDim) * Math.min(3, Math.max(0.2, scale))
     c.scale.setScalar(s)
     const box2 = new THREE.Box3().setFromObject(c)
     c.position.y = -box2.min.y
     c.position.x = -(box2.min.x + box2.max.x) / 2
     c.position.z = -(box2.min.z + box2.max.z) / 2
     return c
-  }, [scene])
+  }, [scene, scale])
   return (
     <group rotation={[0, (rot * Math.PI) / 2, 0]}>
       <primitive object={cloned} dispose={null} />
@@ -580,6 +673,7 @@ export const BUILTIN_ASSETS: AssetDef[] = [
     icon: '🛣️',
     desc: 'Si collega da sola alle strade vicine. Si può camminarci sopra.',
     walkable: true,
+    walkHeight: 0.03,
     render: Strada,
   },
   {
@@ -588,6 +682,40 @@ export const BUILTIN_ASSETS: AssetDef[] = [
     icon: '🧱',
     desc: 'Muretto basso per recintare giardini e difendere il villaggio.',
     render: Muro,
+  },
+  {
+    id: 'muroAlto',
+    label: 'Muro alto',
+    icon: '🏰',
+    desc: 'Blocco murario imponente con merlatura: occupa tutto il quadrato, perfetto per cinte fortificate.',
+    render: MuroAlto,
+  },
+  {
+    id: 'collina',
+    label: 'Collina',
+    icon: '⛰️',
+    desc: 'Collinetta erbosa su cui puoi salire: spezza la pianura e crea panorami.',
+    walkable: true,
+    walkHeight: 0.42,
+    render: Collina,
+  },
+  {
+    id: 'collinaAlta',
+    label: 'Collina alta',
+    icon: '🏔️',
+    desc: 'Grande altura con cresta rocciosa e pini: salici sopra, la mappa diventa verticale.',
+    walkable: true,
+    walkHeight: 0.85,
+    render: CollinaAlta,
+  },
+  {
+    id: 'stradaRialzata',
+    label: 'Strada rialzata',
+    icon: '🌉',
+    desc: 'Strada in pietra sopraelevata con parapetti: ci cammini in alto, attraversa colline e dislivelli.',
+    walkable: true,
+    walkHeight: 0.56,
+    render: StradaRialzata,
   },
   {
     id: 'portone',
@@ -666,7 +794,9 @@ export function getAssetDef(
       desc: 'Modello 3D caricato da te (solo nel tuo account).',
       isGlb: true,
       glbUrl: custom.url,
-      render: props => <GlbModel url={custom.url!} rot={props.rot} />,
+      render: props => (
+        <GlbModel url={custom.url!} rot={props.rot} scale={props.scale} />
+      ),
     }
   }
   return null

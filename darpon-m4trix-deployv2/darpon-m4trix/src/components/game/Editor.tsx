@@ -28,7 +28,6 @@ import {
   Camera,
   Check,
   CloudUpload,
-  Hammer,
   HelpCircle,
   Loader2,
   Play,
@@ -44,7 +43,8 @@ import {
   PALETTE,
   type SaveSnapshot,
 } from '@/lib/world-store'
-import { BUILTIN_ASSETS } from '@/lib/assets'
+import { BUILTIN_ASSETS, getAssetDef } from '@/lib/assets'
+import { useStructures, libraryAssetId } from '@/lib/structures-store'
 import { getTheme, WORLD_STYLES } from '@/lib/scene-theme'
 import ProfileDialog from '@/components/ProfileDialog'
 import { fetchAuth } from '@/lib/http'
@@ -80,10 +80,6 @@ const PlayMode = dynamic(() => import('./PlayMode'), {
   ),
 })
 
-const StructureDesigner = dynamic(() => import('./StructureDesigner'), {
-  ssr: false,
-})
-
 export default function Editor() {
   const project = useWorld(s => s.currentProject)
   const objects = useWorld(s => s.objects)
@@ -109,11 +105,12 @@ export default function Editor() {
   const setWorldStyle = useWorld(s => s.setWorldStyle)
   const playerAsset = useWorld(s => s.playerAsset)
   const setPlayerAsset = useWorld(s => s.setPlayerAsset)
+  const ghostScale = useWorld(s => s.ghostScale)
+  const setGhostScale = useWorld(s => s.setGhostScale)
 
   const [name, setName] = useState('')
   const [savesOpen, setSavesOpen] = useState(false)
   const [saves, setSaves] = useState<SaveSnapshot[]>([])
-  const [designerOpen, setDesignerOpen] = useState(false)
   const [legendOpen, setLegendOpen] = useState(false)
   const [playerOpen, setPlayerOpen] = useState(false)
   const [confirmDeleteAsset, setConfirmDeleteAsset] = useState<string | null>(
@@ -128,6 +125,56 @@ export default function Editor() {
   useEffect(() => {
     if (project) setName(project.name)
   }, [project?.id])
+
+  // ---------- modelli importati dalla home (Reparto Progetti importati) ----------
+  // rende disponibili nell'editor TUTTI i modelli caricati dall'utente,
+  // senza doverli ricaricare progetto per progetto. Porta anche la
+  // dimensione predefinita scelta nella home.
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const res = await fetchAuth('/api/models')
+        if (!res.ok) return
+        const data = (await res.json()) as {
+          models?: { id: string; name: string; url: string; scale?: number | null }[]
+        }
+        const existing = new Set(
+          useWorld.getState().customAssets.map(a => a.url)
+        )
+        for (const m of data.models ?? []) {
+          if (!m.url || existing.has(m.url)) continue
+          useWorld.getState().addCustomAsset({
+            id: `m_${m.id}`,
+            name: m.name,
+            url: m.url,
+            kind: 'glb',
+            scale: m.scale ?? 1,
+          })
+        }
+      } catch {
+        // silenzioso: l'editor funziona anche senza modelli importati
+      }
+    })()
+  }, [])
+
+  // ---------- strutture dal Reparto Strutture della home ----------
+  // la libreria globale viene importata automaticamente in ogni mondo
+  useEffect(() => {
+    useStructures.getState().load()
+    const existingIds = new Set(
+      useWorld.getState().customAssets.map(a => a.id)
+    )
+    for (const s of useStructures.getState().structures) {
+      const id = libraryAssetId(s.id)
+      if (existingIds.has(id)) continue
+      useWorld.getState().addCustomAsset({
+        id,
+        name: s.name,
+        kind: 'structure',
+        pieces: s.pieces.map(p => ({ ...p })),
+      })
+    }
+  }, [])
 
   // ---------- autosave ----------
   const patchState = useCallback(
@@ -168,7 +215,7 @@ export default function Editor() {
         if (e.code === 'Escape') setPlayMode(false)
         return
       }
-      if (designerOpen || legendOpen || playerOpen) return
+      if (legendOpen || playerOpen) return
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
         e.preventDefault()
         undo()
@@ -180,7 +227,7 @@ export default function Editor() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [playMode, designerOpen, legendOpen, playerOpen, undo, setGhostRot, setGhostColor, setPlayMode])
+  }, [playMode, legendOpen, playerOpen, undo, setGhostRot, setGhostColor, setPlayMode])
 
   if (!project) return null
 
@@ -296,6 +343,20 @@ export default function Editor() {
       {saveStatus === 'idle' && <>Modifiche non salvate</>}
     </span>
   )
+
+  const selectedDef = selectedAsset
+    ? getAssetDef(selectedAsset, customAssets)
+    : null
+
+  // selezione asset: per i modelli GLB importati applica subito la
+  // dimensione predefinita scelta nella home (reparto Progetti importati)
+  const pickAsset = (id: string) => {
+    selectAsset(id)
+    const a = customAssets.find(x => x.id === id)
+    if (a?.url && a.scale && Number.isFinite(a.scale)) {
+      setGhostScale(a.scale)
+    }
+  }
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-sky-100">
@@ -433,11 +494,13 @@ export default function Editor() {
           <Button
             variant="ghost"
             size="sm"
-            title="Progetta una struttura da zero"
-            onClick={() => setDesignerOpen(true)}
+            title="Progetta le strutture nella home, reparto Strutture"
+            onClick={() => {
+              toast.info('Le strutture si progettano nella home → reparto Strutture. Qui le trovi già nella barra oggetti!')
+            }}
           >
             <Hammer className="h-4 w-4" />
-            <span className="hidden sm:inline">Progetta</span>
+            <span className="hidden sm:inline">Strutture</span>
           </Button>
           <Dialog
             open={playerOpen}
@@ -597,7 +660,8 @@ export default function Editor() {
                 </li>
                 <li>
                   <b>Clic sinistro</b> su un oggetto → cambia il suo colore al
-                  volo
+                  volo; sui modelli 3D importati cambia la{' '}
+                  <b>dimensione</b> (0.5x – 3x)
                 </li>
                 <li>
                   <b>Clic destro</b> (anche trascinando) → rimuove gli oggetti
@@ -612,11 +676,13 @@ export default function Editor() {
                 </li>
                 <li>
                   <b>Modalità Gioca</b>: <b>WASD</b> per camminare, <b>Shift</b>{' '}
-                  corri, trascina il mouse per guardarti attorno
+                  corri, trascina il mouse per guardarti attorno. Salci su
+                  colline e strade rialzate: il mondo ha i dislivelli!
                 </li>
                 <li>
-                  <b>🔨 Progetta</b> → costruttore di strutture: muri, pavimenti,
-                  porte e tetti da combinare e salvare come oggetto
+                  <b>🔨 Strutture</b> → le strutture si progettano nella home,
+                  nel reparto «Strutture»: qui le ritrovi già nella barra
+                  oggetti, pronte da piazzare
                 </li>
                 <li>
                   <b>📖 Legenda</b> → tutti gli oggetti spiegati ·{' '}
@@ -663,6 +729,27 @@ export default function Editor() {
               >
                 <RotateCcw className="h-3 w-3" />
               </Button>
+              {selectedDef?.isGlb && (
+                <>
+                  <span className="mx-2 h-5 w-px shrink-0 bg-stone-200" />
+                  <span className="mr-1 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+                    Dimensione
+                  </span>
+                  <input
+                    type="range"
+                    min={0.2}
+                    max={3}
+                    step={0.1}
+                    value={ghostScale}
+                    onChange={e => setGhostScale(Number(e.target.value))}
+                    className="h-1.5 w-28 shrink-0 cursor-pointer accent-[var(--primary)]"
+                    aria-label="Dimensione del modello"
+                  />
+                  <span className="w-9 shrink-0 text-[11px] font-bold text-stone-600">
+                    {ghostScale.toFixed(1)}x
+                  </span>
+                </>
+              )}
             </div>
             {/* assets */}
             <div className="flex items-center gap-1.5 overflow-x-auto px-1 pt-0.5">
@@ -685,7 +772,7 @@ export default function Editor() {
               {customAssets.map(a => (
                 <button
                   key={a.id}
-                  onClick={() => selectAsset(a.id)}
+                  onClick={() => pickAsset(a.id)}
                   className={`flex min-w-16 shrink-0 flex-col items-center gap-0.5 rounded-2xl px-2.5 py-2 transition-all ${
                     selectedAsset === a.id
                       ? 'bg-[var(--primary-soft)] ring-2 ring-[var(--primary)]'
@@ -733,10 +820,6 @@ export default function Editor() {
             guardarti attorno · ESC per uscire
           </div>
         </div>
-      )}
-
-      {designerOpen && (
-        <StructureDesigner open onClose={() => setDesignerOpen(false)} />
       )}
 
       <AlertDialog

@@ -1,3 +1,6 @@
+// Schema per deploy su Vercel + PostgreSQL (Neon / Supabase / Vercel Postgres)
+// NOTA: in locale il progetto usa sqlite, questa e` la versione da GitHub.
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,14 +11,15 @@ datasource db {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
+  id           String       @id @default(cuid())
+  email        String       @unique
   passwordHash String
   name         String?
   accentColor  String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
   projects     Project[]
+  modelAssets  ModelAsset[]
 }
 
 model Project {
@@ -41,4 +45,17 @@ model Save {
 model SiteConfig {
   key   String @id
   value String
+}
+
+model ModelAsset {
+  id        String   @id @default(cuid())
+  name      String
+  url       String
+  size      Int?
+  scale     Float?   @default(1.0)
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([ownerId])
 }

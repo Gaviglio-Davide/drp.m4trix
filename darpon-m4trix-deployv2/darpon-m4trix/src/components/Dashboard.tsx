@@ -32,11 +32,25 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
-import { Box as Cube, LogOut, Pencil, Plus, Trash2 } from 'lucide-react'
+import {
+  Box as Cube,
+  Library,
+  Hammer,
+  LogOut,
+  Package,
+  Pencil,
+  Plus,
+  Trash2,
+} from 'lucide-react'
 import { useWorld, type ProjectMeta } from '@/lib/world-store'
 import { fetchAuth } from '@/lib/http'
+import ImportedModels from '@/components/ImportedModels'
+import StructuresLab from '@/components/StructuresLab'
 import ProfileDialog from '@/components/ProfileDialog'
 import { SITE_DEFAULTS, type SiteConfig } from '@/lib/site'
+
+// I 3 reparti della home: mondi, modelli importati, strutture
+type Tab = 'mondi' | 'importati' | 'strutture'
 
 const CARD_ITEM = {
   hidden: { opacity: 0, y: 18, scale: 0.98 },
@@ -64,6 +78,7 @@ export default function Dashboard() {
   const [renameId, setRenameId] = useState<string | null>(null)
   const [renameName, setRenameName] = useState('')
   const [busy, setBusy] = useState(false)
+  const [tab, setTab] = useState<Tab>('mondi')
 
   const refresh = async () => {
     try {
@@ -195,7 +210,33 @@ export default function Dashboard() {
       </header>
 
       <main className="relative mx-auto max-w-6xl p-6">
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        {/* ===== barra dei reparti ===== */}
+        <div className="mb-6 flex flex-wrap items-center gap-1.5 rounded-2xl bg-white/70 p-1.5 ring-1 ring-black/5">
+          {(
+            [
+              { id: 'mondi' as Tab, icon: <Cube className="h-4 w-4" />, label: 'I miei mondi' },
+              { id: 'importati' as Tab, icon: <Package className="h-4 w-4" />, label: 'Progetti importati' },
+              { id: 'strutture' as Tab, icon: <Hammer className="h-4 w-4" />, label: 'Strutture' },
+            ]
+          ).map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-all ${
+                tab === t.id
+                  ? 'bg-[var(--primary)] text-white shadow-md'
+                  : 'text-stone-600 hover:bg-[var(--primary-soft)] hover:text-[var(--primary-strong)]'
+              }`}
+            >
+              {t.icon}
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'mondi' && (
+          <>
+          <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <motion.div
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
@@ -374,6 +415,14 @@ export default function Dashboard() {
             ))}
           </div>
         )}
+          </>
+        )}
+
+        {/* REPARTO: modelli 3D importati dall'utente (disponibili in ogni editor) */}
+        {tab === 'importati' && <ImportedModels />}
+
+        {/* REPARTO: progettazione strutture, separata dalla creazione dei mondi */}
+        {tab === 'strutture' && <StructuresLab />}
       </main>
 
       <Dialog

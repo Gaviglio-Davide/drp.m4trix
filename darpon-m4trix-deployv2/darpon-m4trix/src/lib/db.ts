@@ -79,6 +79,36 @@ END $$;`)
     "value" TEXT NOT NULL,
     CONSTRAINT "SiteConfig_pkey" PRIMARY KEY ("key")
   )`)
+
+  await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "ModelAsset" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "url" TEXT NOT NULL,
+    "size" INTEGER,
+    "scale" REAL DEFAULT 1,
+    "ownerId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "ModelAsset_pkey" PRIMARY KEY ("id")
+  )`)
+  // migrazione leggera per installazioni esistenti: colonna scale
+  await db
+    .$executeRawUnsafe(
+      `ALTER TABLE "ModelAsset" ADD COLUMN IF NOT EXISTS "scale" REAL DEFAULT 1`
+    )
+    .catch(() => {})
+  await db.$executeRawUnsafe(
+    `CREATE INDEX IF NOT EXISTS "ModelAsset_ownerId_idx" ON "ModelAsset"("ownerId")`
+  )
+  await db.$executeRawUnsafe(`DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'ModelAsset_ownerId_fkey'
+  ) THEN
+    ALTER TABLE "ModelAsset" ADD CONSTRAINT "ModelAsset_ownerId_fkey"
+      FOREIGN KEY ("ownerId") REFERENCES "User"("id")
+      ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;`)
 }
 
 /** Esegue ensureSchema una sola volta per istanza (il risultato è in cache). */
