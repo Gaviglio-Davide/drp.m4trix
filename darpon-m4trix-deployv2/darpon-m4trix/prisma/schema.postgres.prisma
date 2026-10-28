@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String?
+  accentColor  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  projects     Project[]
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  state     String   @default("{}")
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  saves     Save[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Save {
+  id        String   @id @default(cuid())
+  name      String
+  state     String
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model SiteConfig {
+  key   String @id
+  value String
+}
