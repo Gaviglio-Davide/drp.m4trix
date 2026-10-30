@@ -30,6 +30,7 @@ async function ensureSchema(): Promise<void> {
     "name" TEXT,
     "accentColor" TEXT,
     "meshyKey" TEXT,
+    "providerKeys" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     CONSTRAINT "User_pkey" PRIMARY KEY ("id")
@@ -38,6 +39,13 @@ async function ensureSchema(): Promise<void> {
   await db
     .$executeRawUnsafe(
       `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "meshyKey" TEXT`
+    )
+    .catch(() => {})
+  // aggiornamento .4: chiavi dei motori 3D multi-provider (Darpx.ai),
+  // JSON con valori cifrati — es. {"tripo":"enc...","fal":"enc..."}
+  await db
+    .$executeRawUnsafe(
+      `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "providerKeys" TEXT`
     )
     .catch(() => {})
   await db.$executeRawUnsafe(

@@ -13,6 +13,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { toast } from 'sonner'
 import {
   CloudUpload,
+  Eye,
   Loader2,
   Package,
   Trash2,
@@ -20,6 +21,8 @@ import {
 import { motion } from 'framer-motion'
 import { upload } from '@vercel/blob/client'
 import { fetchAuth } from '@/lib/http'
+import GLBViewer from '@/components/GLBViewer'
+import { sectionOf, useUI } from '@/lib/ui-store'
 
 type ModelRow = {
   id: string
@@ -48,6 +51,9 @@ export default function ImportedModels() {
   const [loading, setLoading] = useState(true)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const site = useUI(s => s.site)
+  const section = sectionOf(site.sections, 'importati')
+  const [preview, setPreview] = useState<ModelRow | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -175,12 +181,11 @@ export default function ImportedModels() {
         <div>
           <h2 className="flex items-center gap-2 text-xl font-black tracking-tight text-stone-800">
             <Package className="h-5 w-5 text-[var(--primary)]" />
-            Progetti importati
+            {section.title}
           </h2>
           <p className="text-sm text-stone-500">
-            Carica qui tutti i modelli 3D che vuoi (.glb / .gltf): restano in
-            ordine, scegli la loro dimensione e li trovi pronti nell&apos;editor
-            di ogni tuo progetto.
+            {section.subtitle ||
+              'Carica qui tutti i modelli 3D che vuoi (.glb / .gltf): restano in ordine, scegli la loro dimensione e li trovi pronti nell\'editor di ogni tuo progetto.'}
           </p>
         </div>
         <input
@@ -282,6 +287,15 @@ export default function ImportedModels() {
                     ))}
                   </div>
                   <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-stone-500"
+                    title="Anteprima 3D: ruota, wireframe, statistiche"
+                    onClick={() => setPreview(m)}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  <Button
                     variant="ghost"
                     size="sm"
                     className="text-stone-400 hover:text-red-600"
@@ -296,6 +310,13 @@ export default function ImportedModels() {
           )}
         </CardContent>
       </Card>
+
+      {/* anteprima 3D a schermo intero */}
+      <GLBViewer
+        url={preview?.url ?? null}
+        name={preview?.name}
+        onClose={() => setPreview(null)}
+      />
     </motion.section>
   )
 }

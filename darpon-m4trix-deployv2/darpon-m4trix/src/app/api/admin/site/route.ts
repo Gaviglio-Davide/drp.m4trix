@@ -6,9 +6,15 @@ import {
   SITE_KEYS,
   HOME_PARAGRAPHS_KEY,
   DEFAULT_PARAGRAPHS,
+  SECTIONS_KEY,
+  ANNOUNCEMENT_KEY,
   sanitizeParagraphs,
+  sanitizeSections,
+  sanitizeAnnouncement,
   type SiteConfig,
   type HomeParagraph,
+  type SectionConfig,
+  type Announcement,
 } from '@/lib/site'
 
 export const dynamic = 'force-dynamic'
@@ -27,6 +33,8 @@ export async function GET() {
   await ensureSchemaOnce().catch(() => {})
   const config: SiteConfig = { ...SITE_DEFAULTS }
   let paragraphs: HomeParagraph[] = DEFAULT_PARAGRAPHS
+  let sections: Record<string, SectionConfig> = {}
+  let announcement: Announcement = { text: '', enabled: false }
   const rows = await db.siteConfig.findMany()
   for (const row of rows) {
     if ((SITE_KEYS as string[]).includes(row.key)) {
@@ -35,8 +43,14 @@ export async function GET() {
     if (row.key === HOME_PARAGRAPHS_KEY) {
       paragraphs = sanitizeParagraphs(safeJson(row.value))
     }
+    if (row.key === SECTIONS_KEY) {
+      sections = sanitizeSections(safeJson(row.value))
+    }
+    if (row.key === ANNOUNCEMENT_KEY) {
+      announcement = sanitizeAnnouncement(safeJson(row.value))
+    }
   }
-  return NextResponse.json({ config, paragraphs })
+  return NextResponse.json({ config, paragraphs, sections, announcement })
 }
 
 export async function PUT(req: NextRequest) {
@@ -53,6 +67,16 @@ export async function PUT(req: NextRequest) {
   if ('paragraphs' in body) {
     const clean = sanitizeParagraphs(body.paragraphs)
     updates.push({ key: HOME_PARAGRAPHS_KEY, value: JSON.stringify(clean) })
+  }
+  // Reparti: titoli, sottotitoli e interruttori on/off
+  if ('sections' in body) {
+    const clean = sanitizeSections(body.sections)
+    updates.push({ key: SECTIONS_KEY, value: JSON.stringify(clean) })
+  }
+  // Banner annuncio
+  if ('announcement' in body) {
+    const clean = sanitizeAnnouncement(body.announcement)
+    updates.push({ key: ANNOUNCEMENT_KEY, value: JSON.stringify(clean) })
   }
   for (const u of updates) {
     await db.siteConfig.upsert({

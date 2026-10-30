@@ -2,7 +2,11 @@
 // Contenuti del sito modificabili dall'area admin:
 //  - testi principali (SiteConfig, campi stringa)
 //  - paragrafi liberi della home (SiteConfig, JSON in
-//    HOME_PARAGRAPHS_KEY) — l'admin può crearne quanti vuole.
+//    HOME_PARAGRAPHS_KEY) — l'admin può crearne quanti vuole
+//  - titoli/descrizioni dei reparti + interruttori on/off
+//    (SiteConfig, JSON in SECTIONS_KEY) — aggiornamento .4
+//  - banner annuncio mostrato in cima alla home a tutti gli
+//    utenti (SiteConfig, JSON in ANNOUNCEMENT_KEY) — .4
 // ============================================================
 
 export const SITE_DEFAULTS = {
@@ -78,4 +82,70 @@ export function sanitizeParagraphs(input: unknown): HomeParagraph[] {
     if (out.length >= MAX_PARAGRAPHS) break
   }
   return out
+}
+
+// ---------- reparti della home (aggiornamento .4) ----------
+
+export type SectionConfig = {
+  title: string
+  subtitle: string
+  enabled: boolean
+}
+
+export const SECTIONS_KEY = 'homeSections'
+
+/** chiavi dei reparti modificabili + etichette per l'admin */
+export const SECTION_DEFS: { key: string; defaultTitle: string; label: string }[] = [
+  { key: 'mondi', defaultTitle: 'I miei mondi', label: 'I miei mondi (progetti)' },
+  { key: 'genera', defaultTitle: 'Genera', label: 'Genera (città e paesaggi)' },
+  { key: 'importati', defaultTitle: 'Progetti importati', label: 'Progetti importati (modelli 3D)' },
+  { key: 'strutture', defaultTitle: 'Strutture', label: 'Strutture (costruttore)' },
+  { key: 'darpx', defaultTitle: 'Darpx.ai', label: 'Darpx.ai (AI del sito)' },
+]
+
+export const DEFAULT_SECTION_SUBTITLES: Record<string, string> = {
+  mondi: 'Crea un nuovo progetto, costruisci il mondo e trasformalo in un videogioco.',
+  genera: 'Città medievali, villaggi, fortezze e paesaggi generati in un click.',
+  importati:
+    'Carica qui tutti i modelli 3D che vuoi (.glb / .gltf): restano in ordine, scegli la loro dimensione e li trovi pronti nell\'editor di ogni tuo progetto.',
+  strutture:
+    'Progetta case e edifici pezzo per pezzo: la tua libreria è disponibile in ogni mondo.',
+  darpx: "L'AI del sito: immagine → mondo, testo o immagine → 3D e l'Agente Darpx che ti aiuta subito.",
+}
+
+/** Valida la configurazione reparti arrivata dal client */
+export function sanitizeSections(input: unknown): Record<string, SectionConfig> {
+  const out: Record<string, SectionConfig> = {}
+  if (!input || typeof input !== 'object') return out
+  const raw = input as Record<string, unknown>
+  for (const def of SECTION_DEFS) {
+    const r = raw[def.key]
+    if (!r || typeof r !== 'object') continue
+    const rr = r as Record<string, unknown>
+    out[def.key] = {
+      title:
+        typeof rr.title === 'string' && rr.title.trim()
+          ? rr.title.trim().slice(0, 80)
+          : def.defaultTitle,
+      subtitle: typeof rr.subtitle === 'string' ? rr.subtitle.trim().slice(0, 400) : '',
+      enabled: rr.enabled !== false,
+    }
+  }
+  return out
+}
+
+// ---------- banner annuncio (aggiornamento .4) ----------
+
+export const ANNOUNCEMENT_KEY = 'announcement'
+
+export type Announcement = {
+  text: string
+  enabled: boolean
+}
+
+export function sanitizeAnnouncement(input: unknown): Announcement {
+  if (!input || typeof input !== 'object') return { text: '', enabled: false }
+  const r = input as Record<string, unknown>
+  const text = typeof r.text === 'string' ? r.text.trim().slice(0, 600) : ''
+  return { text, enabled: Boolean(r.enabled) && text.length > 0 }
 }

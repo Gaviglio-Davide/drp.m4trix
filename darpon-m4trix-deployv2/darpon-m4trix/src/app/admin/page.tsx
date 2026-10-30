@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,12 +12,16 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  Bot,
   CheckCircle2,
   Database,
+  Eye,
   Flame,
   Image as ImageIcon,
+  KeyRound,
   Loader2,
   LogOut,
+  Megaphone,
   Pencil,
   Plus,
   RefreshCw,
@@ -26,18 +30,24 @@ import {
   UserRound,
   XCircle,
 } from 'lucide-react'
+import GLBViewer from '@/components/GLBViewer'
 import {
   SITE_DEFAULTS,
   SITE_LABELS,
+  SECTION_DEFS,
+  DEFAULT_SECTION_SUBTITLES,
   DEFAULT_PARAGRAPHS,
   type SiteConfig,
   type HomeParagraph,
+  type SectionConfig,
 } from '@/lib/site'
 
 // ============================================================
-// Pannello Admin — darpon.m4trix
-// Gestione utenti, progetti, modelli 3D e testi del sito,
-// senza toccare il codice.
+// Pannello Admin — darpon.m4trix (aggiornamento .4)
+// Gestione utenti (rinomina + password), progetti, modelli 3D
+// con ANTEPRIMA, chiavi globali dei motori 3D con TEST,
+// Agente AI, testi della home, reparti on/off e banner annunci:
+// tutto modificabile da qui, senza toccare il codice.
 // ============================================================
 
 type Stats = {
@@ -57,7 +67,7 @@ type AdminUser = {
   name: string | null
   accentColor: string | null
   createdAt: string
-  _count: { projects: number }
+  _count: { projects: number; modelAssets: number }
 }
 
 type AdminProject = {
@@ -76,6 +86,26 @@ type Asset = {
   bytes: number
   uploadedAt: string
   store: string
+}
+
+type AdminProvider = {
+  id: string
+  label: string
+  icon: string
+  keyUrl: string
+  keyHint: string
+  note: string
+  supportsText: boolean
+  supportsImage: boolean
+  siteKey: boolean
+  envKey: boolean
+}
+
+type AIConfigState = {
+  baseUrl: string
+  model: string
+  hasKey: boolean
+  keyPreview: string
 }
 
 const fmtBytes = (n: number) =>
@@ -210,7 +240,33 @@ function AdminPanel({
   const [assetStore, setAssetStore] = useState('')
   const [config, setConfig] = useState<SiteConfig>({ ...SITE_DEFAULTS })
   const [paragraphs, setParagraphs] = useState<HomeParagraph[]>(DEFAULT_PARAGRAPHS)
+  const [sections, setSections] = useState<Record<string, SectionConfig>>({})
+  const [announcement, setAnnouncement] = useState({ text: '', enabled: false })
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
+
+  // utenti: modifica inline
+  const [userEdit, setUserEdit] = useState<{
+    id: string
+    name: string
+    password: string
+  } | null>(null)
+
+  // chiavi 3D
+  const [providers, setProviders] = useState<AdminProvider[]>([])
+  const [providerKeys, setProviderKeys] = useState<Record<string, string>>({})
+  const [savingProvider, setSavingProvider] = useState<string | null>(null)
+  const [testingProvider, setTestingProvider] = useState<string | null>(null)
+  const [testResults, setTestResults] = useState<Record<string, string>>({})
+
+  // agente AI
+  const [ai, setAi] = useState<AIConfigState | null>(null)
+  const [aiForm, setAiForm] = useState({ baseUrl: '', model: '', apiKey: '' })
+  const [savingAi, setSavingAi] = useState(false)
+  const [zaiEnv, setZaiEnv] = useState(false)
+
+  // anteprima modelli
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewName, setPreviewName] = useState('')
 
   const loadAll = useCallback(() => {
     return Promise.all([
@@ -219,8 +275,10 @@ function AdminPanel({
       fetch('/api/admin/projects').then(r => r.json()),
       fetch('/api/admin/assets').then(r => r.json()),
       fetch('/api/admin/site').then(r => r.json()),
+      fetch('/api/admin/providers').then(r => r.json()),
+      fetch('/api/admin/ai').then(r => r.json()),
     ])
-      .then(([s, u, p, a, c]) => {
+      .then(([s, u, p, a, c, pr, aiData]) => {
         setStats(s)
         setUsers(u.users ?? [])
         setProjects(p.projects ?? [])
@@ -228,6 +286,18 @@ function AdminPanel({
         setAssetStore(a.store ?? '')
         if (c.config) setConfig(c.config)
         if (Array.isArray(c.paragraphs)) setParagraphs(c.paragraphs)
+        if (c.sections) setSections(c.sections)
+        if (c.announcement) setAnnouncement(c.announcement)
+        setProviders(pr.providers ?? [])
+        if (aiData.ai) {
+          setAi(aiData.ai)
+          setAiForm({
+            baseUrl: aiData.ai.baseUrl ?? '',
+            model: aiData.ai.model ?? '',
+            apiKey: '',
+          })
+        }
+        setZaiEnv(Boolean(aiData.zaiEnv))
       })
       .catch(() => {
         toast.error('Impossibile caricare i dati')
@@ -238,6 +308,8 @@ function AdminPanel({
     void loadAll()
   }, [loadAll])
 
+  // ---------------- azioni utenti ----------------
+
   const deleteUser = async (u: AdminUser) => {
     if (!window.confirm(`Eliminare ${u.email}? Verranno cancellati anche tutti i suoi progetti.`)) return
     const res = await fetch(`/api/admin/users?id=${u.id}`, { method: 'DELETE' })
@@ -246,6 +318,28 @@ function AdminPanel({
       void loadAll()
     } else toast.error('Eliminazione fallita')
   }
+
+  const saveUserEdit = async () => {
+    if (!userEdit) return
+    const body: { id: string; name?: string; password?: string } = { id: userEdit.id }
+    if (userEdit.name.trim() !== '') body.name = userEdit.name.trim()
+    if (userEdit.password !== '') body.password = userEdit.password
+    const res = await fetch('/api/admin/users', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (res.ok) {
+      toast.success('Utente aggiornato ✅')
+      setUserEdit(null)
+      void loadAll()
+    } else {
+      const data = await res.json().catch(() => ({}))
+      toast.error(data.error ?? 'Aggiornamento fallito')
+    }
+  }
+
+  // ---------------- azioni progetti ----------------
 
   const deleteProject = async (p: AdminProject) => {
     if (!window.confirm(`Eliminare il progetto "${p.name}"?`)) return
@@ -270,6 +364,8 @@ function AdminPanel({
     } else toast.error('Rinomina fallita')
   }
 
+  // ---------------- azioni modelli ----------------
+
   const deleteAsset = async (a: Asset) => {
     if (!window.confirm(`Eliminare il modello "${a.name}"? I progetti che lo usano mostreranno un errore.`)) return
     const res = await fetch(`/api/admin/assets?url=${encodeURIComponent(a.url)}`, { method: 'DELETE' })
@@ -279,11 +375,13 @@ function AdminPanel({
     } else toast.error('Eliminazione fallita')
   }
 
+  // ---------------- contenuti del sito ----------------
+
   const saveSite = async () => {
     const res = await fetch('/api/admin/site', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...config, paragraphs }),
+      body: JSON.stringify({ ...config, paragraphs, sections, announcement }),
     })
     if (res.ok) toast.success('Contenuti salvati! Visita la home per vederli 🏰')
     else toast.error('Salvataggio fallito')
@@ -316,6 +414,86 @@ function AdminPanel({
 
   const removeParagraph = (idx: number) => {
     setParagraphs(ps => ps.filter((_, i) => i !== idx))
+  }
+
+  const updateSection = (key: string, patch: Partial<SectionConfig>) => {
+    setSections(ss => ({
+      ...ss,
+      [key]: {
+        title: ss[key]?.title ?? SECTION_DEFS.find(d => d.key === key)?.defaultTitle ?? key,
+        subtitle: ss[key]?.subtitle ?? '',
+        enabled: ss[key]?.enabled ?? true,
+        ...patch,
+      },
+    }))
+  }
+
+  // ---------------- chiavi 3D globali ----------------
+
+  const saveProviderKey = async (p: AdminProvider, keyToUse?: string) => {
+    const k = (keyToUse ?? providerKeys[p.id] ?? '').trim()
+    if (!k && !p.siteKey) return
+    setSavingProvider(p.id)
+    try {
+      const res = await fetch('/api/admin/providers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: p.id, key: k }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? 'Salvataggio fallito')
+      setProviderKeys(prev => ({ ...prev, [p.id]: '' }))
+      await loadAll()
+      toast.success(k ? `Chiave ${p.label} salvata (vale per TUTTI gli utenti) 🔐` : `Chiave ${p.label} rimossa`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Errore salvataggio')
+    } finally {
+      setSavingProvider(null)
+    }
+  }
+
+  const testProvider = async (p: AdminProvider) => {
+    setTestingProvider(p.id)
+    setTestResults(prev => ({ ...prev, [p.id]: '…' }))
+    try {
+      const res = await fetch('/api/admin/providers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: p.id, key: (providerKeys[p.id] ?? '').trim() || undefined }),
+      })
+      const data = (await res.json()) as { ok?: boolean; message?: string }
+      setTestResults(prev => ({ ...prev, [p.id]: data.message ?? 'Nessuna risposta' }))
+    } catch {
+      setTestResults(prev => ({ ...prev, [p.id]: 'Test non riuscito (rete)' }))
+    } finally {
+      setTestingProvider(null)
+    }
+  }
+
+  // ---------------- agente AI ----------------
+
+  const saveAI = async () => {
+    setSavingAi(true)
+    try {
+      const res = await fetch('/api/admin/ai', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          baseUrl: aiForm.baseUrl,
+          model: aiForm.model,
+          ...(aiForm.apiKey.trim() ? { apiKey: aiForm.apiKey.trim() } : {}),
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? 'Salvataggio fallito')
+      setAiForm(f => ({ ...f, apiKey: '' }))
+      await loadAll()
+      toast.success('Agente AI configurato! 🤖')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Errore salvataggio')
+    } finally {
+      setSavingAi(false)
+    }
   }
 
   return (
@@ -355,12 +533,14 @@ function AdminPanel({
         )}
 
         <Tabs defaultValue="stato">
-          <TabsList className="mb-4 grid w-full grid-cols-5">
+          <TabsList className="mb-4 grid w-full grid-cols-4 sm:grid-cols-7">
             <TabsTrigger value="stato">Stato</TabsTrigger>
             <TabsTrigger value="utenti">Utenti</TabsTrigger>
             <TabsTrigger value="progetti">Progetti</TabsTrigger>
-            <TabsTrigger value="modelli">Modelli 3D</TabsTrigger>
-            <TabsTrigger value="testi">Testi del sito</TabsTrigger>
+            <TabsTrigger value="modelli">Modelli</TabsTrigger>
+            <TabsTrigger value="chiavi">Chiavi 3D</TabsTrigger>
+            <TabsTrigger value="agente">Agente AI</TabsTrigger>
+            <TabsTrigger value="contenuti">Contenuti</TabsTrigger>
           </TabsList>
 
           {/* ---------------- STATO ---------------- */}
@@ -382,28 +562,80 @@ function AdminPanel({
                 <Check ok={stats?.env.blob} label="Vercel Blob attivo (modelli 3D)" hint="Su Vercel: Storage → Blob → Connect Project (Passo 5 della guida)." />
                 <Check ok={stats?.env.adminPasswordCustom} label="ADMIN_PASSWORD personalizzata" hint="Consigliata: Settings → Environment Variables → ADMIN_PASSWORD." warning />
                 <Check ok={stats?.counts.users !== undefined} label="Database connesso e tabelle pronte" hint={stats?.dbInfo} />
+                <Check
+                  ok={providers.some(p => p.siteKey || p.envKey)}
+                  label="Almeno un motore 3D globale attivo"
+                  hint="Senza chiavi globali, ogni utente deve aggiungere la propria chiave in Darpx.ai (vedi tab «Chiavi 3D»)."
+                  warning
+                />
+                <Check
+                  ok={Boolean(zaiEnv || ai?.hasKey)}
+                  label="Agente AI potenziato attivo"
+                  hint="Senza una chiave AI l'Agente Darpx risponde comunque col cervello locale istantaneo (vedi tab «Agente AI»)."
+                  warning
+                />
               </CardContent>
             </Card>
           </TabsContent>
 
           {/* ---------------- UTENTI ---------------- */}
           <TabsContent value="utenti" className="flex flex-col gap-3">
+            <p className="text-xs text-stone-400">
+              Puoi rinominare gli utenti, cambiare la loro password (reset) o
+              eliminarli con tutti i loro progetti.
+            </p>
             {users.length === 0 && <Empty text="Nessun utente registrato" />}
             {users.map(u => (
-              <Card key={u.id} className="flex items-center justify-between gap-3 rounded-2xl border-black/5 p-4">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-stone-800">
-                    {u.name || <i className="text-stone-400">senza nome</i>}
-                    <span className="ml-2 font-normal text-stone-500">{u.email}</span>
-                  </p>
-                  <p className="text-xs text-stone-400">
-                    {u._count.projects} progetti · registrato il {fmtDate(u.createdAt)}
-                    {u.accentColor ? ` · tema: ${u.accentColor}` : ''}
-                  </p>
-                </div>
-                <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={() => deleteUser(u)}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+              <Card key={u.id} className="rounded-2xl border-black/5 p-4">
+                {userEdit?.id === u.id ? (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-stone-800">
+                        {u.email}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Input
+                        value={userEdit.name}
+                        onChange={e => setUserEdit({ ...userEdit, name: e.target.value })}
+                        placeholder={`Nome (attuale: ${u.name || 'senza nome'})`}
+                        className="h-9 w-56"
+                      />
+                      <Input
+                        type="password"
+                        value={userEdit.password}
+                        onChange={e => setUserEdit({ ...userEdit, password: e.target.value })}
+                        placeholder="Nuova password (opzionale)"
+                        className="h-9 w-56"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={() => void saveUserEdit()}>Salva</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setUserEdit(null)}>Annulla</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-stone-800">
+                        {u.name || <i className="text-stone-400">senza nome</i>}
+                        <span className="ml-2 font-normal text-stone-500">{u.email}</span>
+                      </p>
+                      <p className="text-xs text-stone-400">
+                        {u._count.projects} progetti · {u._count.modelAssets} modelli · registrato il {fmtDate(u.createdAt)}
+                        {u.accentColor ? ` · tema: ${u.accentColor}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <Button variant="outline" size="sm" onClick={() => setUserEdit({ id: u.id, name: u.name ?? '', password: '' })}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={() => deleteUser(u)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </Card>
             ))}
           </TabsContent>
@@ -449,7 +681,8 @@ function AdminPanel({
           {/* ---------------- MODELLI 3D ---------------- */}
           <TabsContent value="modelli" className="flex flex-col gap-3">
             <p className="text-xs text-stone-400">
-              Archivio: {assetStore === 'blob' ? 'Vercel Blob (produzione)' : 'public/uploads (locale)'}
+              Archivio: {assetStore === 'blob' ? 'Vercel Blob (produzione)' : 'public/uploads (locale)'} ·
+              con l&apos;occhio 👁️ apri l&apos;anteprima 3D di ogni modello
             </p>
             {assets.length === 0 && <Empty text="Nessun modello caricato" />}
             {assets.map(a => (
@@ -457,18 +690,304 @@ function AdminPanel({
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-stone-800">{a.name}</p>
                   <p className="truncate text-xs text-stone-400">
-                    {fmtBytes(a.bytes)} · {fmtDate(a.uploadedAt)} · {a.url}
+                    {fmtBytes(a.bytes)} · {fmtDate(a.uploadedAt)}
                   </p>
                 </div>
-                <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={() => deleteAsset(a)}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    title="Anteprima 3D"
+                    onClick={() => {
+                      setPreviewUrl(a.url)
+                      setPreviewName(a.name)
+                    }}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50" onClick={() => deleteAsset(a)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </Card>
             ))}
           </TabsContent>
 
-          {/* ---------------- TESTI DEL SITO ---------------- */}
-          <TabsContent value="testi" className="flex flex-col gap-4">
+          {/* ---------------- CHIAVI 3D (GLOBALI) ---------------- */}
+          <TabsContent value="chiavi" className="flex flex-col gap-3">
+            <Card className="rounded-2xl border-black/5 bg-gradient-to-br from-white to-stone-50">
+              <CardContent className="p-4">
+                <p className="text-sm text-stone-600">
+                  Le chiavi che imposti qui sono <b>globali</b>: valgono per
+                  TUTTI gli utenti del sito, che potranno generare modelli 3D
+                  da Darpx.ai senza chiavi personali. Vengono salvate{' '}
+                  <b>cifrate</b> nel database. Con più chiavi impostate, se un
+                  motore si blocca il sito passa automaticamente al successivo.
+                </p>
+              </CardContent>
+            </Card>
+            {providers.map(p => (
+              <Card key={p.id} className="rounded-2xl border-black/5 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="text-xl">{p.icon}</span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-stone-800">{p.label}</p>
+                      <p className="text-[11px] text-stone-400">{p.note}</p>
+                    </div>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                      p.siteKey
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : p.envKey
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-stone-200 text-stone-500'
+                    }`}
+                  >
+                    {p.siteKey ? '✅ chiave globale attiva' : p.envKey ? '⚙️ da variabile d\'ambiente' : 'non configurato'}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Input
+                    type="password"
+                    value={providerKeys[p.id] ?? ''}
+                    onChange={e => setProviderKeys(prev => ({ ...prev, [p.id]: e.target.value }))}
+                    placeholder={p.keyHint}
+                    className="h-9 min-w-0 flex-1"
+                  />
+                  <Button
+                    size="sm"
+                    disabled={savingProvider === p.id || (!(providerKeys[p.id] ?? '').trim() && !p.siteKey)}
+                    onClick={() => void saveProviderKey(p)}
+                  >
+                    {savingProvider === p.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : p.siteKey ? (
+                      'Sostituisci'
+                    ) : (
+                      'Salva'
+                    )}
+                  </Button>
+                  {p.siteKey && (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => void saveProviderKey(p, '')}>
+                        Rimuovi
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={testingProvider === p.id}
+                        onClick={() => void testProvider(p)}
+                      >
+                        {testingProvider === p.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          'Test'
+                        )}
+                      </Button>
+                    </>
+                  )}
+                  <a
+                    href={p.keyUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] font-medium text-[var(--primary-strong)] underline-offset-2 hover:underline"
+                  >
+                    prendi la chiave ↗
+                  </a>
+                </div>
+                {testResults[p.id] && (
+                  <p
+                    className={`mt-2 rounded-lg px-3 py-1.5 text-xs ${
+                      testResults[p.id].includes('valida')
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-red-50 text-red-700'
+                    }`}
+                  >
+                    {testResults[p.id]}
+                  </p>
+                )}
+              </Card>
+            ))}
+          </TabsContent>
+
+          {/* ---------------- AGENTE AI ---------------- */}
+          <TabsContent value="agente" className="flex flex-col gap-3">
+            <Card className="rounded-2xl border-black/5">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Bot className="h-4 w-4" /> Agente Darpx · stato
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2 text-sm">
+                <div className="flex items-center justify-between gap-2 rounded-xl bg-stone-50 px-3 py-2">
+                  <span>🧠 Cervello locale (istantaneo, senza chiavi)</span>
+                  <span className="font-bold text-emerald-600">SEMPRE ATTIVO</span>
+                </div>
+                <div className="flex items-center justify-between gap-2 rounded-xl bg-stone-50 px-3 py-2">
+                  <span>⚙️ z-ai SDK (variabili d&apos;ambiente sul server)</span>
+                  <span className={`font-bold ${zaiEnv ? 'text-emerald-600' : 'text-stone-400'}`}>
+                    {zaiEnv ? 'ATTIVO' : 'non configurato'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2 rounded-xl bg-stone-50 px-3 py-2">
+                  <span>🔌 Endpoint OpenAI-compatibile (qui sotto)</span>
+                  <span className={`font-bold ${ai?.hasKey ? 'text-emerald-600' : 'text-stone-400'}`}>
+                    {ai?.hasKey ? `ATTIVO ${ai.keyPreview ? `(${ai.keyPreview})` : ''}` : 'non configurato'}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-2xl border-black/5">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <KeyRound className="h-4 w-4" /> Endpoint OpenAI-compatibile (opzionale)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                <p className="text-xs leading-relaxed text-stone-500">
+                  Con una chiave qualsiasi di un servizio compatibile con OpenAI
+                  (OpenAI, OpenRouter, Groq, Together…), l&apos;Agente Darpx
+                  risponde anche alle domande complesse con un vero modello
+                  linguistico. Senza chiave resta comunque attivo il cervello
+                  locale. La chiave è salvata <b>cifrata</b>.
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ai-base">Base URL</Label>
+                  <Input
+                    id="ai-base"
+                    value={aiForm.baseUrl}
+                    onChange={e => setAiForm({ ...aiForm, baseUrl: e.target.value })}
+                    placeholder="https://api.openai.com/v1"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ai-model">Modello</Label>
+                  <Input
+                    id="ai-model"
+                    value={aiForm.model}
+                    onChange={e => setAiForm({ ...aiForm, model: e.target.value })}
+                    placeholder="gpt-4o-mini"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="ai-key">
+                    Chiave API {ai?.hasKey ? '(già impostata: lascia vuoto per tenerla)' : ''}
+                  </Label>
+                  <Input
+                    id="ai-key"
+                    type="password"
+                    value={aiForm.apiKey}
+                    onChange={e => setAiForm({ ...aiForm, apiKey: e.target.value })}
+                    placeholder="sk-…"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={() => void saveAI()} disabled={savingAi}>
+                    {savingAi && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Salva
+                  </Button>
+                  {ai?.hasKey && (
+                    <Button
+                      variant="outline"
+                      onClick={async () => {
+                        await fetch('/api/admin/ai', { method: 'DELETE' })
+                        await loadAll()
+                        toast.success('Configurazione AI rimossa')
+                      }}
+                    >
+                      <Trash2 className="mr-1 h-4 w-4" /> Rimuovi
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ---------------- CONTENUTI ---------------- */}
+          <TabsContent value="contenuti" className="flex flex-col gap-4">
+            {/* banner annuncio */}
+            <Card className="rounded-2xl border-black/5">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Megaphone className="h-4 w-4" /> Banner annuncio (visibile a tutti in home)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                <textarea
+                  value={announcement.text}
+                  onChange={e => setAnnouncement({ ...announcement, text: e.target.value })}
+                  rows={2}
+                  maxLength={600}
+                  placeholder="Es: 🎉 Novità: crea modelli 3D con Tripo e Hunyuan! Prova la sezione Darpx.ai"
+                  className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+                />
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-stone-600">
+                  <input
+                    type="checkbox"
+                    checked={announcement.enabled}
+                    onChange={e => setAnnouncement({ ...announcement, enabled: e.target.checked })}
+                    className="accent-[var(--primary)]"
+                  />
+                  Mostra il banner in cima alla home
+                </label>
+              </CardContent>
+            </Card>
+
+            {/* reparti on/off + titoli */}
+            <Card className="rounded-2xl border-black/5">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Database className="h-4 w-4" /> Reparti della home (titoli, descrizioni, on/off)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                <p className="text-xs text-stone-400">
+                  Puoi rinominare i reparti, cambiarne la descrizione oppure
+                  nasconderli: la barra della home si aggiorna subito.
+                </p>
+                {SECTION_DEFS.map(def => {
+                  const s = sections[def.key]
+                  return (
+                    <div
+                      key={def.key}
+                      className="flex flex-col gap-2 rounded-2xl border border-black/5 bg-stone-50/60 p-3"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-[var(--primary-soft)] px-2 py-0.5 text-[11px] font-bold text-stone-600">
+                          {def.label}
+                        </span>
+                        <Input
+                          value={s?.title ?? def.defaultTitle}
+                          onChange={e => updateSection(def.key, { title: e.target.value })}
+                          placeholder={def.defaultTitle}
+                          className="h-8 flex-1"
+                        />
+                        <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-stone-600">
+                          <input
+                            type="checkbox"
+                            checked={s?.enabled !== false}
+                            onChange={e => updateSection(def.key, { enabled: e.target.checked })}
+                            className="accent-[var(--primary)]"
+                          />
+                          visibile
+                        </label>
+                      </div>
+                      <textarea
+                        value={s?.subtitle ?? ''}
+                        onChange={e => updateSection(def.key, { subtitle: e.target.value })}
+                        rows={2}
+                        placeholder={DEFAULT_SECTION_SUBTITLES[def.key] ?? 'Descrizione del reparto'}
+                        className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+                      />
+                    </div>
+                  )
+                })}
+              </CardContent>
+            </Card>
+
+            {/* testi principali */}
             <Card className="rounded-2xl border-black/5">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-base">
@@ -485,18 +1004,17 @@ function AdminPanel({
                         value={config[k]}
                         onChange={e => setConfig({ ...config, [k]: e.target.value })}
                         rows={3}
-                        className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+                        className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
                       />
                     ) : (
                       <Input id={`site-${k}`} value={config[k]} onChange={e => setConfig({ ...config, [k]: e.target.value })} />
                     )}
                   </div>
                 ))}
-                <Button onClick={saveSite} className="self-start">Salva i testi</Button>
               </CardContent>
             </Card>
 
-            {/* ---------------- PARAGRAFI DELLA HOME ---------------- */}
+            {/* paragrafi */}
             <Card className="rounded-2xl border-black/5">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center justify-between gap-2 text-base">
@@ -511,7 +1029,7 @@ function AdminPanel({
               <CardContent className="flex flex-col gap-3">
                 <p className="text-xs text-stone-400">
                   Crea quante sezioni vuoi: compariranno sulla home come schede,
-                  nell&apos;ordine in cui le disposi. Titolo e testo sono liberi.
+                  nell&apos;ordine in cui le dispositi. Titolo e testo sono liberi.
                 </p>
                 {paragraphs.length === 0 && (
                   <Empty text="Nessun paragrafo: la home mostra solo i testi principali" />
@@ -564,15 +1082,16 @@ function AdminPanel({
                       onChange={e => updateParagraph(idx, { text: e.target.value })}
                       rows={3}
                       placeholder="Testo del paragrafo"
-                      className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+                      className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
                     />
                   </div>
                 ))}
-                <Button onClick={saveSite} className="self-start">
-                  Salva i paragrafi
-                </Button>
               </CardContent>
             </Card>
+
+            <Button onClick={saveSite} className="self-start" size="lg">
+              💾 Salva tutti i contenuti
+            </Button>
           </TabsContent>
         </Tabs>
 
@@ -582,6 +1101,9 @@ function AdminPanel({
           </a>
         </div>
       </main>
+
+      {/* anteprima 3D dei modelli (stessa del sito) */}
+      <GLBViewer url={previewUrl} name={previewName} onClose={() => setPreviewUrl(null)} />
     </div>
   )
 }
@@ -590,7 +1112,7 @@ function AdminPanel({
 // Piccoli componenti
 // ============================================================
 
-function Centered({ children }: { children: React.ReactNode }) {
+function Centered({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--site-bg)] p-4">
       {children}
@@ -598,7 +1120,7 @@ function Centered({ children }: { children: React.ReactNode }) {
   )
 }
 
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value?: number }) {
+function StatCard({ icon, label, value }: { icon: ReactNode; label: string; value?: number }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}

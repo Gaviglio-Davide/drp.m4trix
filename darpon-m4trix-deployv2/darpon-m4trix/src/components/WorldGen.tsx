@@ -14,6 +14,7 @@ import {
   type GenSize,
 } from '@/lib/worldgen'
 import { encodeTerrain } from '@/lib/terrain'
+import { sectionOf, useUI } from '@/lib/ui-store'
 
 const SIZES: { id: GenSize; label: string; hint: string }[] = [
   { id: 's', label: 'Piccola', hint: 'quartiere' },
@@ -24,6 +25,8 @@ const SIZES: { id: GenSize; label: string; hint: string }[] = [
 
 export default function WorldGen() {
   const openProject = useWorld(s => s.openProject)
+  const site = useUI(s => s.site)
+  const section = sectionOf(site.sections, 'genera')
   const [kind, setKind] = useState<GenKind>('citta')
   const [size, setSize] = useState<GenSize>('m')
   const [density, setDensity] = useState(0.6)
@@ -89,12 +92,13 @@ export default function WorldGen() {
       <div className="rounded-3xl bg-white/85 p-5 shadow-xl ring-1 ring-black/5 backdrop-blur">
         <div className="flex items-center gap-2">
           <Wand2 className="h-5 w-5 text-[var(--primary)]" />
-          <h2 className="text-lg font-semibold">Generatore di mondi</h2>
+          <h2 className="text-lg font-semibold">{section.title === 'Genera' ? 'Generatore di mondi' : section.title}</h2>
         </div>
         <p className="mt-1 text-sm text-stone-500">
-          Un intero mondo in un click: strade, case, mura e paesaggi generati
-          con l&apos;algoritmo interno. Tutto resta modificabile con
-          l&apos;editor, oggetto per oggetto.
+          {section.subtitle ||
+            <>Un intero mondo in un click: strade, case, mura e paesaggi generati
+            con l&apos;algoritmo interno. Tutto resta modificabile con
+            l&apos;editor, oggetto per oggetto.</>}
         </p>
 
         {/* tipo di mondo */}

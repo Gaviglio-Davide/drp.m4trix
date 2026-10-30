@@ -46,6 +46,7 @@ import {
 } from '@/lib/assets'
 import { PALETTE } from '@/lib/world-store'
 import { useStructures } from '@/lib/structures-store'
+import { sectionOf, useUI } from '@/lib/ui-store'
 
 const DESIGN_HALF = 4 // griglia 9x9 celle: -4..4
 const MAX_LEVEL = 6
@@ -60,6 +61,8 @@ export default function StructuresLab() {
   const renameStructure = useStructures(s => s.rename)
   const duplicateStructure = useStructures(s => s.duplicate)
   const removeStructure = useStructures(s => s.remove)
+  const site = useUI(s => s.site)
+  const section = sectionOf(site.sections, 'strutture')
 
   const [pieces, setPieces] = useState<StructurePiece[]>([])
   const [history, setHistory] = useState<StructurePiece[][]>([])
@@ -153,12 +156,13 @@ export default function StructuresLab() {
         <div>
           <h2 className="flex items-center gap-2 text-xl font-black tracking-tight text-stone-800">
             <Hammer className="h-5 w-5 text-[var(--primary)]" />
-            Reparto strutture
+            {section.title}
           </h2>
           <p className="text-sm text-stone-500">
-            Progetta case, torri e fortificazioni <b>fuori</b> dai mondi. Le
-            strutture salvate finiscono in libreria e le ritrovi pronte in
-            ogni mondo, nella barra oggetti.
+            {section.subtitle ||
+              <>Progetta case, torri e fortificazioni <b>fuori</b> dai mondi. Le
+              strutture salvate finiscono in libreria e le ritrovi pronte in
+              ogni mondo, nella barra oggetti.</>}
           </p>
         </div>
         <div className="flex items-center gap-2">

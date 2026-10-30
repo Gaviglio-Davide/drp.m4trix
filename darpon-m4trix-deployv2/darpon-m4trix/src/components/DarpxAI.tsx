@@ -3,17 +3,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
+  Bot,
+  CheckCircle2,
+  Eye,
   Image as ImageIcon,
   KeyRound,
   Loader2,
   Mountain,
   Plus,
   Sparkles,
+  Trash2,
   Wand2,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import GLBViewer from '@/components/GLBViewer'
 import { fetchAuth } from '@/lib/http'
+import { useUI } from '@/lib/ui-store'
 import { useWorld, nextId } from '@/lib/world-store'
 import {
   analyzeImage,
@@ -52,16 +58,36 @@ const ART_STYLES = [
   { id: 'sculpture', label: 'Scultura', icon: '🗿' },
 ]
 
+type ProviderRow = {
+  id: string
+  label: string
+  icon: string
+  keyUrl: string
+  keyHint: string
+  note: string
+  hasKey: boolean
+  source: 'personal' | 'site' | 'env' | null
+}
+
 type JobState = {
   jobId: string
   phase: 'running' | 'succeeded' | 'failed'
   message?: string
   progress?: number
   modelName?: string
+  modelUrl?: string
+}
+
+const SOURCE_LABEL: Record<string, string> = {
+  personal: 'chiave tua 🔐',
+  site: 'chiave del sito 🌐',
+  env: 'chiave del server ⚙️',
 }
 
 export default function DarpxAI() {
   const openProject = useWorld(s => s.openProject)
+  const darpxPrefill = useUI(s => s.darpxPrefill)
+  const setDarpxPrefill = useUI(s => s.setDarpxPrefill)
 
   // ---- immagine → mondo ----
   const fileRef = useRef<HTMLInputElement>(null)
@@ -72,26 +98,46 @@ export default function DarpxAI() {
   const [density, setDensity] = useState(0.6)
   const [creating, setCreating] = useState(false)
 
-  // ---- testo → 3D ----
-  const [hasKey, setHasKey] = useState<boolean | null>(null)
-  const [keyInput, setKeyInput] = useState('')
-  const [savingKey, setSavingKey] = useState(false)
+  // ---- testo o immagine → 3D ----
+  const [providers, setProviders] = useState<ProviderRow[] | null>(null)
+  const [chosen, setChosen] = useState<string>('auto')
+  const [keyInputs, setKeyInputs] = useState<Record<string, string>>({})
+  const [savingKeyFor, setSavingKeyFor] = useState<string | null>(null)
   const [prompt, setPrompt] = useState('')
   const [artStyle, setArtStyle] = useState('realistic')
   const [job, setJob] = useState<JobState | null>(null)
+  const [image3d, setImage3d] = useState<string | null>(null)
+  const img3dRef = useRef<HTMLInputElement>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewName, setPreviewName] = useState<string>('')
+
+  const refreshProviders = useCallback(async () => {
+    try {
+      const res = await fetchAuth('/api/darpx/providers')
+      if (!res.ok) return
+      const data = (await res.json()) as { providers?: ProviderRow[] }
+      setProviders(data.providers ?? [])
+    } catch {
+      setProviders([])
+    }
+  }, [])
 
   useEffect(() => {
-    ;(async () => {
-      try {
-        const res = await fetchAuth('/api/auth/profile')
-        if (!res.ok) return
-        const data = (await res.json()) as { user?: { hasMeshyKey?: boolean } }
-        setHasKey(Boolean(data.user?.hasMeshyKey))
-      } catch {
-        setHasKey(false)
-      }
-    })()
-  }, [])
+    void refreshProviders()
+  }, [refreshProviders])
+
+  // prefill dall'Agente Darpx
+  useEffect(() => {
+    if (darpxPrefill) {
+      setPrompt(darpxPrefill)
+      setDarpxPrefill(null)
+      toast.info('Prompt preparato dall\'Agente: premi «Crea il modello 3D» 🧊')
+    }
+  }, [darpxPrefill, setDarpxPrefill])
+
+  const anyKey = (providers ?? []).some(p => p.hasKey)
+
+  // ---------- immagine → mondo ----------
 
   const pickImage = useCallback(async (file: File) => {
     setAnalyzing(true)
@@ -168,31 +214,67 @@ export default function DarpxAI() {
     }
   }
 
-  const saveKey = async () => {
-    const k = keyInput.trim()
+  // ---------- chiavi dei motori 3D ----------
+
+  const saveKey = async (provider: ProviderRow) => {
+    const k = (keyInputs[provider.id] ?? '').trim()
     if (!k) return
-    setSavingKey(true)
+    setSavingKeyFor(provider.id)
     try {
-      const res = await fetchAuth('/api/auth/profile', {
-        method: 'PATCH',
+      const res = await fetchAuth('/api/darpx/providers', {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meshyKey: k }),
+        body: JSON.stringify({ provider: provider.id, key: k }),
       })
       const data = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) throw new Error(data.error ?? 'Salvataggio chiave non riuscito')
-      setHasKey(true)
-      setKeyInput('')
-      toast.success('Chiave salvata in modo cifrato 🔐')
+      setKeyInputs(prev => ({ ...prev, [provider.id]: '' }))
+      await refreshProviders()
+      toast.success(`Chiave ${provider.label} salvata in modo cifrato 🔐`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Errore salvataggio chiave')
     } finally {
-      setSavingKey(false)
+      setSavingKeyFor(null)
     }
   }
 
+  const removeKey = async (provider: ProviderRow) => {
+    try {
+      const res = await fetchAuth(
+        `/api/darpx/providers?provider=${encodeURIComponent(provider.id)}`,
+        { method: 'DELETE' }
+      )
+      if (!res.ok) throw new Error()
+      await refreshProviders()
+      toast.success(`Chiave ${provider.label} rimossa`)
+    } catch {
+      toast.error('Rimozione non riuscita')
+    }
+  }
+
+  // ---------- immagine per il 3D ----------
+
+  const pickImage3d = async (file: File) => {
+    try {
+      const raw = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader()
+        r.onload = () => resolve(String(r.result))
+        r.onerror = () => reject(new Error('Lettura non riuscita'))
+        r.readAsDataURL(file)
+      })
+      const small = await shrinkImage(raw, 1024, 0.82)
+      setImage3d(small)
+      if (!prompt.trim()) setPrompt('Modello 3D da questa immagine')
+    } catch {
+      toast.error('Immagine non valida')
+    }
+  }
+
+  // ---------- job 3D ----------
+
   const startJob = async () => {
-    if (prompt.trim().length < 3) {
-      toast.error('Descrivi cosa vuoi creare')
+    if (prompt.trim().length < 3 && !image3d) {
+      toast.error('Descrivi cosa vuoi creare (o carica un\'immagine)')
       return
     }
     setJob(null)
@@ -200,15 +282,33 @@ export default function DarpxAI() {
       const res = await fetchAuth('/api/darpx/text-to-3d', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, artStyle }),
+        body: JSON.stringify({
+          prompt: prompt.trim() || '3D model from image',
+          artStyle,
+          ...(chosen !== 'auto' ? { provider: chosen } : {}),
+          ...(image3d ? { image: image3d } : {}),
+        }),
       })
       const data = (await res.json().catch(() => ({}))) as {
         jobId?: string
+        provider?: string
+        status?: string
+        model?: { name: string; url: string }
         error?: string
       }
-      if (!res.ok || !data.jobId) {
-        throw new Error(data.error ?? 'Impossibile avviare la generazione')
+      if (!res.ok) throw new Error(data.error ?? 'Impossibile avviare la generazione')
+      // Stability è sincrono: può arrivare già pronto
+      if (data.status === 'succeeded' && data.model) {
+        setJob({
+          jobId: 'done',
+          phase: 'succeeded',
+          modelName: data.model.name,
+          modelUrl: data.model.url,
+        })
+        toast.success('Modello pronto! Lo trovi in «Progetti importati» 📦')
+        return
       }
+      if (!data.jobId) throw new Error('Nessun job ricevuto')
       setJob({ jobId: data.jobId, phase: 'running', progress: 0 })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Errore avvio generazione')
@@ -221,12 +321,14 @@ export default function DarpxAI() {
     let stop = false
     const tick = async () => {
       try {
-        const res = await fetchAuth(`/api/darpx/text-to-3d?jobId=${encodeURIComponent(job.jobId)}`)
+        const res = await fetchAuth(
+          `/api/darpx/text-to-3d?jobId=${encodeURIComponent(job.jobId)}&name=${encodeURIComponent(prompt.slice(0, 40))}`
+        )
         const data = (await res.json().catch(() => ({}))) as {
           status?: string
           progress?: number
           error?: string
-          model?: { name: string }
+          model?: { name: string; url: string }
         }
         if (stop) return
         if (data.status === 'succeeded') {
@@ -234,8 +336,9 @@ export default function DarpxAI() {
             jobId: job.jobId,
             phase: 'succeeded',
             modelName: data.model?.name,
+            modelUrl: data.model?.url,
           })
-          toast.success('Modello pronto! Lo trovi in "Progetti importati" e nella barra oggetti dell\'editor 📦')
+          toast.success('Modello pronto! Lo trovi in «Progetti importati» e nella barra oggetti dell\'editor 📦')
           return
         }
         if (data.status === 'failed') {
@@ -258,7 +361,7 @@ export default function DarpxAI() {
       stop = true
       clearInterval(iv)
     }
-  }, [job?.jobId, job?.phase])
+  }, [job?.jobId, job?.phase, prompt])
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -381,59 +484,161 @@ export default function DarpxAI() {
         )}
       </div>
 
-      {/* ============ TESTO → 3D ============ */}
+      {/* ============ TESTO O IMMAGINE → 3D ============ */}
       <div className="rounded-3xl bg-white/85 p-5 shadow-xl ring-1 ring-black/5 backdrop-blur">
         <div className="flex items-center gap-2">
           <Mountain className="h-5 w-5 text-[var(--primary)]" />
-          <h2 className="text-lg font-semibold">Darpx.ai · Testo → 3D</h2>
+          <h2 className="text-lg font-semibold">Darpx.ai · Testo o Immagine → 3D</h2>
         </div>
         <p className="mt-1 text-sm text-stone-500">
-          Descrivi un personaggio, una casa, un mostro… e Darpx crea il
-          modello 3D. Lo trovi poi nei <b>Progetti importati</b> e nella barra
-          oggetti di ogni mondo, come i modelli Meshy che già usi.
+          Descrivi un personaggio, una casa, un mostro… oppure parti da
+          un&apos;immagine. Darpx usa <b>quattro motori in cascata</b> — Tripo,
+          fal.ai (Hunyuan 3D), Stable Fast 3D e Meshy — quindi se uno si
+          blocca, passa al successivo da solo. Il modello arriva nei{' '}
+          <b>Progetti importati</b> con anteprima 👁️.
         </p>
 
-        {/* chiave Meshy */}
-        <div className="mt-4 rounded-2xl bg-amber-50 p-3 ring-1 ring-amber-200">
-          <div className="flex items-center gap-2 text-sm font-medium text-amber-900">
-            <KeyRound className="h-4 w-4" />
-            {hasKey ? 'Chiave API Meshy configurata ✅' : 'Serve la tua chiave API Meshy'}
-          </div>
-          <p className="mt-1 text-xs leading-relaxed text-amber-800">
-            La creazione dei modelli usa i crediti del tuo account Meshy
-            (gratuito). La trovi su <b>meshy.ai → Account → API</b> (o su
-            alpha.meshy.ai). La chiave viene salvata <b>cifrata</b> nel
-            database: mai in chiaro e mai nel browser.
-          </p>
-          {!hasKey && (
-            <div className="mt-2 flex gap-2">
-              <input
-                type="password"
-                value={keyInput}
-                onChange={e => setKeyInput(e.target.value)}
-                placeholder="msy_xxxxxxxxxxxxxxxxxxxxxxxx"
-                className="flex-1 rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--primary)]"
-              />
-              <Button size="sm" onClick={saveKey} disabled={savingKey || !keyInput.trim()}>
-                {savingKey ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Salva'}
-              </Button>
+        {/* motori disponibili */}
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          {(providers ?? []).map(p => (
+            <div
+              key={p.id}
+              className={`rounded-2xl p-3 text-sm ring-1 transition-all ${
+                chosen === p.id
+                  ? 'bg-[var(--primary-soft)] ring-2 ring-[var(--primary)]'
+                  : p.hasKey
+                    ? 'bg-emerald-50/60 ring-emerald-200'
+                    : 'bg-stone-50 ring-stone-200'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  className="flex min-w-0 items-center gap-1.5 text-left"
+                  onClick={() => setChosen(chosen === p.id ? 'auto' : p.id)}
+                  title={chosen === p.id ? 'Torna a selezione automatica' : 'Usa solo questo motore'}
+                >
+                  <span className="text-base">{p.icon}</span>
+                  <span className="truncate font-semibold text-stone-700">{p.label}</span>
+                </button>
+                {p.hasKey ? (
+                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                    <CheckCircle2 className="h-3 w-3" />
+                    {SOURCE_LABEL[p.source ?? ''] ?? 'pronto'}
+                  </span>
+                ) : (
+                  <span className="shrink-0 rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-500">
+                    senza chiave
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-[11px] leading-snug text-stone-500">{p.note}</p>
+              {p.hasKey && p.source === 'personal' && (
+                <button
+                  onClick={() => void removeKey(p)}
+                  className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-red-500 hover:underline"
+                >
+                  <Trash2 className="h-3 w-3" /> rimuovi la tua chiave
+                </button>
+              )}
+              {!p.hasKey && (
+                <div className="mt-2 flex gap-1.5">
+                  <input
+                    type="password"
+                    value={keyInputs[p.id] ?? ''}
+                    onChange={e =>
+                      setKeyInputs(prev => ({ ...prev, [p.id]: e.target.value }))
+                    }
+                    placeholder={p.keyHint}
+                    className="h-8 min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-2.5 text-xs outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                  />
+                  <Button
+                    size="sm"
+                    className="h-8 px-2.5 text-xs"
+                    disabled={savingKeyFor === p.id || !(keyInputs[p.id] ?? '').trim()}
+                    onClick={() => void saveKey(p)}
+                  >
+                    {savingKeyFor === p.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <KeyRound className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                </div>
+              )}
+              {!p.hasKey && (
+                <a
+                  href={p.keyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1 inline-block text-[11px] font-medium text-[var(--primary-strong)] underline-offset-2 hover:underline"
+                >
+                  prendi la chiave gratuita ↗
+                </a>
+              )}
             </div>
-          )}
-          {hasKey && (
-            <div className="mt-2 flex gap-2">
-              <input
-                type="password"
-                value={keyInput}
-                onChange={e => setKeyInput(e.target.value)}
-                placeholder="Nuova chiave (opzionale, per sostituirla)"
-                className="flex-1 rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--primary)]"
-              />
-              <Button size="sm" variant="outline" onClick={saveKey} disabled={savingKey || !keyInput.trim()}>
-                {savingKey ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Aggiorna'}
-              </Button>
+          ))}
+          {providers === null && (
+            <div className="col-span-full flex items-center justify-center gap-2 rounded-2xl bg-stone-50 p-4 text-sm text-stone-400 ring-1 ring-stone-200">
+              <Loader2 className="h-4 w-4 animate-spin" /> Controllo i motori disponibili…
             </div>
           )}
         </div>
+
+        <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-purple-50 px-3 py-2 text-[11px] text-purple-800 ring-1 ring-purple-200">
+          <span className="flex items-center gap-1.5">
+            <Bot className="h-3.5 w-3.5" />
+            {chosen === 'auto'
+              ? anyKey
+                ? 'Modalità AUTO: uso il primo motore pronto e passo al successivo se si blocca'
+                : 'Aggiungi almeno una chiave per attivare la generazione (l\'admin può anche metterne una globale)'
+              : 'Motore scelto: se si blocca, riprovo automaticamente con gli altri'}
+          </span>
+          {chosen !== 'auto' && (
+            <button
+              onClick={() => setChosen('auto')}
+              className="shrink-0 font-bold underline-offset-2 hover:underline"
+            >
+              torna ad AUTO
+            </button>
+          )}
+        </div>
+
+        {/* immagine di partenza (opzionale) */}
+        <input
+          ref={img3dRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0]
+            if (f) void pickImage3d(f)
+            e.target.value = ''
+          }}
+        />
+        {image3d ? (
+          <div className="relative mt-4 overflow-hidden rounded-2xl ring-1 ring-black/10">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={image3d} alt="Immagine per il 3D" className="h-40 w-full object-cover" />
+            <button
+              onClick={() => setImage3d(null)}
+              className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white transition hover:bg-black/80"
+              title="Rimuovi immagine"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <div className="absolute bottom-2 left-2 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-semibold text-white">
+              🖼️ Creo il 3D da questa immagine
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => img3dRef.current?.click()}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-stone-300 p-3 text-sm text-stone-500 transition-colors hover:border-[var(--primary)] hover:bg-stone-50"
+          >
+            <ImageIcon className="h-4 w-4" />
+            <span className="font-medium">(opzionale) parti da un&apos;immagine</span>
+          </button>
+        )}
 
         {/* prompt */}
         <textarea
@@ -464,7 +669,7 @@ export default function DarpxAI() {
         <Button
           className="mt-4 w-full"
           onClick={startJob}
-          disabled={hasKey === null || hasKey === false || !!job?.phase.match('running')}
+          disabled={providers === null || !anyKey || job?.phase === 'running'}
         >
           {job?.phase === 'running' ? (
             <>
@@ -473,13 +678,14 @@ export default function DarpxAI() {
             </>
           ) : (
             <>
-              <Plus className="mr-2 h-4 w-4" /> Genera il modello 3D
+              <Plus className="mr-2 h-4 w-4" /> Crea il modello 3D
             </>
           )}
         </Button>
-        {hasKey === false && (
+        {providers !== null && !anyKey && (
           <p className="mt-2 text-center text-xs text-stone-400">
-            Aggiungi la chiave qui sopra per attivare il bottone
+            Aggiungi una chiave sopra (o chiedi all&apos;admin di configurarne
+            una globale) per attivare il bottone
           </p>
         )}
         {job?.phase === 'failed' && (
@@ -488,12 +694,34 @@ export default function DarpxAI() {
           </p>
         )}
         {job?.phase === 'succeeded' && (
-          <p className="mt-2 rounded-xl bg-emerald-50 p-2 text-center text-xs text-emerald-700 ring-1 ring-emerald-200">
-            Modello «{job.modelName ?? 'Darpx'}» pronto! Vai su «Progetti
-            importati» per vederlo e sceglierne la dimensione.
-          </p>
+          <div className="mt-2 rounded-xl bg-emerald-50 p-3 text-center text-xs text-emerald-700 ring-1 ring-emerald-200">
+            <p>
+              Modello «{job.modelName ?? 'Darpx'}» pronto! Lo trovi in «Progetti
+              importati» e nella barra oggetti dell&apos;editor.
+            </p>
+            {job.modelUrl && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="mx-auto mt-2"
+                onClick={() => {
+                  setPreviewUrl(job.modelUrl ?? null)
+                  setPreviewName(job.modelName ?? 'Modello Darpx')
+                }}
+              >
+                <Eye className="mr-1 h-3.5 w-3.5" /> Guarda l&apos;anteprima 3D
+              </Button>
+            )}
+          </div>
         )}
       </div>
+
+      {/* ============ ANTEPRIMA ============ */}
+      <GLBViewer
+        url={previewUrl}
+        name={previewName}
+        onClose={() => setPreviewUrl(null)}
+      />
     </div>
   )
 }

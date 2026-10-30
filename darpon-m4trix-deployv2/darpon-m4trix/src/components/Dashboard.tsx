@@ -50,11 +50,14 @@ import ImportedModels from '@/components/ImportedModels'
 import StructuresLab from '@/components/StructuresLab'
 import WorldGen from '@/components/WorldGen'
 import DarpxAI from '@/components/DarpxAI'
+import DarpxAgent from '@/components/DarpxAgent'
 import ProfileDialog from '@/components/ProfileDialog'
 import { SITE_DEFAULTS, type SiteConfig } from '@/lib/site'
+import { sectionOf, useUI, type DashboardTab } from '@/lib/ui-store'
 
-// I 3 reparti della home: mondi, modelli importati, strutture
-type Tab = 'mondi' | 'importati' | 'strutture' | 'genera' | 'darpx'
+// I reparti della home: mondi, modelli importati, strutture, genera, darpx
+
+type Tab = DashboardTab
 
 const CARD_ITEM = {
   hidden: { opacity: 0, y: 18, scale: 0.98 },
@@ -82,7 +85,10 @@ export default function Dashboard() {
   const [renameId, setRenameId] = useState<string | null>(null)
   const [renameName, setRenameName] = useState('')
   const [busy, setBusy] = useState(false)
-  const [tab, setTab] = useState<Tab>('mondi')
+  const tab = useUI(s => s.tab)
+  const setTab = useUI(s => s.setTab)
+  const site = useUI(s => s.site)
+  const loadSite = useUI(s => s.loadSite)
 
   const refresh = async () => {
     try {
@@ -98,12 +104,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     void refresh()
+    // contenuti del sito (testi, reparti, annuncio) dall'area admin
+    void loadSite()
     // nome del sito personalizzato dall'area admin
     fetch('/api/site')
       .then(r => r.json())
       .then(d => d.config?.siteName && setSiteName(d.config.siteName))
       .catch(() => {})
-  }, [])
+  }, [refresh, loadSite])
 
   const createProject = async () => {
     if (busy) return // niente doppioni!
@@ -214,17 +222,29 @@ export default function Dashboard() {
       </header>
 
       <main className="relative mx-auto max-w-6xl p-6">
+        {/* ===== banner annuncio (modificabile dall'admin) ===== */}
+        {site.announcement.enabled && site.announcement.text && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 flex items-start gap-2.5 rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 to-fuchsia-50 p-3.5 text-sm text-purple-900 shadow-sm"
+          >
+            <span className="text-base leading-none">📣</span>
+            <p className="min-w-0 flex-1 whitespace-pre-wrap">{site.announcement.text}</p>
+          </motion.div>
+        )}
+
         {/* ===== barra dei reparti ===== */}
         <div className="mb-6 flex flex-wrap items-center gap-1.5 rounded-2xl bg-white/70 p-1.5 ring-1 ring-black/5">
           {(
             [
-              { id: 'mondi' as Tab, icon: <Cube className="h-4 w-4" />, label: 'I miei mondi' },
-              { id: 'genera' as Tab, icon: <Wand2 className="h-4 w-4" />, label: 'Genera' },
-              { id: 'importati' as Tab, icon: <Package className="h-4 w-4" />, label: 'Progetti importati' },
-              { id: 'strutture' as Tab, icon: <Hammer className="h-4 w-4" />, label: 'Strutture' },
-              { id: 'darpx' as Tab, icon: <Sparkles className="h-4 w-4" />, label: 'Darpx.ai' },
+              { id: 'mondi' as Tab, icon: <Cube className="h-4 w-4" />, label: sectionOf(site.sections, 'mondi').title, enabled: sectionOf(site.sections, 'mondi').enabled },
+              { id: 'genera' as Tab, icon: <Wand2 className="h-4 w-4" />, label: sectionOf(site.sections, 'genera').title, enabled: sectionOf(site.sections, 'genera').enabled },
+              { id: 'importati' as Tab, icon: <Package className="h-4 w-4" />, label: sectionOf(site.sections, 'importati').title, enabled: sectionOf(site.sections, 'importati').enabled },
+              { id: 'strutture' as Tab, icon: <Hammer className="h-4 w-4" />, label: sectionOf(site.sections, 'strutture').title, enabled: sectionOf(site.sections, 'strutture').enabled },
+              { id: 'darpx' as Tab, icon: <Sparkles className="h-4 w-4" />, label: sectionOf(site.sections, 'darpx').title, enabled: sectionOf(site.sections, 'darpx').enabled },
             ]
-          ).map(t => (
+          ).filter(t => t.enabled !== false).map(t => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
@@ -436,6 +456,9 @@ export default function Dashboard() {
         {/* REPARTO: progettazione strutture, separata dalla creazione dei mondi */}
         {tab === 'strutture' && <StructuresLab />}
       </main>
+
+      {/* Agente Darpx: assistente AI fluttuante, sempre disponibile */}
+      <DarpxAgent />
 
       <Dialog
         open={!!renameId}
