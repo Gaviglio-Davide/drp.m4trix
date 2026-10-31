@@ -12,23 +12,24 @@ import { encodeTerrain } from '@/lib/terrain'
 import { askBrain, type AgentReply } from '@/lib/agent-brain'
 
 // ============================================================
-// Agente Darpx — assistente AI fluttuante della home.
-// Risponde ALL'ISTANTE col cervello locale e, per le domande
-// difficili, chiama anche il modello linguistico lato server.
-// Esegue AZIONI reali: cambia reparto, prepara la creazione 3D,
-// genera mondi interi e te li apre nell'editor.
+// Agente Darpx — assistente AI fluttuante della home (v6).
+// • La bolla e il pannello seguono il TEMA COLORE del sito
+// • Prima di rispondere "riflette" un istante (qualità > velocità)
+// • Esegue AZIONI: genera mondi, avvia il motore 3D interno,
+//   cambia il tema del sito, naviga tra i reparti
+// • Per le domande difficili interpella il LLM lato server
 // ============================================================
 
 type Msg = {
   role: 'user' | 'assistant'
   content: string
-  instant?: boolean // risposta del cervello locale
+  instant?: boolean // risposta del cervello locale (sostituibile dal LLM)
 }
 
 const HELLO: Msg = {
   role: 'assistant',
   content:
-    'Ciao! 👋 Sono l\'**Agente Darpx**.\n\nRispondo subito e faccio cose concrete: creo mondi, preparo modelli 3D e ti spiego tutto il sito.\n\nDimmi pure cosa ti serve!',
+    'Ciao! 👋 Sono l\'**Agente Darpx**.\n\nPosso **generare modelli 3D col mio motore interno** 🧬, creare mondi, cambiare il tema del sito e spiegarti tutto.\n\nDimmi pure cosa ti serve!',
 }
 
 export default function DarpxAgent() {
@@ -36,16 +37,18 @@ export default function DarpxAgent() {
   const [msgs, setMsgs] = useState<Msg[]>([HELLO])
   const [input, setInput] = useState('')
   const [thinking, setThinking] = useState(false)
+  const [thinkLabel, setThinkLabel] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([
     'Cosa sai fare?',
+    'Genera un drago rosso',
     'Crea una città medievale',
-    'Come ruoto la visuale?',
-    'Genera un drago',
+    'Metti il tema viola',
   ])
   const listRef = useRef<HTMLDivElement>(null)
   const busyRef = useRef(false)
 
   const setTab = useUI(s => s.setTab)
+  const setAccent = useWorld(s => s.setAccent)
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight
@@ -104,15 +107,19 @@ export default function DarpxAgent() {
       if (reply.action.type === 'navigate') {
         setTab(reply.action.tab)
       } else if (reply.action.type === 'prefill3d') {
+        // il motore interno parte da solo: precompila E genera
         useUI.getState().setDarpxPrefill(reply.action.prompt)
         setTab('darpx')
-        toast.info('Prompt pronto nel reparto Darpx.ai — premi Genera! 🧊')
+        toast.info('Motore interno acceso: sto generando… 🧬')
       } else if (reply.action.type === 'createWorld') {
         void createWorld(reply.action.kind, reply.action.size, reply.action.density)
+      } else if (reply.action.type === 'setTheme') {
+        setAccent(reply.action.themeId, true)
+        toast.success('Tema aggiornato! 🎨')
       }
       if (reply.suggestions.length) setSuggestions(reply.suggestions)
     },
-    [createWorld, setTab]
+    [createWorld, setTab, setAccent]
   )
 
   // ---------- invio ----------
@@ -125,14 +132,25 @@ export default function DarpxAgent() {
       setInput('')
       setMsgs(m => [...m, { role: 'user', content: text }])
 
-      // 1) cervello locale: risposta ISTANTANEA
+      // 1) riflessione breve: l'agente elabora prima di parlare
       const reply = askBrain(text)
-      setMsgs(m => [...m, { role: 'assistant', content: reply.text, instant: true }])
-      runAction(reply)
-
-      // 2) domanda difficile? chiedo anche al cervello LLM lato server
-      if (reply.confidence < 0.55) {
+      if (reply.confidence >= 0.99) {
+        // azioni e saluti: risposta asciutta
+        setMsgs(m => [...m, { role: 'assistant', content: reply.text, instant: true }])
+        runAction(reply)
+      } else {
         setThinking(true)
+        setThinkLabel('Sto pensando…')
+        await new Promise(r => setTimeout(r, 420 + Math.random() * 480))
+        setMsgs(m => [...m, { role: 'assistant', content: reply.text, instant: true }])
+        runAction(reply)
+        setThinking(false)
+      }
+
+      // 2) risposta incerta? chiedo anche al cervello LLM lato server
+      if (reply.confidence < 0.75) {
+        setThinking(true)
+        setThinkLabel('Approfondisco…')
         try {
           const history = msgs
             .slice(-8)
@@ -169,6 +187,10 @@ export default function DarpxAgent() {
     [input, msgs, runAction]
   )
 
+  // stili legati al tema corrente (CSS variables, si aggiornano da sole)
+  const grad = 'linear-gradient(to bottom, var(--primary), var(--primary-strong))'
+  const gradH = 'linear-gradient(to right, var(--primary), var(--primary-strong))'
+
   return (
     <>
       {/* bolla */}
@@ -178,7 +200,8 @@ export default function DarpxAgent() {
         whileHover={{ scale: 1.08 }}
         whileTap={{ scale: 0.92 }}
         onClick={() => setOpen(o => !o)}
-        className="fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-b from-[#7c3aed] to-[#5b21b6] text-white shadow-xl shadow-purple-900/30 ring-2 ring-white/60"
+        style={{ backgroundImage: grad }}
+        className="fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-2xl text-white shadow-xl shadow-black/25 ring-2 ring-white/60"
         title="Agente Darpx"
       >
         <AnimatePresence mode="wait">
@@ -190,8 +213,11 @@ export default function DarpxAgent() {
         </AnimatePresence>
         {!open && (
           <span className="absolute -right-1 -top-1 flex h-4 w-4">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-fuchsia-400 opacity-75" />
-            <span className="relative inline-flex h-4 w-4 rounded-full bg-fuchsia-500 ring-2 ring-white" />
+            <span
+              className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
+              style={{ background: 'var(--primary-strong)' }}
+            />
+            <span className="relative inline-flex h-4 w-4 rounded-full bg-white ring-2" style={{ ['--tw-ring-color' as never]: 'var(--primary)' }} />
           </span>
         )}
       </motion.button>
@@ -207,18 +233,21 @@ export default function DarpxAgent() {
             className="fixed bottom-[92px] right-5 z-50 flex h-[min(68vh,560px)] w-[min(92vw,400px)] flex-col overflow-hidden rounded-3xl bg-white/95 shadow-2xl ring-1 ring-black/10 backdrop-blur"
           >
             {/* header */}
-            <div className="flex items-center gap-2.5 bg-gradient-to-r from-[#7c3aed] to-[#5b21b6] px-4 py-3 text-white">
+            <div
+              className="flex items-center gap-2.5 px-4 py-3 text-white"
+              style={{ backgroundImage: gradH }}
+            >
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15">
                 <Bot className="h-5 w-5" />
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-black leading-tight">Agente Darpx</p>
-                <p className="flex items-center gap-1 text-[11px] text-purple-200">
-                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                  sempre attivo · risponde all'istante
+                <p className="flex items-center gap-1 text-[11px] text-white/75">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-300" />
+                  motore 3D interno attivo · elabora e risponde
                 </p>
               </div>
-              <Sparkles className="h-4 w-4 text-purple-200" />
+              <Sparkles className="h-4 w-4 text-white/75" />
             </div>
 
             {/* messaggi */}
@@ -234,9 +263,14 @@ export default function DarpxAgent() {
                   <div
                     className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed shadow-sm ${
                       m.role === 'user'
-                        ? 'rounded-br-md bg-[var(--primary)] text-white'
+                        ? 'rounded-br-md text-white'
                         : 'rounded-bl-md bg-white text-stone-700 ring-1 ring-black/5'
                     }`}
+                    style={
+                      m.role === 'user'
+                        ? { background: 'var(--primary)' }
+                        : undefined
+                    }
                   >
                     {renderRich(m.content)}
                   </div>
@@ -245,9 +279,9 @@ export default function DarpxAgent() {
               {thinking && (
                 <div className="flex justify-start">
                   <div className="flex items-center gap-2 rounded-2xl rounded-bl-md bg-white px-3.5 py-2.5 ring-1 ring-black/5">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--primary)]" />
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: 'var(--primary)' }} />
                     <span className="text-xs text-stone-400">
-                        chiedo al cervellone…
+                      {thinkLabel || 'Sto pensando…'}
                     </span>
                   </div>
                 </div>
@@ -260,7 +294,8 @@ export default function DarpxAgent() {
                 <button
                   key={s}
                   onClick={() => void send(s)}
-                  className="shrink-0 rounded-full bg-purple-50 px-3 py-1 text-[11px] font-semibold text-purple-700 transition hover:bg-purple-100"
+                  className="shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold transition hover:brightness-95"
+                  style={{ background: 'var(--primary-soft)', color: 'var(--primary-strong)' }}
                 >
                   {s}
                 </button>
@@ -280,7 +315,8 @@ export default function DarpxAgent() {
               <button
                 onClick={() => void send()}
                 disabled={!input.trim()}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-b from-[#7c3aed] to-[#5b21b6] text-white shadow-md transition enabled:hover:brightness-110 disabled:opacity-40"
+                style={{ backgroundImage: grad }}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-md transition enabled:hover:brightness-110 disabled:opacity-40"
               >
                 <Send className="h-4 w-4" />
               </button>

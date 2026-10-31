@@ -5,12 +5,16 @@ import { toast } from 'sonner'
 import {
   Bot,
   CheckCircle2,
+  Dna,
+  Download,
   Eye,
   Image as ImageIcon,
   KeyRound,
   Loader2,
   Mountain,
   Plus,
+  RefreshCw,
+  Save,
   Sparkles,
   Trash2,
   Wand2,
@@ -27,6 +31,15 @@ import {
   type ImageAnalysis,
 } from '@/lib/worldgen'
 import { encodeTerrain } from '@/lib/terrain'
+import { upload } from '@vercel/blob/client'
+import {
+  generateModel,
+  generateVariant,
+  exportGlbFile,
+  PROMPT_SUGGESTIONS,
+  type ModelStats,
+} from '@/lib/darpx3d'
+import MiniPreview from '@/lib/darpx3d/MiniPreview'
 
 // ------------------------------------------------------------
 // Immagine → Mondo: riduci l'immagine su canvas (una grande per
@@ -111,6 +124,21 @@ export default function DarpxAI() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewName, setPreviewName] = useState<string>('')
 
+  // ---- MOTORE INTERNO Darpx3D ----
+  const [iprompt, setIPrompt] = useState('')
+  const [igen, setIGen] = useState(false)
+  const [istep, setIStep] = useState('')
+  const [isaving, setIsaving] = useState(false)
+  const [iresult, setIResult] = useState<{
+    url: string
+    name: string
+    file: File
+    stats: ModelStats
+    prompt: string
+  } | null>(null)
+  const iobjUrlRef = useRef<string | null>(null)
+  const igenRef = useRef(false)
+
   const refreshProviders = useCallback(async () => {
     try {
       const res = await fetchAuth('/api/darpx/providers')
@@ -126,16 +154,106 @@ export default function DarpxAI() {
     void refreshProviders()
   }, [refreshProviders])
 
-  // prefill dall'Agente Darpx
+  // prefill dall'Agente Darpx → MOTORE INTERNO: precompila e genera da solo
+  const runInternalRef = useRef<(p?: string, variant?: boolean) => Promise<void>>(async () => {})
   useEffect(() => {
     if (darpxPrefill) {
-      setPrompt(darpxPrefill)
+      const p = darpxPrefill
       setDarpxPrefill(null)
-      toast.info('Prompt preparato dall\'Agente: premi «Crea il modello 3D» 🧊')
+      setIPrompt(p)
+      void runInternalRef.current(p)
     }
   }, [darpxPrefill, setDarpxPrefill])
 
   const anyKey = (providers ?? []).some(p => p.hasKey)
+
+  // ---------- MOTORE INTERNO Darpx3D ----------
+
+  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+  const runInternal = useCallback(async (promptText?: string, variant = false) => {
+    const p = (promptText ?? iprompt).trim()
+    if (!p || igenRef.current) return
+    igenRef.current = true
+    setIGen(true)
+    setIResult(null)
+    try {
+      setIStep('Analizzo il prompt (italiano, colori, materiali)…')
+      await sleep(360)
+      const built = variant ? generateVariant(p) : generateModel(p)
+      setIStep('Assemblo anatomia e geometria…')
+      await sleep(300)
+      setIStep('Applico i materiali PBR…')
+      await sleep(260)
+      const file = await exportGlbFile(built.group, built.spec.name)
+      setIStep('Esporto il file GLB…')
+      await sleep(220)
+      // libera il vecchio object URL
+      if (iobjUrlRef.current) URL.revokeObjectURL(iobjUrlRef.current)
+      const url = URL.createObjectURL(file)
+      iobjUrlRef.current = url
+      setIResult({
+        url,
+        name: built.spec.name,
+        file,
+        stats: built.stats,
+        prompt: p,
+      })
+      setIStep('')
+      toast.success(`«${built.spec.name}» pronto! 🧬`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Generazione non riuscita')
+    } finally {
+      setIGen(false)
+      setIStep('')
+      igenRef.current = false
+    }
+  }, [iprompt])
+  runInternalRef.current = runInternal
+
+  const saveInternal = useCallback(async () => {
+    if (!iresult || isaving) return
+    setIsaving(true)
+    try {
+      // come per gli import: blob mode in produzione, disco in dev
+      const modeRes = await fetchAuth('/api/upload')
+      const mode = ((await modeRes.json().catch(() => ({}))) as { mode?: string }).mode
+      let url = ''
+      if (mode === 'blob') {
+        const blob = await upload(iresult.file.name, iresult.file, {
+          access: 'public',
+          handleUploadUrl: '/api/upload',
+        })
+        url = blob.url
+      } else {
+        const fd = new FormData()
+        fd.append('file', iresult.file)
+        const res = await fetchAuth('/api/upload', { method: 'POST', body: fd })
+        const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string }
+        if (!res.ok || !data.url) throw new Error(data.error ?? 'Upload fallito')
+        url = data.url
+      }
+      const reg = await fetchAuth('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: iresult.name, url, size: iresult.file.size }),
+      })
+      if (!reg.ok) {
+        const d = (await reg.json().catch(() => ({}))) as { error?: string }
+        throw new Error(d.error ?? 'Registrazione non riuscita')
+      }
+      toast.success('Salvato in «Progetti importati»! Lo trovi anche nella barra oggetti 📦')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Salvataggio non riuscito')
+    } finally {
+      setIsaving(false)
+    }
+  }, [iresult, isaving])
+
+  // libera l'object URL allo smontaggio
+  useEffect(() => () => {
+    if (iobjUrlRef.current) URL.revokeObjectURL(iobjUrlRef.current)
+  }, [])
 
   // ---------- immagine → mondo ----------
 
@@ -365,6 +483,125 @@ export default function DarpxAI() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
+      {/* ============ MOTORE INTERNO DARPX (🧬 senza chiavi) ============ */}
+      <div className="rounded-3xl bg-white/85 p-5 shadow-xl ring-1 ring-black/5 backdrop-blur">
+        <div className="flex flex-wrap items-center gap-2">
+          <Dna className="h-5 w-5 text-[var(--primary)]" />
+          <h2 className="text-lg font-semibold">Darpx.ai · Motore interno</h2>
+          <span className="ml-auto flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200">
+            <CheckCircle2 className="h-3 w-3" /> 100% nel tuo browser · senza chiavi · senza limiti
+          </span>
+        </div>
+        <p className="mt-1 text-sm text-stone-500">
+          Descrivi cosa vuoi e <b>l'AI di Darpx lo costruisce pezzo per pezzo</b>: creature con
+          anatomia, armi, edifici, alberi, oggetti magici… Capisce italiano, colori e materiali
+          (oro, legno, ghiaccio, fuoco…). Il modello è un GLB vero da usare subito nei tuoi mondi.
+        </p>
+
+        <textarea
+          value={iprompt}
+          onChange={e => setIPrompt(e.target.value)}
+          rows={2}
+          maxLength={300}
+          placeholder="Es: un drago rosso feroce con le corna…"
+          className="mt-4 w-full resize-none rounded-2xl border border-stone-200 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-[var(--primary)]"
+        />
+
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {PROMPT_SUGGESTIONS.slice(0, 6).map(s => (
+            <button
+              key={s}
+              onClick={() => setIPrompt(s)}
+              className="rounded-full px-2.5 py-1 text-[11px] font-semibold transition hover:brightness-95"
+              style={{ background: 'var(--primary-soft)', color: 'var(--primary-strong)' }}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+
+        <Button
+          className="mt-3 w-full"
+          onClick={() => void runInternal()}
+          disabled={igen || !iprompt.trim()}
+        >
+          {igen ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {istep || 'Genero…'}
+            </>
+          ) : (
+            <>
+              <Wand2 className="mr-2 h-4 w-4" /> Genera il modello 3D
+            </>
+          )}
+        </Button>
+
+        {iresult && (
+          <div className="mt-4 rounded-2xl bg-stone-50 p-4 ring-1 ring-stone-200">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-bold text-stone-800">🧬 {iresult.name}</p>
+              <span className="text-[11px] text-stone-400">
+                {(iresult.file.size / 1024).toFixed(0)} KB · GLB pronto
+              </span>
+            </div>
+            {/* anteprima 3D inline: ruota col mouse / col dito */}
+            <div className="mt-3">
+              <MiniPreview url={iresult.url} />
+              <p className="mt-1 text-center text-[10px] text-stone-400">
+                trascina per ruotare · rotella per lo zoom · auto-rotazione attiva
+              </p>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-stone-500 sm:grid-cols-4">
+              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
+                <b className="block text-stone-800">{iresult.stats.triangles.toLocaleString('it')}</b> triangoli
+              </div>
+              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
+                <b className="block text-stone-800">{iresult.stats.meshes}</b> mesh
+              </div>
+              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
+                <b className="block text-stone-800">{iresult.stats.materials}</b> materiali
+              </div>
+              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
+                <b className="block text-stone-800">{iresult.stats.parts}</b> pezzi assemblati
+              </div>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <Button
+                size="sm"
+                onClick={() => {
+                  setPreviewUrl(iresult.url)
+                  setPreviewName(iresult.name)
+                }}
+              >
+                <Eye className="mr-1.5 h-3.5 w-3.5" /> Anteprima 3D
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => void saveInternal()} disabled={isaving}>
+                {isaving ? (
+                  <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Salvo…</>
+                ) : (
+                  <><Save className="mr-1.5 h-3.5 w-3.5" /> Salva nei Progetti importati</>
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void runInternal(iresult.prompt, true)}
+                disabled={igen}
+              >
+                <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Genera variante
+              </Button>
+              <a
+                href={iresult.url}
+                download={`${iresult.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.glb`}
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-50"
+              >
+                <Download className="h-3.5 w-3.5" /> Scarica GLB
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* ============ IMMAGINE → MONDO ============ */}
       <div className="rounded-3xl bg-white/85 p-5 shadow-xl ring-1 ring-black/5 backdrop-blur">
         <div className="flex items-center gap-2">
@@ -484,17 +721,17 @@ export default function DarpxAI() {
         )}
       </div>
 
-      {/* ============ TESTO O IMMAGINE → 3D ============ */}
+      {/* ============ MOTORI ESTERNI (opzionali) ============ */}
       <div className="rounded-3xl bg-white/85 p-5 shadow-xl ring-1 ring-black/5 backdrop-blur">
         <div className="flex items-center gap-2">
           <Mountain className="h-5 w-5 text-[var(--primary)]" />
-          <h2 className="text-lg font-semibold">Darpx.ai · Testo o Immagine → 3D</h2>
+          <h2 className="text-lg font-semibold">Motori esterni · Testo o Immagine → 3D</h2>
         </div>
         <p className="mt-1 text-sm text-stone-500">
-          Descrivi un personaggio, una casa, un mostro… oppure parti da
-          un&apos;immagine. Darpx usa <b>quattro motori in cascata</b> — Tripo,
-          fal.ai (Hunyuan 3D), Stable Fast 3D e Meshy — quindi se uno si
-          blocca, passa al successivo da solo. Il modello arriva nei{' '}
+          Vuoi il look <b>fotorealistico</b> dei motori cloud? Descrivi il modello e usa
+          Tripo, fal.ai (Hunyuan 3D), Stable Fast 3D e Meshy: se uno si blocca, passa al
+          successivo da solo. Serve una chiave API gratuita del motore che preferisci
+          (l&apos;admin può anche metterne una globale). Il modello arriva nei{' '}
           <b>Progetti importati</b> con anteprima 👁️.
         </p>
 

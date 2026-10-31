@@ -2,26 +2,28 @@
 
 // ============================================================
 // Agente Darpx — cervello locale (CLIENT, istantaneo, zero costi)
-// Riconosce l'intenzione dell'utente in millisecondi e sa fare
-// AZIONI concrete: cambiare reparto, precompilare la creazione
-// 3D, generare un mondo. Per le domande complesse passa la palla
-// al cervello LLM lato server (vedi /api/agent).
+// v6: riconoscimento fuzzy (Levenshtein), base di conoscenza
+// raddoppiata, comando cambio tema, generazione 3D col MOTORE
+// INTERNO (nessuna chiave), risposte più elaborate.
+// Per le domande davvero difficili passa la palla al LLM server.
 // ============================================================
 
 import type { GenKind, GenSize } from '@/lib/worldgen'
 import type { DashboardTab } from '@/lib/ui-store'
+import { THEMES } from '@/lib/themes'
 
 export type AgentAction =
   | { type: 'navigate'; tab: DashboardTab }
-  | { type: 'prefill3d'; prompt: string }
+  | { type: 'prefill3d'; prompt: string }   // → motore interno, genera da solo
   | { type: 'createWorld'; kind: GenKind; size: GenSize; density: number }
+  | { type: 'setTheme'; themeId: string }
   | { type: 'none' }
 
 export type AgentReply = {
   text: string
   action: AgentAction
   suggestions: string[]
-  confidence: number // 0..1: sotto 0.55 il client chiede anche al server
+  confidence: number // 0..1: sotto 0.75 il client chiede anche al server
 }
 
 // ---------- normalizzazione ----------
@@ -37,11 +39,41 @@ function norm(s: string): string {
 
 const has = (t: string, ...words: string[]) => words.some(w => t.includes(w))
 
+/** distanza di Levenshtein (piccola, per il fuzzy) */
+function lev(a: string, b: string): number {
+  const m = a.length
+  const n = b.length
+  if (!m) return n
+  if (!n) return m
+  let prev = Array.from({ length: n + 1 }, (_, i) => i)
+  for (let i = 1; i <= m; i++) {
+    const cur = [i]
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(
+        prev[j] + 1,
+        cur[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      )
+    }
+    prev = cur
+  }
+  return prev[n]
+}
+
+/** parola simile? (1-2 errori di battitura per parole ≥5 lettere) */
+function fuzzyWord(word: string, target: string): boolean {
+  if (word === target) return true
+  if (target.length >= 5 && word.length >= 4) {
+    return lev(word, target) <= (target.length >= 8 ? 2 : 1)
+  }
+  return false
+}
+
 // ---------- base di conoscenza del sito ----------
 
 const KB: { keys: string[]; title: string; body: string[] }[] = [
   {
-    keys: ['ruota la visuale', 'ruotare la visuale', 'girare la visuale', 'girare la camera', 'visuale', 'camera', 'punto di vista'],
+    keys: ['ruota la visuale', 'ruotare la visuale', 'girare la visuale', 'girare la camera', 'visuale', 'camera', 'punto di vista', 'camera dell editor'],
     title: '🖼️ Ruotare la visuale nell\'editor',
     body: [
       '• Tasto DESTRO del mouse + trascina = ruota la visuale in ogni direzione',
@@ -52,7 +84,7 @@ const KB: { keys: string[]; title: string; body: string[] }[] = [
     ],
   },
   {
-    keys: ['terreno', 'collina', 'montagna alza', 'scavare', 'scava', 'lago', 'valle', 'spiana'],
+    keys: ['terreno', 'collina', 'montagna alza', 'scavare', 'scava', 'lago', 'valle', 'spiana', 'sculptare', 'modellare il terreno'],
     title: '⛰️ Sculptare il terreno',
     body: [
       'Nella barra terreno dell\'editor trovi i pennelli:',
@@ -64,7 +96,7 @@ const KB: { keys: string[]; title: string; body: string[] }[] = [
     ],
   },
   {
-    keys: ['giocare', 'gioca', 'modalita giocatore', 'esplorare', 'in prima persona', 'camminare'],
+    keys: ['giocare', 'gioca', 'modalita giocatore', 'esplorare', 'in prima persona', 'camminare', 'modalita di gioco', 'entrare nel mondo'],
     title: '🎮 Giocare dentro il mondo',
     body: [
       '• Premi il bottone GIOCA nell\'editor per entrare in prima persona',
@@ -75,7 +107,7 @@ const KB: { keys: string[]; title: string; body: string[] }[] = [
     ],
   },
   {
-    keys: ['salvare', 'salvataggio', 'salva', 'snapshot', 'versioni', 'autosalvataggio'],
+    keys: ['salvare', 'salvataggio', 'salva', 'snapshot', 'versioni', 'autosalvataggio', 'autosave', 'dove finiscono i mondi'],
     title: '💾 Salvataggi',
     body: [
       '• Il mondo si salva in automatico mentre lavori (vedi lo stato in alto)',
@@ -84,7 +116,7 @@ const KB: { keys: string[]; title: string; body: string[] }[] = [
     ],
   },
   {
-    keys: ['importare modello', 'importare un modello', 'caricare modello', 'caricare un modello', 'importa', 'glb', 'gltf', 'file 3d', 'modelli importati', 'progetti importati'],
+    keys: ['importare modello', 'importare un modello', 'caricare modello', 'caricare un modello', 'importa', 'glb', 'gltf', 'file 3d', 'modelli importati', 'progetti importati', 'caricare i modelli'],
     title: '📦 Importare modelli 3D',
     body: [
       '• Home → reparto «Progetti importati» → bottone Importa modelli',
@@ -96,7 +128,7 @@ const KB: { keys: string[]; title: string; body: string[] }[] = [
     ],
   },
   {
-    keys: ['non vedo', 'non si vede', 'invisibile', 'scomparso', 'non trovo il modello', 'modello non appare'],
+    keys: ['non vedo', 'non si vede', 'invisibile', 'scomparso', 'non trovo il modello', 'modello non appare', 'modello invisibile'],
     title: '🔍 Un modello non si vede?',
     body: [
       'Controlla in questo ordine:',
@@ -107,7 +139,7 @@ const KB: { keys: string[]; title: string; body: string[] }[] = [
     ],
   },
   {
-    keys: ['struttura', 'strutture', 'costruttore di case', 'pezzi', 'strutturelab'],
+    keys: ['struttura', 'strutture', 'costruttore di case', 'pezzi', 'strutturelab', 'costruire case pezzo per pezzo', 'progettare edifici'],
     title: '🏗️ Reparto Strutture',
     body: [
       '• Home → «Strutture»: progetti edifici pezzo per pezzo su una griglia 3D',
@@ -117,7 +149,7 @@ const KB: { keys: string[]; title: string; body: string[] }[] = [
     ],
   },
   {
-    keys: ['immagine', 'foto', 'dalla foto', 'mondo da un\'immagine', 'mondo da una immagine', 'world labs'],
+    keys: ['immagine', 'foto', 'dalla foto', 'mondo da un immagine', 'mondo da una immagine', 'world labs', 'trasformare foto in mondo'],
     title: '🖼️ Darpx.ai · Immagine → Mondo',
     body: [
       '• Home → «Darpx.ai» → carica una qualsiasi immagine',
@@ -127,30 +159,53 @@ const KB: { keys: string[]; title: string; body: string[] }[] = [
     ],
   },
   {
-    keys: ['testo', 'creare un personaggio', 'personaggio 3d', 'mostro', 'drago', '3d da testo', 'meshy', 'tripo', 'hunyuan', 'stable fast', 'chiave api', 'motore 3d'],
-    title: '🧊 Darpx.ai · Testo o Immagine → 3D',
+    keys: ['motore interno', 'senza chiavi', 'senza api', 'genera da solo', 'creare 3d gratis', '3d gratis', 'quanto costa generare', 'limiti generazione', 'quanti modelli posso'],
+    title: '🧬 Il Motore interno Darpx (novità!)',
     body: [
-      '• Home → «Darpx.ai» → sezione «Testo o Immagine → 3D»',
-      '• Motori disponibili: Tripo, fal.ai (Hunyuan 3D), Stable Fast 3D e Meshy: se uno si blocca, passa al successivo in automatico',
-      '• Serve una chiave API gratuita del motore che preferisci (la salvi una volta, cifrata nel database)',
-      '• Puoi anche partire da un\'IMMAGINE: Darpx crea il modello 3D corrispondente',
-      '• Il modello finisce in «Progetti importati» con anteprima 👁️ e nella barra oggetti dell\'editor',
+      'Il reparto Darpx.ai ora ha un motore 3D **integrale**, costruito da zero:',
+      '• Genera nel TUO browser: nessuna chiave API, nessun limite, costo zero',
+      '• Capisce l\'italiano: colori, materiali (oro, legno, ghiaccio…), taglia, dettagli',
+      '• Sa creare: draghi, cavalieri, maghi, cavalli, lupi, aquile, serpenti, robot, spade, scudi, navi, case, torri, castelli, alberi, pozioni, cristalli, forzieri…',
+      '• Ogni generazione è un GLB vero: anteprima 👁️, download, uso nell\'editor',
+      '• «Genera variante» crea una versione diversa dello stesso prompt',
+      'Chiedimi «genera un drago» e lo faccio subito! 🐉',
     ],
   },
   {
-    keys: ['chi sei', 'cos\'è darpx', 'cos\'e darpx', 'darpx', 'agente', 'come ti chiami', 'chi ti ha creato'],
+    keys: ['testo', 'creare un personaggio', 'personaggio 3d', 'mostro', '3d da testo', 'meshy', 'tripo', 'hunyuan', 'stable fast', 'chiave api', 'motore 3d', 'motori esterni', 'fotoreale'],
+    title: '🧊 Motori esterni (opzionali)',
+    body: [
+      '• Oltre al motore interno puoi usare i motori cloud: Tripo, fal.ai (Hunyuan 3D), Stable Fast 3D e Meshy',
+      '• Servono per look fotorealistici: se uno si blocca, passa al successivo in automatico',
+      '• Serve una chiave API gratuita del motore che preferisci (salvata cifrata nel database)',
+      '• Il modello finisce in «Progetti importati» con anteprima 👁️ e nella barra oggetti dell\'editor',
+      'Il motore interno invece parte subito, senza nulla da configurare 🧬',
+    ],
+  },
+  {
+    keys: ['chi sei', 'cos e darpx', 'cos e darpx', 'darpx', 'agente', 'come ti chiami', 'chi ti ha creato', 'sei un robot', 'sei una ia', 'sei un ai'],
     title: '✨ Sono l\'Agente Darpx',
     body: [
-      'Sono l\'assistente AI integrato nel sito: rispondo subito e faccio cose concrete:',
+      'Sono l\'assistente AI integrato nel sito: rispondo e faccio cose concrete:',
       '• «crea un mondo medievale grande» → lo genero e te lo apro',
-      '• «genera un drago» → preparo la creazione 3D in Darpx.ai',
+      '• «genera un drago» → lo creo SUBITO col motore interno 🧬',
+      '• «metti il tema viola» → cambio il colore del sito',
       '• «vai alle strutture» → cambio reparto per te',
       '• «come si ruota la visuale?» → ti spiego tutto del sito',
-      'Chiedimi qualsiasi cosa del sito: conosco ogni reparto a memoria 💪',
     ],
   },
   {
-    keys: ['tema', 'colore del sito', 'accento', 'profilo', 'cambiare nome', 'password', 'account'],
+    keys: ['tema', 'colore del sito', 'accento', 'cambiare colore', 'colore', 'colori del sito', 'aspetto del sito', 'personalizzare il sito'],
+    title: '🎨 Temi e colori del sito',
+    body: [
+      'Il sito ha 16 temi colore: Bosco, Mare, Cielo, Notte, Lavanda, Viola, Fucsia, Rosa, Ciliegia, Terracotta, Arancio, Miele, Lime, Menta, Caffè e Ardesia.',
+      '• Puoi cambiarli dall\'ingranaggio ⚙️ in alto a destra → scheda Colori',
+      '• Oppure DIMMILO: «metti il tema viola», «voglio il sito rosa»… lo faccio al volo!',
+      '• La scelta viene ricordata sul tuo account e seguita da tutta l\'interfaccia',
+    ],
+  },
+  {
+    keys: ['profilo', 'cambiare nome', 'password', 'account', 'cambio password', 'dati personali', 'privacy', 'privato'],
     title: '👤 Il tuo account',
     body: [
       '• In alto a destra trovi il tuo profilo: nome, tema colore e cambio password',
@@ -159,12 +214,69 @@ const KB: { keys: string[]; title: string; body: string[] }[] = [
     ],
   },
   {
-    keys: ['undo', 'annulla', 'ctrl z', 'rifare'],
+    keys: ['undo', 'annulla', 'ctrl z', 'rifare', 'rimediare', 'tornare indietro'],
     title: '↩️ Annullare le modifiche',
     body: [
       '• Il bottone freccia curva (in alto nell\'editor) annulla l\'ultima azione',
       '• Vale per oggetti piazzati, spostati, colorati e per il terreno scolpito',
       '• Puoi annullare più volte per tornare indietro di molti passi',
+    ],
+  },
+  {
+    keys: ['eliminare', 'cancellare', 'rimuovere', 'cancellare oggetto', 'eliminare oggetto', 'buttare via', 'distruggere'],
+    title: '🗑️ Eliminare oggetti e progetti',
+    body: [
+      'Nell\'editor:',
+      '• Click DESTRO secco su un oggetto lo elimina all\'istante',
+      'Nella home:',
+      '• Ogni card dei mondi ha il bottone 🗑 per eliminare il progetto (con conferma)',
+      '• I modelli si eliminano da «Progetti importati» e le strutture da «Strutture»',
+    ],
+  },
+  {
+    keys: ['strade', 'strada', 'lastricare', 'percorso', 'collegare le case', 'via'],
+    title: '🛣️ Le strade',
+    body: [
+      '• Nella barra oggetti dell\'editor trovi la STRADA: si stende seguendo il terreno',
+      '• Clicca più punti in sequenza per un percorso curvo, doppio click per chiudere',
+      '• Le strade si agganciano tra loro e formano reticoli veri',
+      '• In modalità Gioca ci cammini sopra come in un videogioco',
+    ],
+  },
+  {
+    keys: ['colore degli oggetti', 'colorare', 'dipingere', 'cambiare colore oggetto', 'verniciare', 'tinta'],
+    title: '🖌️ Colorare gli oggetti',
+    body: [
+      '• Seleziona l\'oggetto piazzato e usa il pannello colore: cambia al volo',
+      '• Vale per case, torri, alberi, pezzi delle strutture e molto altro',
+      '• Per le tue STRUTTURE il colore si sceglie pezzo per pezzo nel costruttore',
+    ],
+  },
+  {
+    keys: ['admin', 'amministratore', 'pannello di controllo', 'gestire il sito', 'gestione utenti'],
+    title: '🛡️ Area admin',
+    body: [
+      '• Il pannello admin è all\'indirizzo /admin (link discreto nel footer)',
+      '• Serve la password da amministratore (impostata su Vercel come ADMIN_PASSWORD)',
+      '• Da lì: diagnostica del sito, gestione utenti, progetti, modelli, testi del sito, chiavi 3D globali e configurazione dell\'agente AI',
+    ],
+  },
+  {
+    keys: ['cellulare', 'telefono', 'mobile', 'tablet', 'da smartphone', 'touch'],
+    title: '📱 Da cellulare',
+    body: [
+      '• Il sito funziona anche da telefono e tablet, tutto si tocca col dito',
+      '• Nell\'editor: un dito = piazza/seleziona · due dita = ruota e zoom',
+      '• In Gioca: joystick a schermo per camminare e trascina per guardarsi intorno',
+    ],
+  },
+  {
+    keys: ['personaggio', 'eroe', 'con chi gioco', 'giocatore', 'avatar', 'scegliere personaggio'],
+    title: '🧑 L\'eroe e il personaggio',
+    body: [
+      '• Nell\'editor, il bottone Personaggio apre la scelta: Eroe classico o uno dei TUOI modelli GLB',
+      '• Se hai caricato un cavaliere o una creatura, puoi entrarci dentro in modalità Gioca',
+      '• Anche i modelli generati dal motore interno vanno bene come personaggio!',
     ],
   },
 ]
@@ -200,35 +312,47 @@ function parseDensity(t: string): number {
   return 0.6
 }
 
-const WORLD_TRIGGERS = ['mondo', 'mappa', 'citta', 'città', 'villaggio', 'fortezza', 'castello', 'paesaggio', 'bosco', 'lago', 'isola', 'deserto']
+const WORLD_TRIGGERS = ['mondo', 'mappa', 'citta', 'villaggio', 'fortezza', 'castello', 'paesaggio', 'bosco', 'lago', 'isola', 'deserto']
 
 function extractObjectPhrase(t: string): string | null {
   // "genera un drago verde con le ali" → "un drago verde con le ali"
-  const m = /(?:genera|crea|fammi|fami|fai|voglio|creami|creare)\s+(?:un|uno|una|il|lo|la|dei|delle|qualche)?\s*(.{3,120})/.exec(t)
+  const m = /(?:genera|crea|fammi|fami|fai|voglio|creami|creare|dammi)\s+(?:un|uno|una|il|lo|la|dei|delle|qualche)?\s*(.{3,120})/.exec(t)
   if (!m) return null
   return m[1].replace(/[.!?]+$/, '').trim()
+}
+
+/** trova il tema richiesto («metti il tema viola», «voglio il sito rosa») */
+function parseTheme(t: string): string | null {
+  const m = /(?:tema|colore|sfondo|sito)\s+(?:di\s+|da\s+|in\s+)?([a-z]+)|voglio il sito ([a-z]+)/.exec(t)
+  if (!m) return null
+  const wanted = m[1] ?? m[2] ?? ''
+  if (!wanted) return null
+  for (const th of THEMES) {
+    if (fuzzyWord(wanted, norm(th.name)) || fuzzyWord(wanted, norm(th.id))) return th.id
+  }
+  return null
 }
 
 // ---------- risposte pronte ----------
 
 const GREETING_REPLY: AgentReply = {
-  text: `Ciao! 👋 Sono l'**Agente Darpx**, l'assistente del sito.\n\nPosso fare cose vere, non solo chiacchiere:\n• «crea un mondo medievale grande» → lo genero e lo apro\n• «genera un drago» → preparo il modello 3D in Darpx.ai\n• «vai ai progetti importati» → cambio reparto\n• «come si scava il terreno?» → spiego ogni funzione\n\nCosa vuoi fare?`,
+  text: `Ciao! 👋 Sono l'**Agente Darpx**, l'assistente del sito.\n\nPosso fare cose vere, non solo chiacchiere:\n• «genera un drago» → lo creo SUBITO col mio motore interno 🧬\n• «crea un mondo medievale grande» → lo genero e lo apro\n• «metti il tema viola» → cambio il colore del sito\n• «come si scava il terreno?» → spiego ogni funzione\n\nCosa vuoi fare?`,
   action: { type: 'none' },
-  suggestions: ['Crea un villaggio grande', 'Genera un drago', 'Come ruoto la visuale?', 'Cosa sai fare?'],
+  suggestions: ['Genera un drago rosso', 'Crea un villaggio grande', 'Metti il tema viola', 'Cosa sai fare?'],
   confidence: 1,
 }
 
 const HELP_REPLY: AgentReply = {
-  text: `Ecco cosa so fare **subito**:\n\n🌍 **Generare mondi** — «crea una fortezza enorme», «fammi un villaggio fitto di case»\n🧊 **Preparare modelli 3D** — «genera un cavaliere dorato», «crea una casa giapponese»\n🧭 **Muovermi nel sito** — «vai alle strutture», «apri Darpx.ai», «mostra i miei mondi»\n📚 **Spiegare tutto** — visuale, terreno, gioco, salvataggi, import, strutture, chiavi 3D…\n\nScrivi quello che vuoi: capisco l'italiano, anche in modo naturale.`,
+  text: `Ecco cosa so fare **subito**:\n\n🧬 **Generare modelli 3D** (motore interno, senza chiavi) — «genera un drago rosso», «crea una spada d'oro», «un robot di ferro»\n🌍 **Generare mondi** — «crea una fortezza enorme», «fammi un villaggio fitto di case»\n🎨 **Cambiare il tema** — «metti il tema fucsia», «voglio il sito azzurro»\n🧭 **Muovermi nel sito** — «vai alle strutture», «apri Darpx.ai», «mostra i miei mondi»\n📚 **Spiegare tutto** — visuale, terreno, gioco, strade, salvataggi, import, strutture, chiavi 3D…\n\nScrivi quello che vuoi: capisco l'italiano, anche con errori di battitura.`,
   action: { type: 'none' },
-  suggestions: ['Crea una città medievale', 'Vai a Darpx.ai', 'Come importo i modelli?', 'Cosa sai fare?'],
+  suggestions: ['Genera un drago', 'Crea una città medievale', 'Metti il tema rosa', 'Come importo i modelli?'],
   confidence: 1,
 }
 
 const FALLBACK_REPLY: AgentReply = {
-  text: `Questa è una domanda un po' particolare per me 😅\n\nNel frattempo posso aiutarti con:\n• generare mondi e modelli 3D\n• spiegarti ogni funzione del sito\n• portarti dove vuoi con un clic\n\nProva a riformulare, oppure usa uno dei suggerimenti qui sotto.`,
+  text: `Hmm, questa non la conosco a fondo 😅\n\nMa posso darti una mano con:\n• 🧬 generare modelli 3D con il mio motore interno («genera un drago»)\n• 🌍 creare mondi interi («crea un villaggio»)\n• 🎨 cambiare il tema del sito («metti il tema mare»)\n• 📚 spiegarti ogni angolo del sito\n\nProva a riformulare, oppure usa un suggerimento qui sotto.`,
   action: { type: 'none' },
-  suggestions: ['Cosa sai fare?', 'Come ruoto la visuale?', 'Crea un paesaggio', 'Vai ai progetti importati'],
+  suggestions: ['Cosa sai fare?', 'Come ruoto la visuale?', 'Crea un paesaggio', 'Genera un robot'],
   confidence: 0.3,
 }
 
@@ -241,9 +365,20 @@ export function askBrain(message: string): AgentReply {
   // saluti
   if (
     /^(ciao|salve|hey|ehi|buongiorno|buonasera|hola|hello|yo|ola)[\s!.,]*$/.test(t) ||
-    t === 'ciao darpx'
+    t === 'ciao darpx' ||
+    t === 'ciao darpx come stai'
   ) {
     return GREETING_REPLY
+  }
+
+  // come stai
+  if (has(t, 'come stai', 'come va', 'tutto bene')) {
+    return {
+      text: 'Alla grande, pronto a costruire mondi! 🚀\n\nDimmi: genero un modello 3D, creo un mondo o ti spiego qualcosa del sito?',
+      action: { type: 'none' },
+      suggestions: ['Genera un drago', 'Crea un villaggio', 'Cosa sai fare?'],
+      confidence: 1,
+    }
   }
 
   // aiuto / capacità
@@ -254,6 +389,27 @@ export function askBrain(message: string): AgentReply {
     return HELP_REPLY
   }
 
+  // cambio tema
+  if (has(t, 'tema', 'colore') && has(t, 'metti', 'cambia', 'voglio', 'imposta', 'fai', 'rendi', 'mettere') ) {
+    const themeId = parseTheme(t)
+    if (themeId) {
+      const th = THEMES.find(x => x.id === themeId)!
+      return {
+        text: `Consideralo fatto: **tema ${th.name}** ${th.id === 'viola' ? '💜' : '🎨'} applicato!\n\nTutta l'interfaccia si tinge del nuovo colore (e lo ricordo sul tuo account).`,
+        action: { type: 'setTheme', themeId },
+        suggestions: ['Metti il tema notte', 'Torna al tema bosco', 'Cosa sai fare?'],
+        confidence: 1,
+      }
+    }
+    // colore non riconosciuto → spiega
+    return {
+      text: `Posso cambiare il colore del sito al volo! 🎨\n\nDimmi per esempio: «metti il tema **viola**», «voglio il sito **rosa**» o «cambia in **cielo**».\n\nI temi disponibili: ${THEMES.map(x => x.name).join(', ')}.`,
+      action: { type: 'none' },
+      suggestions: ['Metti il tema viola', 'Metti il tema mare', 'Metti il tema arancio'],
+      confidence: 0.95,
+    }
+  }
+
   // navigazione
   const navMap: { tab: DashboardTab; words: string[] }[] = [
     { tab: 'mondi', words: ['i miei mondi', 'mondi', 'progetti', 'le mie citta'] },
@@ -262,9 +418,9 @@ export function askBrain(message: string): AgentReply {
     { tab: 'strutture', words: ['strutture', 'struttura', 'costruttore'] },
     { tab: 'darpx', words: ['darpx', 'ai', 'intelligenza artificiale'] },
   ]
-  if (has(t, 'vai', 'apri', 'mostra', 'portami', 'voglio vedere', 'fammi vedere', 'voglio andare')) {
+  if (has(t, 'vai', 'apri', 'mostra', 'portami', 'voglio vedere', 'fammi vedere', 'voglio andare', 'torna', 'riporta')) {
     for (const n of navMap) {
-      if (n.tab !== 'genera' && has(t, ...n.words)) {
+      if (n.tab !== 'genera' && n.words.some(w => fuzzyWord(t, w) || t.includes(w))) {
         return {
           text: `Ci sono: ti porto al reparto **${
             n.tab === 'mondi' ? 'I miei mondi' : n.tab === 'importati' ? 'Progetti importati' : n.tab === 'strutture' ? 'Strutture' : 'Darpx.ai'
@@ -280,10 +436,10 @@ export function askBrain(message: string): AgentReply {
   // generazione mondo
   const worldIntent =
     has(t, 'crea un mondo', 'crea una citta', 'crea un villaggio', 'crea una fortezza', 'crea un castello',
-      'crea un paesaggio', 'genera un mondo', 'genera una citta', 'genera una città', 'genera un villaggio',
+      'crea un paesaggio', 'genera un mondo', 'genera una citta', 'genera un villaggio',
       'genera una fortezza', 'genera un castello', 'genera un paesaggio', 'fammi un mondo', 'fammi una citta',
       'fammi un villaggio', 'fammi una fortezza', 'nuovo mondo', 'costruisci un mondo', 'creami un mondo',
-      'crea un isola', 'crea un\'isola', 'crea un bosco', 'crea un lago', 'voglio un mondo') ||
+      'crea un isola', 'crea un bosco', 'crea un lago', 'voglio un mondo') ||
     (has(t, 'crea', 'genera', 'fammi', 'costruisci', 'voglio') && parseKind(t) && has(t, ...WORLD_TRIGGERS))
   if (worldIntent) {
     const kind = parseKind(t) ?? 'citta'
@@ -300,45 +456,76 @@ export function askBrain(message: string): AgentReply {
     }
   }
 
-  // generazione modello 3D
-  if (has(t, 'genera', 'crea', 'fammi', 'creami', 'voglio', 'fai')) {
+  // generazione modello 3D → MOTORE INTERNO
+  if (has(t, 'genera', 'crea', 'fammi', 'creami', 'voglio', 'fai', 'dammi', 'disegna', 'modella')) {
     const phrase = extractObjectPhrase(t)
     const looksLikeWorld = phrase ? has(norm(phrase), ...WORLD_TRIGGERS) : true
     if (phrase && !looksLikeWorld) {
       return {
-        text: `Ottima idea! 🧊 Preparo la creazione 3D di **${phrase}** nel reparto Darpx.\n\nLì scegli il motore (Tripo · fal.ai · Stability), lo stile e premi Genera: il modello arriva in «Progetti importati» con tanto di anteprima 👁️`,
+        text: `Subito! 🧬 Il mio **motore interno** crea **${phrase}** in questo preciso momento — senza chiavi, senza attese.\n\nAppena pronto trovi il modello nell'anteprima 3D: puoi salvarlo nei Progetti importati, scaricarlo o chiedere una **variante**.`,
         action: { type: 'prefill3d', prompt: phrase },
-        suggestions: ['Genera anche un cavaliere', 'Come funzionano le chiavi 3D?', 'Vai ai progetti importati'],
+        suggestions: ['Genera una variante', 'Salvalo nei modelli', 'Cosa sai generare?'],
         confidence: 1,
       }
     }
   }
 
-  // base di conoscenza
+  // base di conoscenza (con fuzzy scoring)
   let best: { score: number; entry: (typeof KB)[number] } | null = null
+  const words = t.split(' ')
   for (const entry of KB) {
     let score = 0
     for (const k of entry.keys) {
-      if (t.includes(norm(k))) score += k.split(' ').length * 2
+      const nk = norm(k)
+      if (t.includes(nk)) {
+        score += nk.split(' ').length * 3 + 2
+      } else {
+        // fuzzy: ogni parola della frase vicina a una parola chiave lunga
+        const kw = nk.split(' ')
+        if (kw.length <= 2) {
+          for (const w of words) {
+            if (w.length >= 4 && fuzzyWord(w, nk)) {
+              score += 2
+              break
+            }
+          }
+        }
+      }
+    }
+    // testo interno: le parole della domanda compaiono nel corpo?
+    for (const w of words) {
+      if (w.length >= 6 && entry.body.some(b => b.toLowerCase().includes(w))) score += 1
     }
     if (score > 0 && (!best || score > best.score)) best = { score, entry }
   }
-  if (best && best.score >= 2) {
+  if (best && best.score >= 4) {
     return {
       text: `${best.entry.title}\n\n${best.entry.body.join('\n')}`,
       action: { type: 'none' },
-      suggestions: ['Cosa sai fare?', 'Crea un mondo', 'Vai a Darpx.ai'],
+      suggestions: best.entry.keys[0]?.includes('tema')
+        ? ['Metti il tema viola', 'Metti il tema mare', 'Cosa sai fare?']
+        : ['Cosa sai fare?', 'Crea un mondo', 'Genera un drago'],
       confidence: 0.9,
     }
   }
 
   // ringraziamenti
-  if (has(t, 'grazie', 'perfetto', 'grandee', 'top', 'fantastico', 'bello')) {
+  if (has(t, 'grazie', 'perfetto', 'grandee', 'top', 'fantastico', 'bello', 'mitico', 'spettacolare', 'bravo')) {
     return {
-      text: 'Figurati! 😄 Se ti serve altro sono qui: mondi, modelli 3D, spiegazioni… chiedi pure!',
+      text: 'Figurati! 😄 Se ti serve altro sono qui: modelli 3D, mondi, temi, spiegazioni… chiedi pure!',
       action: { type: 'none' },
-      suggestions: ['Cosa sai fare?', 'Crea un villaggio'],
-      confidence: 0.8,
+      suggestions: ['Cosa sai fare?', 'Crea un villaggio', 'Genera un drago'],
+      confidence: 0.85,
+    }
+  }
+
+  // congedo
+  if (has(t, 'arrivederci', 'ciao ciao', 'a dopo', 'buonanotte', 'buona giornata', 'esco', 'vado')) {
+    return {
+      text: 'A presto! 👋 I tuoi mondi ti aspettano qui, al sicuro nel tuo account.',
+      action: { type: 'none' },
+      suggestions: ['Torna ai mondi'],
+      confidence: 0.9,
     }
   }
 
@@ -348,7 +535,7 @@ export function askBrain(message: string): AgentReply {
 
 export const DEFAULT_SUGGESTIONS = [
   'Cosa sai fare?',
+  'Genera un drago rosso',
   'Crea una città medievale',
-  'Come ruoto la visuale?',
-  'Genera un drago',
+  'Metti il tema viola',
 ]
