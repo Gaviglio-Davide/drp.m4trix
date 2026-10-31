@@ -14,6 +14,7 @@ import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.j
 import { useWorld, GRID_HALF, terrainHeightAt, type WorldObject as WO } from '@/lib/world-store'
 import { getAssetDef } from '@/lib/assets'
 import { getTheme } from '@/lib/scene-theme'
+import { pbrMat } from '@/lib/pbr'
 import { SkyDome, SculptedTerrain } from './EditorScene'
 import { IslandEnvironment, SunLight } from './EditorScene' // re-export parity
 
@@ -185,7 +186,7 @@ function usePlayerMotion(zFlip: number) {
 // yaw della camera condiviso (impostato da PlayScene)
 const camYawRef = { current: Math.PI } as React.MutableRefObject<number>
 
-/** Eroe procedurale di serie: omino carino in stile cartoon */
+/** Eroe procedurale di serie: avventuriero realistico (v7) */
 function Hero() {
   const { group, walkT, moving } = usePlayerMotion(0)
   const body = useRef<THREE.Group>(null)
@@ -206,66 +207,114 @@ function Hero() {
     if (armR.current) armR.current.rotation.x = swing * 0.8
   })
 
+  // materiali PBR condivisi (tessuto, cuoio, pelle…)
+  const tunic = pbrMat('tessuto', '#8a6a4a', { roughness: 0.95, rx: 1.4, ry: 1.4 })
+  const pants = pbrMat('tessuto', '#4d4438', { roughness: 0.95, rx: 1, ry: 1 })
+  const leather = pbrMat('legno', '#5d4033', { roughness: 0.82, rx: 0.8, ry: 0.8 })
+  const boots = pbrMat('pelle', '#4a3325', { roughness: 0.8 })
+  const skin = pbrMat('pelle', '#e2b48f', { roughness: 0.72 })
+  const hairM = pbrMat('pelle', '#4b3621', { roughness: 0.9 })
+  const iron = pbrMat('metallo', '#8a8f96', { metalness: 0.9, roughness: 0.35 })
+
   return (
     <group ref={group}>
       <group ref={body}>
-        {/* gambe */}
-        <group ref={legL} position={[-0.09, 0.42, 0]}>
-          <mesh position={[0, -0.21, 0]} castShadow>
-            <boxGeometry args={[0.11, 0.42, 0.13]} />
-            <meshStandardMaterial color="#4a5a6a" roughness={0.9} />
+        {/* gambe (pantaloni + stivali) */}
+        <group ref={legL} position={[-0.085, 0.76, 0]}>
+          <mesh position={[0, -0.28, 0]} castShadow>
+            <capsuleGeometry args={[0.055, 0.36, 4, 10]} />
+            <primitive object={pants} attach="material" />
+          </mesh>
+          <mesh position={[0, -0.62, 0.02]} castShadow>
+            <boxGeometry args={[0.11, 0.14, 0.16]} />
+            <primitive object={boots} attach="material" />
           </mesh>
         </group>
-        <group ref={legR} position={[0.09, 0.42, 0]}>
-          <mesh position={[0, -0.21, 0]} castShadow>
-            <boxGeometry args={[0.11, 0.42, 0.13]} />
-            <meshStandardMaterial color="#4a5a6a" roughness={0.9} />
+        <group ref={legR} position={[0.085, 0.76, 0]}>
+          <mesh position={[0, -0.28, 0]} castShadow>
+            <capsuleGeometry args={[0.055, 0.36, 4, 10]} />
+            <primitive object={pants} attach="material" />
+          </mesh>
+          <mesh position={[0, -0.62, 0.02]} castShadow>
+            <boxGeometry args={[0.11, 0.14, 0.16]} />
+            <primitive object={boots} attach="material" />
           </mesh>
         </group>
-        {/* corpo (tunica) */}
-        <mesh position={[0, 0.63, 0]} castShadow>
-          <capsuleGeometry args={[0.15, 0.28, 6, 12]} />
-          <meshStandardMaterial color="#d97e4a" roughness={0.85} />
-        </mesh>
-        <mesh position={[0, 0.47, 0]}>
-          <cylinderGeometry args={[0.17, 0.19, 0.08, 12]} />
-          <meshStandardMaterial color="#b8543f" roughness={0.9} />
-        </mesh>
-        {/* braccia */}
-        <group ref={armL} position={[-0.21, 0.78, 0]}>
-          <mesh position={[0, -0.14, 0]} castShadow>
-            <capsuleGeometry args={[0.045, 0.2, 4, 8]} />
-            <meshStandardMaterial color="#d97e4a" roughness={0.85} />
-          </mesh>
-        </group>
-        <group ref={armR} position={[0.21, 0.78, 0]}>
-          <mesh position={[0, -0.14, 0]} castShadow>
-            <capsuleGeometry args={[0.045, 0.2, 4, 8]} />
-            <meshStandardMaterial color="#d97e4a" roughness={0.85} />
-          </mesh>
-        </group>
-        {/* testa */}
+        {/* torso: camicia + tunica + cintura */}
         <mesh position={[0, 0.98, 0]} castShadow>
-          <sphereGeometry args={[0.16, 16, 14]} />
-          <meshStandardMaterial color="#f2c9a0" roughness={0.8} />
+          <capsuleGeometry args={[0.135, 0.3, 6, 12]} />
+          <primitive object={tunic} attach="material" />
         </mesh>
-        {/* occhi */}
-        <mesh position={[-0.055, 1.0, 0.14]}>
-          <sphereGeometry args={[0.022, 8, 8]} />
-          <meshStandardMaterial color="#2d2a26" />
+        <mesh position={[0, 0.83, 0]} castShadow>
+          <cylinderGeometry args={[0.155, 0.165, 0.09, 12]} />
+          <primitive object={leather} attach="material" />
         </mesh>
-        <mesh position={[0.055, 1.0, 0.14]}>
-          <sphereGeometry args={[0.022, 8, 8]} />
-          <meshStandardMaterial color="#2d2a26" />
+        {/* fibbia della cintura */}
+        <mesh position={[0, 0.83, 0.16]}>
+          <boxGeometry args={[0.06, 0.05, 0.015]} />
+          <primitive object={iron} attach="material" />
         </mesh>
-        {/* elmetto con piuma */}
-        <mesh position={[0, 1.07, 0]} castShadow>
-          <sphereGeometry args={[0.165, 16, 10, 0, Math.PI * 2, 0, Math.PI / 1.8]} />
-          <meshStandardMaterial color="#8a9b8e" roughness={0.7} metalness={0.15} />
+        {/* spallacci in cuoio */}
+        <mesh position={[-0.13, 1.13, 0]} rotation={[0, 0, 0.4]} castShadow>
+          <boxGeometry args={[0.09, 0.05, 0.16]} />
+          <primitive object={leather} attach="material" />
         </mesh>
-        <mesh position={[0, 1.2, -0.02]} rotation={[0.3, 0, 0]}>
-          <coneGeometry args={[0.035, 0.16, 8]} />
-          <meshStandardMaterial color="#d9534f" roughness={0.8} />
+        <mesh position={[0.13, 1.13, 0]} rotation={[0, 0, -0.4]} castShadow>
+          <boxGeometry args={[0.09, 0.05, 0.16]} />
+          <primitive object={leather} attach="material" />
+        </mesh>
+        {/* braccia (camicia + mani) */}
+        <group ref={armL} position={[-0.19, 1.13, 0]}>
+          <mesh position={[0, -0.13, 0]} castShadow>
+            <capsuleGeometry args={[0.042, 0.19, 4, 8]} />
+            <primitive object={tunic} attach="material" />
+          </mesh>
+          <mesh position={[0, -0.28, 0]}>
+            <sphereGeometry args={[0.042, 8, 6]} />
+            <primitive object={skin} attach="material" />
+          </mesh>
+        </group>
+        <group ref={armR} position={[0.19, 1.13, 0]}>
+          <mesh position={[0, -0.13, 0]} castShadow>
+            <capsuleGeometry args={[0.042, 0.19, 4, 8]} />
+            <primitive object={tunic} attach="material" />
+          </mesh>
+          <mesh position={[0, -0.28, 0]}>
+            <sphereGeometry args={[0.042, 8, 6]} />
+            <primitive object={skin} attach="material" />
+          </mesh>
+        </group>
+        {/* collo + testa */}
+        <mesh position={[0, 1.28, 0]}>
+          <cylinderGeometry args={[0.035, 0.045, 0.07, 8]} />
+          <primitive object={skin} attach="material" />
+        </mesh>
+        <mesh position={[0, 1.4, 0]} castShadow>
+            <sphereGeometry args={[0.115, 16, 14]} />
+          <primitive object={skin} attach="material" />
+        </mesh>
+        {/* capelli + naso + occhi sobri */}
+        <mesh position={[0, 1.44, -0.01]} castShadow>
+          <sphereGeometry args={[0.12, 16, 10, 0, Math.PI * 2, 0, Math.PI / 1.9]} />
+          <primitive object={hairM} attach="material" />
+        </mesh>
+        <mesh position={[-0.04, 1.4, 0.1]}>
+          <sphereGeometry args={[0.013, 6, 6]} />
+          <meshStandardMaterial color="#3a2e26" roughness={0.6} />
+        </mesh>
+        <mesh position={[0.04, 1.4, 0.1]}>
+          <sphereGeometry args={[0.013, 6, 6]} />
+          <meshStandardMaterial color="#3a2e26" roughness={0.6} />
+        </mesh>
+        {/* cappuccio dietro le spalle */}
+        <mesh position={[0, 1.16, -0.09]} rotation={[0.25, 0, 0]} castShadow>
+          <coneGeometry args={[0.11, 0.22, 8, 1, true]} />
+          <primitive object={tunic} attach="material" />
+        </mesh>
+        {/* sacca da viaggio */}
+        <mesh position={[0.15, 0.95, -0.1]} rotation={[0, 0.3, -0.2]} castShadow>
+          <sphereGeometry args={[0.08, 10, 8]} />
+          <primitive object={leather} attach="material" />
         </mesh>
       </group>
     </group>

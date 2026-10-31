@@ -110,7 +110,7 @@ function genCity(o: GenOptions): GenResult {
   const R = SIZE_RADIUS[o.size]
   const dens = 0.35 + o.density * 0.55
 
-  // piazza centrale (lastricata) + fontana di roccia
+  // piazza centrale (lastricata) + FONTANA in pietra
   for (let dz = -2; dz <= 2; dz++) {
     for (let dx = -2; dx <= 2; dx++) {
       b.put('strada', dx, dz)
@@ -118,9 +118,16 @@ function genCity(o: GenOptions): GenResult {
   }
   b.occupied.delete('0,0')
   b.objects = b.objects.filter(ob => !(ob.x === 0 && ob.z === 0))
-  b.put('roccia', 0, 0)
+  b.put('fontana', 0, 0)
   b.put('lampioncino', 2, -2)
   b.put('lampioncino', -2, 2)
+  // arredo urbano attorno alla piazza: panchine e aiuole
+  b.put('panchina', 1, 2)
+  b.put('panchina', -2, -1)
+  b.put('aiuola', 2, 1)
+  b.put('aiuola', -1, 2)
+  b.put('vaso', 3, -3)
+  b.put('vaso', -3, 3)
 
   // strade: croce principale + anello intermedio
   for (let i = -R; i <= R; i++) {
@@ -165,6 +172,9 @@ function genCity(o: GenOptions): GenResult {
       const r = b.rand()
       if (r > dens) {
         b.maybeTree(x, z, 0.18)
+        // giardini tra le case: siepi e aiuole
+        if (b.rand() < 0.16) b.put('siepe', x, z)
+        else if (b.rand() < 0.1) b.put('aiuola', x, z)
         continue
       }
       // affaccio: rotazione verso la strada adiacente
@@ -178,6 +188,16 @@ function genCity(o: GenOptions): GenResult {
       else if (pick < 0.85) b.put('casatorre', x, z, { rot })
       else if (pick < 0.93) b.put('torre', x, z, { rot })
       else b.put('portone', x, z, { rot })
+      // giardinetto davanti ad alcune case
+      if (b.rand() < 0.22) {
+        const fx = x
+        const fz = z + (rot === 0 ? 1 : rot === 2 ? -1 : 0)
+        const fx2 = x + (rot === 1 ? 1 : rot === 3 ? -1 : 0)
+        const fcell = fz !== z ? [fx, fz] : [fx2, z]
+        if (b.free(fcell[0], fcell[1])) {
+          b.put(b.rand() < 0.5 ? 'aiuola' : 'vaso', fcell[0], fcell[1])
+        }
+      }
     }
   }
 
@@ -262,6 +282,22 @@ function genVillage(o: GenOptions): GenResult {
         const rot = Math.floor(b.rand() * 4)
         if (pick < 0.8) b.put('casa', x, z, { rot })
         else b.put('casatorre', x, z, { rot })
+        // orti e recinzioni attorno alle case del villaggio
+        if (b.rand() < 0.3) {
+          const sides = [
+            [1, 0],
+            [-1, 0],
+            [0, 1],
+            [0, -1],
+          ].filter(([dx, dz]) => b.free(x + dx, z + dz))
+          if (sides.length) {
+            const [dx, dz] = sides[Math.floor(b.rand() * sides.length)]
+            const pick2 = b.rand()
+            if (pick2 < 0.45) b.put('staccionata', x + dx, z + dz, { rot: dx !== 0 ? 1 : 0 })
+            else if (pick2 < 0.75) b.put('siepe', x + dx, z + dz)
+            else b.put('vaso', x + dx, z + dz)
+          }
+        }
       } else {
         b.maybeTree(x, z, 0.3)
       }
@@ -278,8 +314,11 @@ function genVillage(o: GenOptions): GenResult {
     const z = Math.round(pondZ + Math.sin((a * Math.PI) / 180) * 8)
     if (b.free(x, z)) b.put('cespuglio', x, z)
   }
-  b.put('lampioncino', 3, 3)
+  b.put('panchina', 3, 3)
   b.put('lampioncino', -3, -3)
+  b.put('aiuola', -3, 3)
+  b.put('vaso', 3, -3)
+  b.put('pergolato', 4, 4)
 
   return { objects: b.objects, terrain, stats: b.stats }
 }
@@ -445,7 +484,6 @@ export type ImageAnalysis = {
   blueness: number // 0..1 quanto blu è dominante (acqua/cielo)
   greenness: number
   earthiness: number // marroni/terra
-  style: 'cartoon' | 'medievale'
   waterHeavy: boolean
   mountainous: boolean
   foresty: boolean
@@ -522,8 +560,6 @@ export function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
       const waterHeavy = blueness > 0.3
       const mountainous = earthiness > 0.22 || brightness < 0.35
       const foresty = greenness > 0.34
-      const style: 'cartoon' | 'medievale' =
-        saturation > 0.32 && !mountainous ? 'cartoon' : 'medievale'
       const label = waterHeavy
         ? 'acqua dominante'
         : mountainous
@@ -540,7 +576,6 @@ export function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
         blueness,
         greenness,
         earthiness,
-        style,
         waterHeavy,
         mountainous,
         foresty,

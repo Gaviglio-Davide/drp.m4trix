@@ -86,7 +86,9 @@ export default function StructuresLab() {
   const place = (cell: Cell) => {
     const [x, z] = cell
     if (Math.abs(x) > DESIGN_HALF || Math.abs(z) > DESIGN_HALF) return
-    const exists = pieces.some(p => p.x === x && p.z === z && p.y === level)
+    // v7: la cella ospita più PEZZI DIVERSI (es. pavimento + muro sul
+    // bordo): il controllo è per tipo, non per cella intera
+    const exists = pieces.some(p => p.p === piece && p.x === x && p.z === z && p.y === level)
     if (exists) return
     pushHistory(pieces)
     setPieces(ps => [...ps, { p: piece, x, y: level, z, rot, color }])
@@ -141,7 +143,7 @@ export default function StructuresLab() {
   }
 
   const occupiedNow = useMemo(
-    () => new Set(pieces.map(p => `${p.x},${p.z},${p.y}`)),
+    () => new Set(pieces.map(p => `${p.p},${p.x},${p.z},${p.y}`)),
     [pieces]
   )
 
@@ -274,9 +276,11 @@ export default function StructuresLab() {
               </Button>
             </div>
             <p className="text-[11px] text-stone-400">
-              Consigli: pavimento al livello 0, poi muri, porte e finestre; il
-              tetto sta bene a qualsiasi livello. Con i livelli alti costruisci
-              torri su più piani.
+              Consigli: pavimento al livello 0, poi muri, porte e finestre SUL
+              BORDO delle celle (ruota con R per scegliere il lato); il tetto
+              sta bene a qualsiasi livello. Con i livelli alti costruisci torri
+              su più piani. I pezzi 🚧🌿🌷 sono da ESTERNO: recinzioni, siepi,
+              vialetti e aiuole per il giardino attorno alla casa.
             </p>
           </div>
         </div>
@@ -548,7 +552,7 @@ function GhostPiece({
   if (!hover) return null
   const def = getPieceDef(piece)
   if (!def) return null
-  const occupied = occupiedNow.has(`${hover[0]},${hover[1]},${level}`)
+  const occupied = occupiedNow.has(`${piece},${hover[0]},${hover[1]},${level}`)
   const Render = def.render
   return (
     <group position={[hover[0], level, hover[1]]}>

@@ -1,11 +1,13 @@
 // ============================================================
-// Temi visivi del mondo 3D, selezionabili dall'utente.
-//  - cartoon: il look originale, colorato e morbido
-//  - medievale: atmosfera realistica che si sposa con i
-//    modelli medievali (cavaliere, taverne, draghi ecc.)
+// Temi visivi del mondo 3D.
+// v7: UN SOLO STILE — «realistico». Le vecchie scelte
+// «cartoon» e «medievale» sono state ritirate: ora tutto il
+// mondo (edifici, luce, erba, acqua) ha resa realistica con
+// texture PBR procedurali. I progetti salvati con lo stile
+// vecchio vengono mappati automaticamente su questo tema.
 // ============================================================
 
-export type WorldStyle = 'cartoon' | 'medievale'
+export type WorldStyle = 'cartoon' | 'medievale' | 'realistico'
 
 export type SceneTheme = {
   id: WorldStyle
@@ -28,52 +30,39 @@ export type SceneTheme = {
   rayleigh: number
 }
 
-export const SCENE_THEMES: Record<WorldStyle, SceneTheme> = {
-  cartoon: {
-    id: 'cartoon',
-    label: 'Cartoon',
-    icon: '🌈',
-    sky: '#bfe3f2',
-    fogColor: '#bfe3f2',
-    fogNear: 70,
-    fogFar: 170,
-    ocean: '#3f9db8',
-    sand: '#e8d5a3',
-    grass: '#7fb069',
-    sunIntensity: 1.35,
-    ambientIntensity: 0.55,
-    hemiSky: '#cfe8ff',
-    hemiGround: '#8a9a6b',
-    hemiIntensity: 0.5,
-    sunPosition: [18, 28, 12],
-    turbidity: 5,
-    rayleigh: 0.6,
-  },
-  medievale: {
-    id: 'medievale',
-    label: 'Medievale',
-    icon: '🏰',
-    sky: '#9fb2bb',
-    fogColor: '#93a5ac',
-    fogNear: 60,
-    fogFar: 165,
-    ocean: '#42606a',
-    sand: '#a08d68',
-    grass: '#6b7d53',
-    sunIntensity: 1.0,
-    ambientIntensity: 0.45,
-    hemiSky: '#b6c3c9',
-    hemiGround: '#57654a',
-    hemiIntensity: 0.45,
-    sunPosition: [14, 24, -10],
-    turbidity: 8,
-    rayleigh: 1.4,
-  },
+const realistico: SceneTheme = {
+  id: 'realistico',
+  label: 'Realistico',
+  icon: '🌿',
+  // pomeriggio limpido, luce naturale calda
+  sky: '#a9c4d8',
+  fogColor: '#b8ccd9',
+  fogNear: 78,
+  fogFar: 210,
+  ocean: '#2e6a7e',
+  sand: '#c9b48c',
+  grass: '#6d8a4e',
+  sunIntensity: 1.55,
+  ambientIntensity: 0.38,
+  hemiSky: '#bcd6e8',
+  hemiGround: '#55603f',
+  hemiIntensity: 0.5,
+  sunPosition: [22, 30, 14],
+  turbidity: 6,
+  rayleigh: 1.1,
 }
 
-export const WORLD_STYLES: WorldStyle[] = ['cartoon', 'medievale']
+export const SCENE_THEMES: Record<WorldStyle, SceneTheme> = {
+  realistico,
+  // mantenuti solo per retrocompatibilità dei progetti vecchi:
+  // qualsiasi stile salvato in passato ora usa il tema realistico
+  cartoon: realistico,
+  medievale: realistico,
+}
+
+export const WORLD_STYLES: WorldStyle[] = ['realistico']
 
 export function getTheme(style: string | undefined | null): SceneTheme {
-  const t = SCENE_THEMES[style as WorldStyle]
-  return t ?? SCENE_THEMES.cartoon
+  void style
+  return SCENE_THEMES.realistico
 }

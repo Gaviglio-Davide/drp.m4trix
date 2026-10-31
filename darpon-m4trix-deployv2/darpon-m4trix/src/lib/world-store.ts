@@ -175,7 +175,7 @@ export const useWorld = create<Store>((set, get) => ({
   saveStatus: 'idle',
   loadingProject: false,
   playerAsset: null,
-  worldStyle: 'cartoon' as WorldStyle,
+  worldStyle: 'realistico' as WorldStyle,
   terrain: null,
   terrainVersion: 0,
   brush: 'none' as ActiveBrush,
@@ -213,7 +213,7 @@ export const useWorld = create<Store>((set, get) => ({
       objects: state.objects,
       customAssets: state.customAssets,
       playerAsset: state.playerAsset ?? null,
-      worldStyle: state.worldStyle ?? 'cartoon',
+      worldStyle: state.worldStyle ?? 'realistico',
       terrain: state.terrain ? decodeTerrain(state.terrain) : null,
       terrainVersion: 0,
       brush: 'none',
@@ -232,7 +232,7 @@ export const useWorld = create<Store>((set, get) => ({
       objects: [],
       customAssets: [],
       playerAsset: null,
-      worldStyle: 'cartoon',
+      worldStyle: 'realistico',
       terrain: null,
       terrainVersion: 0,
       brush: 'none',
@@ -247,7 +247,7 @@ export const useWorld = create<Store>((set, get) => ({
       objects: s.objects ?? [],
       customAssets: s.customAssets ?? [],
       playerAsset: s.playerAsset ?? null,
-      worldStyle: s.worldStyle ?? 'cartoon',
+      worldStyle: s.worldStyle ?? 'realistico',
     }),
 
   setBrush: b => set({ brush: b, selectedAsset: b === 'none' ? get().selectedAsset : null }),
@@ -358,7 +358,8 @@ export function parseState(s: string | undefined | null): ProjectState {
       objects: Array.isArray(p.objects) ? p.objects : [],
       customAssets: Array.isArray(p.customAssets) ? p.customAssets : [],
       playerAsset: typeof p.playerAsset === 'string' ? p.playerAsset : null,
-      worldStyle: p.worldStyle === 'medievale' ? 'medievale' : 'cartoon',
+      // v7: un solo stile — realistico (i vecchi cartoon/medievale mappano qui)
+      worldStyle: 'realistico',
       terrain:
         typeof p.terrain === 'string' && p.terrain.length > 16
           ? p.terrain

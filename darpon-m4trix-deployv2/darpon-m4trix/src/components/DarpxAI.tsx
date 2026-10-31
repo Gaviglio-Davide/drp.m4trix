@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import type { Group } from 'three'
 import {
   Bot,
   CheckCircle2,
@@ -18,6 +19,7 @@ import {
   Sparkles,
   Trash2,
   Wand2,
+  Wrench,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -36,8 +38,13 @@ import {
   generateModel,
   generateVariant,
   exportGlbFile,
+  parsePrompt,
+  loadGlbFromUrl,
+  loadGlbFromArrayBuffer,
+  enhanceModel,
   PROMPT_SUGGESTIONS,
   type ModelStats,
+  type EnhanceAdditions,
 } from '@/lib/darpx3d'
 import MiniPreview from '@/lib/darpx3d/MiniPreview'
 
@@ -66,8 +73,6 @@ function shrinkImage(dataUrl: string, maxSide: number, quality: number): Promise
 
 const ART_STYLES = [
   { id: 'realistic', label: 'Realistico', icon: '🛡️' },
-  { id: 'cartoon', label: 'Cartoon', icon: '🎨' },
-  { id: 'low_poly', label: 'Low poly', icon: '🔷' },
   { id: 'sculpture', label: 'Scultura', icon: '🗿' },
 ]
 
@@ -139,6 +144,76 @@ export default function DarpxAI() {
   const iobjUrlRef = useRef<string | null>(null)
   const igenRef = useRef(false)
 
+  // ---- DOMANDE SUI DETTAGLI (v7: l'AI chiede prima di generare) ----
+  const [iqOpen, setIqOpen] = useState(false)
+  const [iqBase, setIqBase] = useState('')
+  const [iqMissing, setIqMissing] = useState<{ colore: boolean; taglia: boolean; materiale: boolean; dettagli: boolean }>({
+    colore: false, taglia: false, materiale: false, dettagli: false,
+  })
+  const [qColore, setQColore] = useState('')
+  const [qTaglia, setQTaglia] = useState('')
+  const [qMateriale, setQMateriale] = useState('')
+  const [qDettagli, setQDettagli] = useState<string[]>([])
+  const [askDetails, setAskDetails] = useState(true)
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('darpx.askDetails')
+      if (v !== null) setAskDetails(v === '1')
+    } catch {
+      // storage non disponibile
+    }
+  }, [])
+  const toggleAskDetails = (v: boolean) => {
+    setAskDetails(v)
+    try {
+      localStorage.setItem('darpx.askDetails', v ? '1' : '0')
+    } catch {
+      // ignore
+    }
+  }
+
+  // ---- LABORATORIO GLB (v7: migliora i modelli che già hai) ----
+  const [labModels, setLabModels] = useState<{ id: string; name: string; url: string }[] | null>(null)
+  const [labSrc, setLabSrc] = useState<{ name: string; scene: Group } | null>(null)
+  const [labLoading, setLabLoading] = useState(false)
+  const [labMode, setLabMode] = useState<'originale' | 'tinta' | 'materiale'>('tinta')
+  const [labColor, setLabColor] = useState('#d9a72e')
+  const [labStyle, setLabStyle] = useState('oro')
+  const [labAdds, setLabAdds] = useState<EnhanceAdditions>({})
+  const [labHeight, setLabHeight] = useState(0)
+  const [labBusy, setLabBusy] = useState(false)
+  const [labSaving, setLabSaving] = useState(false)
+  const [labResult, setLabResult] = useState<{
+    url: string
+    name: string
+    file: File
+    stats: ModelStats
+  } | null>(null)
+  const labFileRef = useRef<HTMLInputElement>(null)
+  const labUrlRef = useRef<string | null>(null)
+
+  const refreshLabModels = useCallback(async () => {
+    try {
+      const res = await fetchAuth('/api/models')
+      if (!res.ok) return
+      const data = (await res.json()) as {
+        models?: { id: string; name: string; url: string }[]
+      }
+      setLabModels(data.models ?? [])
+    } catch {
+      setLabModels([])
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshLabModels()
+  }, [refreshLabModels])
+
+  useEffect(() => () => {
+    if (labUrlRef.current) URL.revokeObjectURL(labUrlRef.current)
+  }, [])
+
   const refreshProviders = useCallback(async () => {
     try {
       const res = await fetchAuth('/api/darpx/providers')
@@ -154,14 +229,14 @@ export default function DarpxAI() {
     void refreshProviders()
   }, [refreshProviders])
 
-  // prefill dall'Agente Darpx → MOTORE INTERNO: precompila e genera da solo
-  const runInternalRef = useRef<(p?: string, variant?: boolean) => Promise<void>>(async () => {})
+  // prefill dall'Agente Darpx → apre le DOMANDE sui dettagli (o genera se disattivate)
+  const startInternalRef = useRef<(p?: string) => void>(() => {})
   useEffect(() => {
     if (darpxPrefill) {
       const p = darpxPrefill
       setDarpxPrefill(null)
       setIPrompt(p)
-      void runInternalRef.current(p)
+      startInternalRef.current(p)
     }
   }, [darpxPrefill, setDarpxPrefill])
 
@@ -209,7 +284,170 @@ export default function DarpxAI() {
       igenRef.current = false
     }
   }, [iprompt])
-  runInternalRef.current = runInternal
+
+  // ---- v7: flusso con DOMANDE SUI DETTAGLI ----
+  const COLOR_CHOICES = [
+    { id: 'rosso', hex: '#c0392b' }, { id: 'blu', hex: '#2563a8' },
+    { id: 'verde', hex: '#3f8f4f' }, { id: 'oro', hex: '#d9a72e' },
+    { id: 'viola', hex: '#7c4fa8' }, { id: 'nero', hex: '#26262b' },
+    { id: 'bianco', hex: '#eeeeea' }, { id: 'rosa', hex: '#e087ab' },
+  ]
+  const SIZE_CHOICES = ['piccolo', 'normale', 'grande', 'enorme']
+  const MATERIAL_CHOICES = ['naturale', 'oro', 'argento', 'ferro', 'legno', 'pietra', 'cristallo']
+  const DETAIL_CHOICES = [
+    { id: 'ali', label: 'Ali 🪽' }, { id: 'corna', label: 'Corna 🐂' },
+    { id: 'armatura', label: 'Armatura 🛡️' }, { id: 'fuoco', label: 'Fuoco 🔥' },
+    { id: 'spine', label: 'Spine 🌵' }, { id: 'squame', label: 'Squame 🐉' },
+  ]
+
+  /** analizza il prompt: cosa manca? apre il pannello domande o genera */
+  const startInternal = useCallback(
+    (promptText?: string) => {
+      const p = (promptText ?? iprompt).trim()
+      if (!p || igenRef.current) return
+      setIPrompt(p)
+      if (!askDetails) {
+        setIqOpen(false)
+        void runInternal(p)
+        return
+      }
+      const spec = parsePrompt(p)
+      const hasColor = !!spec.colorHex
+      const hasSize = spec.sizeClass !== 'normal'
+      const hasStyle = !!spec.styleId
+      const featureWords = ['ali', 'corna', 'armatura', 'fuoco', 'spine', 'squame']
+      const hasDetails = featureWords.some(w => spec.features.has(w))
+      const missing = { colore: !hasColor, taglia: !hasSize, materiale: !hasStyle, dettagli: !hasDetails }
+      if (!missing.colore && !missing.taglia && !missing.materiale && !missing.dettagli) {
+        // il prompt è già completo: vai dritto
+        setIqOpen(false)
+        void runInternal(p)
+        return
+      }
+      setIqBase(p)
+      setIqMissing(missing)
+      setQColore('')
+      setQTaglia('')
+      setQMateriale('')
+      setQDettagli([])
+      setIqOpen(true)
+    },
+    [iprompt, askDetails, runInternal]
+  )
+  startInternalRef.current = startInternal
+
+  /** applica le risposte e genera */
+  const applyQuestionsAndRun = useCallback(
+    (skip = false) => {
+      setIqOpen(false)
+      let p = iqBase
+      if (!skip) {
+        if (qColore) p += ` ${qColore}`
+        if (qMateriale && qMateriale !== 'naturale') p += ` di ${qMateriale}`
+        if (qTaglia && qTaglia !== 'normale') p += ` ${qTaglia}`
+        if (qDettagli.length) p += ` con ${qDettagli.join(' e ')}`
+      }
+      setIPrompt(p)
+      void runInternal(p)
+    },
+    [iqBase, qColore, qMateriale, qTaglia, qDettagli, runInternal]
+  )
+
+  // ---- v7: LABORATORIO GLB ----
+
+  const pickLabModel = useCallback(async (name: string, url: string) => {
+    setLabLoading(true)
+    setLabResult(null)
+    try {
+      const scene = await loadGlbFromUrl(url)
+      setLabSrc({ name, scene })
+      toast.success(`«${name}» caricato: ora scegli come migliorarlo 🔧`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Modello non leggibile')
+    } finally {
+      setLabLoading(false)
+    }
+  }, [])
+
+  const pickLabFile = useCallback(async (file: File) => {
+    setLabLoading(true)
+    setLabResult(null)
+    try {
+      const buf = await file.arrayBuffer()
+      const scene = await loadGlbFromArrayBuffer(buf)
+      setLabSrc({ name: file.name.replace(/\.glb$/i, ''), scene })
+      toast.success(`«${file.name}» caricato: ora scegli come migliorarlo 🔧`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'File non leggibile')
+    } finally {
+      setLabLoading(false)
+    }
+  }, [])
+
+  const runLab = useCallback(async () => {
+    if (!labSrc || labBusy) return
+    setLabBusy(true)
+    setLabResult(null)
+    try {
+      const { group, stats } = enhanceModel(labSrc.scene, {
+        mode: labMode,
+        colorHex: labMode === 'originale' ? undefined : labColor,
+        styleId: labMode === 'materiale' ? labStyle : undefined,
+        additions: labAdds,
+        targetHeight: labHeight > 0 ? labHeight : undefined,
+      })
+      const name = `${labSrc.name} · Darpx Lab`
+      const file = await exportGlbFile(group, name)
+      if (labUrlRef.current) URL.revokeObjectURL(labUrlRef.current)
+      const url = URL.createObjectURL(file)
+      labUrlRef.current = url
+      setLabResult({ url, name, file, stats })
+      toast.success('Modello migliorato pronto! 🔧✨')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Elaborazione non riuscita')
+    } finally {
+      setLabBusy(false)
+    }
+  }, [labSrc, labBusy, labMode, labColor, labStyle, labAdds, labHeight])
+
+  const saveLab = useCallback(async () => {
+    if (!labResult || labSaving) return
+    setLabSaving(true)
+    try {
+      const modeRes = await fetchAuth('/api/upload')
+      const mode = ((await modeRes.json().catch(() => ({}))) as { mode?: string }).mode
+      let url = ''
+      if (mode === 'blob') {
+        const blob = await upload(labResult.file.name, labResult.file, {
+          access: 'public',
+          handleUploadUrl: '/api/upload',
+        })
+        url = blob.url
+      } else {
+        const fd = new FormData()
+        fd.append('file', labResult.file)
+        const res = await fetchAuth('/api/upload', { method: 'POST', body: fd })
+        const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string }
+        if (!res.ok || !data.url) throw new Error(data.error ?? 'Upload fallito')
+        url = data.url
+      }
+      const reg = await fetchAuth('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: labResult.name, url, size: labResult.file.size }),
+      })
+      if (!reg.ok) {
+        const d = (await reg.json().catch(() => ({}))) as { error?: string }
+        throw new Error(d.error ?? 'Registrazione non riuscita')
+      }
+      await refreshLabModels()
+      toast.success('Salvato in «Progetti importati»! Lo trovi anche nella barra oggetti 📦')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Salvataggio non riuscito')
+    } finally {
+      setLabSaving(false)
+    }
+  }, [labResult, labSaving, refreshLabModels])
 
   const saveInternal = useCallback(async () => {
     if (!iresult || isaving) return
@@ -276,7 +514,7 @@ export default function DarpxAI() {
       setSkyDataUrl(big)
       setAnalysis(a)
       toast.success(
-        `Immagine letta: ambiente ${a.label}, stile ${a.style} 🪄`
+        `Immagine letta: ambiente ${a.label} 🪄`
       )
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Immagine non valida')
@@ -316,7 +554,7 @@ export default function DarpxAI() {
         body: JSON.stringify({ state: stateJson }),
       })
       if (!patch.ok) throw new Error('Salvataggio non riuscito')
-      useWorld.getState().setWorldStyle(analysis.style)
+      useWorld.getState().setWorldStyle('realistico')
       openProject({
         id: p.id,
         name,
@@ -522,7 +760,7 @@ export default function DarpxAI() {
 
         <Button
           className="mt-3 w-full"
-          onClick={() => void runInternal()}
+          onClick={() => startInternal()}
           disabled={igen || !iprompt.trim()}
         >
           {igen ? (
@@ -535,6 +773,136 @@ export default function DarpxAI() {
             </>
           )}
         </Button>
+
+        {/* ---- v7: DOMANDE SUI DETTAGLI prima di generare ---- */}
+        {iqOpen && !igen && (
+          <div className="mt-3 rounded-2xl bg-[var(--primary-soft)]/60 p-4 ring-1 ring-[var(--primary)]/25">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm font-bold text-stone-800">
+                🧬 Prima di costruire «{iqBase}», dimmi i dettagli
+              </p>
+              <button
+                onClick={() => setIqOpen(false)}
+                className="rounded-full p-1 text-stone-400 transition hover:bg-white/60 hover:text-stone-700"
+                title="Chiudi (genera dopo)"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mt-0.5 text-xs text-stone-500">
+              Rispondi solo a quello che ti ispira: il resto lo scelgo io con gusto.
+            </p>
+
+            {iqMissing.colore && (
+              <div className="mt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Colore</p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {COLOR_CHOICES.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => setQColore(qColore === c.id ? '' : c.id)}
+                      className={`h-7 w-7 rounded-full ring-2 transition-transform hover:scale-110 ${
+                        qColore === c.id ? 'ring-stone-800 scale-110' : 'ring-white/70'
+                      }`}
+                      style={{ backgroundColor: c.hex }}
+                      title={c.id}
+                    />
+                  ))}
+                  <span className="ml-1 self-center text-[11px] text-stone-400">
+                    {qColore || 'a sorpresa 🎲'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {iqMissing.taglia && (
+              <div className="mt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Taglia</p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {SIZE_CHOICES.map(s => (
+                    <button
+                      key={s}
+                      onClick={() => setQTaglia(qTaglia === s ? '' : s)}
+                      className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                        qTaglia === s
+                          ? 'bg-[var(--primary)] text-white'
+                          : 'bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {iqMissing.materiale && (
+              <div className="mt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Materiale</p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {MATERIAL_CHOICES.map(m => (
+                    <button
+                      key={m}
+                      onClick={() => setQMateriale(qMateriale === m ? '' : m)}
+                      className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                        qMateriale === m
+                          ? 'bg-[var(--primary)] text-white'
+                          : 'bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50'
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {iqMissing.dettagli && (
+              <div className="mt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+                  Dettagli (più scelte possibili)
+                </p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {DETAIL_CHOICES.map(d => (
+                    <button
+                      key={d.id}
+                      onClick={() =>
+                        setQDettagli(qs =>
+                          qs.includes(d.id) ? qs.filter(x => x !== d.id) : [...qs, d.id]
+                        )
+                      }
+                      className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                        qDettagli.includes(d.id)
+                          ? 'bg-[var(--primary)] text-white'
+                          : 'bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50'
+                      }`}
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Button size="sm" className="flex-1" onClick={() => applyQuestionsAndRun(false)}>
+                <Wand2 className="mr-1.5 h-3.5 w-3.5" /> Genera ora
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => applyQuestionsAndRun(true)}>
+                Salta e genera
+              </Button>
+            </div>
+            <label className="mt-2.5 flex cursor-pointer items-center gap-2 text-[11px] text-stone-500">
+              <input
+                type="checkbox"
+                checked={askDetails}
+                onChange={e => toggleAskDetails(e.target.checked)}
+                className="accent-[var(--primary)]"
+              />
+              Chiedimi sempre i dettagli prima di generare
+            </label>
+          </div>
+        )}
 
         {iresult && (
           <div className="mt-4 rounded-2xl bg-stone-50 p-4 ring-1 ring-stone-200">
@@ -596,6 +964,251 @@ export default function DarpxAI() {
                 className="inline-flex h-8 items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-50"
               >
                 <Download className="h-3.5 w-3.5" /> Scarica GLB
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ============ LABORATORIO GLB (v7) ============ */}
+      <div className="rounded-3xl bg-white/85 p-5 shadow-xl ring-1 ring-black/5 backdrop-blur">
+        <div className="flex flex-wrap items-center gap-2">
+          <Wrench className="h-5 w-5 text-[var(--primary)]" />
+          <h2 className="text-lg font-semibold">Darpx.ai · Laboratorio GLB</h2>
+          <span className="ml-auto flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200">
+            <CheckCircle2 className="h-3 w-3" /> migliora i modelli che hai già
+          </span>
+        </div>
+        <p className="mt-1 text-sm text-stone-500">
+          Riprendi un modello <b>che hai già creato o caricato</b> e fallo rinascere: tinta o
+          veri materiali PBR (oro, ferro, legno, pietra…), ali, corna, basamento, aura luminosa
+          e ridimensionamento. Tutto nel browser, senza servizi esterni.
+        </p>
+
+        {/* scelta del modello di partenza */}
+        <input
+          ref={labFileRef}
+          type="file"
+          accept=".glb,.gltf"
+          className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0]
+            if (f) void pickLabFile(f)
+            e.target.value = ''
+          }}
+        />
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(labModels ?? []).slice(0, 6).map(m => (
+            <button
+              key={m.id}
+              onClick={() => void pickLabModel(m.name, m.url)}
+              className={`max-w-full truncate rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+                labSrc?.name === m.name
+                  ? 'border-[var(--primary)] bg-[var(--primary-soft)] ring-1 ring-[var(--primary)]'
+                  : 'border-stone-200 bg-white hover:bg-stone-50'
+              }`}
+            >
+              📦 {m.name}
+            </button>
+          ))}
+          <button
+            onClick={() => labFileRef.current?.click()}
+            className="rounded-xl border border-dashed border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-500 transition hover:border-[var(--primary)] hover:bg-stone-50"
+          >
+            + file dal computer
+          </button>
+        </div>
+        {labModels === null && (
+          <div className="mt-3 flex items-center gap-2 text-sm text-stone-400">
+            <Loader2 className="h-4 w-4 animate-spin" /> Cerco i tuoi modelli…
+          </div>
+        )}
+        {labModels !== null && labModels.length === 0 && (
+          <p className="mt-3 rounded-xl bg-stone-50 p-3 text-xs text-stone-500 ring-1 ring-stone-200">
+            Non hai ancora modelli nei Progetti importati: carica un GLB qui sopra (oppure
+            generane uno col motore interno!) e poi torna a migliorarlo.
+          </p>
+        )}
+
+        {labSrc && (
+          <>
+            <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl bg-stone-50 px-3 py-2 text-xs ring-1 ring-stone-200">
+              <b className="text-stone-700">In lavorazione:</b>
+              <span className="truncate text-stone-600">{labSrc.name}</span>
+              <button
+                onClick={() => setLabSrc(null)}
+                className="ml-auto rounded-full p-1 text-stone-400 transition hover:bg-white hover:text-red-500"
+                title="Cambia modello"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {/* modalità */}
+            <div className="mt-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Restyling</p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {([
+                  ['originale', 'Originale'],
+                  ['tinta', 'Tinta colore'],
+                  ['materiale', 'Materiale PBR'],
+                ] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    onClick={() => setLabMode(id)}
+                    className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                      labMode === id
+                        ? 'bg-[var(--primary)] text-white'
+                        : 'bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {labMode !== 'originale' && (
+              <div className="mt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+                  {labMode === 'tinta' ? 'Colore della tinta' : 'Materiale'}
+                </p>
+                {labMode === 'tinta' ? (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {['#d9a72e', '#c0392b', '#2563a8', '#3f8f4f', '#7c4fa8', '#e087ab', '#8a8a90', '#eeeeea'].map(c => (
+                      <button
+                        key={c}
+                        onClick={() => setLabColor(c)}
+                        className={`h-7 w-7 rounded-full ring-2 transition-transform hover:scale-110 ${
+                          labColor === c ? 'ring-stone-800 scale-110' : 'ring-white/70'
+                        }`}
+                        style={{ backgroundColor: c }}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {['oro', 'argento', 'ferro', 'acciaio', 'bronzo', 'rame', 'legno', 'quercia', 'pietra', 'granito', 'marmo', 'cristallo'].map(m => (
+                      <button
+                        key={m}
+                        onClick={() => setLabStyle(m)}
+                        className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                          labStyle === m
+                            ? 'bg-[var(--primary)] text-white'
+                            : 'bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* aggiunte */}
+            <div className="mt-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Aggiunte</p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {([
+                  ['wings', 'Ali 🪽'],
+                  ['horns', 'Corna 🐂'],
+                  ['base', 'Basamento 🗿'],
+                  ['aura', 'Aura ✨'],
+                ] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    onClick={() => setLabAdds(a => ({ ...a, [id]: !a[id] }))}
+                    className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                      labAdds[id]
+                        ? 'bg-[var(--primary)] text-white'
+                        : 'bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* altezza */}
+            <div className="mt-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Altezza finale</p>
+                <span className="text-[11px] font-medium text-stone-500">
+                  {labHeight > 0 ? `${labHeight.toFixed(1)} unità` : 'come originale'}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={6}
+                step={0.5}
+                value={labHeight}
+                onChange={e => setLabHeight(Number(e.target.value))}
+                className="mt-1.5 w-full accent-[var(--primary)]"
+              />
+            </div>
+
+            <Button className="mt-4 w-full" onClick={() => void runLab()} disabled={labBusy}>
+              {labBusy ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Elaboro il modello…
+                </>
+              ) : (
+                <>
+                  <Wrench className="mr-2 h-4 w-4" /> Migliora il modello
+                </>
+              )}
+            </Button>
+          </>
+        )}
+
+        {labResult && (
+          <div className="mt-4 rounded-2xl bg-stone-50 p-4 ring-1 ring-stone-200">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-bold text-stone-800">🔧 {labResult.name}</p>
+              <span className="text-[11px] text-stone-400">
+                {(labResult.file.size / 1024).toFixed(0)} KB · GLB pronto
+              </span>
+            </div>
+            <div className="mt-3">
+              <MiniPreview url={labResult.url} />
+              <p className="mt-1 text-center text-[10px] text-stone-400">
+                trascina per ruotare · rotella per lo zoom · auto-rotazione attiva
+              </p>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-stone-500 sm:grid-cols-4">
+              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
+                <b className="block text-stone-800">{labResult.stats.triangles.toLocaleString('it')}</b> triangoli
+              </div>
+              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
+                <b className="block text-stone-800">{labResult.stats.meshes}</b> mesh
+              </div>
+              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
+                <b className="block text-stone-800">{labResult.stats.materials}</b> materiali
+              </div>
+              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
+                <b className="block text-stone-800">{labResult.stats.parts}</b> pezzi
+              </div>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <Button size="sm" onClick={() => { setPreviewUrl(labResult.url); setPreviewName(labResult.name) }}>
+                <Eye className="mr-1.5 h-3.5 w-3.5" /> Anteprima 3D
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => void saveLab()} disabled={labSaving}>
+                {labSaving ? (
+                  <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Salvo…</>
+                ) : (
+                  <><Save className="mr-1.5 h-3.5 w-3.5" /> Salva nei Progetti importati</>
+                )}
+              </Button>
+              <a
+                href={labResult.url}
+                download={`${labResult.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.glb`}
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-50 sm:col-span-2"
+              >
+                <Download className="h-3.5 w-3.5" /> Scarica GLB migliorato
               </a>
             </div>
           </div>
@@ -667,7 +1280,7 @@ export default function DarpxAI() {
                   <ul className="mt-2 space-y-1 text-stone-600">
                     <li>🌍 Ambiente: <b>{analysis.label}</b></li>
                     <li>💡 Luce: {Math.round(analysis.brightness * 100)}%</li>
-                    <li>🎨 Stile suggerito: <b>{analysis.style}</b></li>
+                    <li>🌿 Resa: <b>realistica</b></li>
                     <li>🧬 Variante: #{analysis.seed}</li>
                   </ul>
                 </>

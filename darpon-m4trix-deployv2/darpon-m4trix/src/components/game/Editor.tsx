@@ -50,7 +50,6 @@ import {
 } from '@/lib/world-store'
 import { BUILTIN_ASSETS, getAssetDef } from '@/lib/assets'
 import { useStructures, libraryAssetId } from '@/lib/structures-store'
-import { getTheme, WORLD_STYLES } from '@/lib/scene-theme'
 import ProfileDialog from '@/components/ProfileDialog'
 import { fetchAuth } from '@/lib/http'
 import { GLBoundary, NoGLCard, webglSupported } from './GLGuard'
@@ -107,7 +106,6 @@ export default function Editor() {
   const loadState = useWorld(s => s.loadState)
   const setSaveStatus = useWorld(s => s.setSaveStatus)
   const worldStyle = useWorld(s => s.worldStyle)
-  const setWorldStyle = useWorld(s => s.setWorldStyle)
   const playerAsset = useWorld(s => s.playerAsset)
   const setPlayerAsset = useWorld(s => s.setPlayerAsset)
   const ghostScale = useWorld(s => s.ghostScale)
@@ -573,21 +571,6 @@ export default function Editor() {
             </Button>
           )}
           <ProfileDialog iconOnly />
-          <Button
-            variant="ghost"
-            size="sm"
-            title={`Stile del mondo (ora: ${getTheme(worldStyle).label})`}
-            onClick={() =>
-              setWorldStyle(
-                WORLD_STYLES[
-                  (WORLD_STYLES.indexOf(worldStyle) + 1) % WORLD_STYLES.length
-                ]
-              )
-            }
-          >
-            <span className="mr-1">{getTheme(worldStyle).icon}</span>
-            <span className="hidden sm:inline">{getTheme(worldStyle).label}</span>
-          </Button>
           {skyboxUrl && (
             <Button
               variant="ghost"
@@ -648,7 +631,7 @@ export default function Editor() {
                   <div>
                     <p className="text-sm font-semibold">Eroe (di serie)</p>
                     <p className="text-xs text-stone-500">
-                      Piccolo avventuriero in stile cartoon, sempre disponibile.
+                      Avventuriero realistico di serie, sempre disponibile.
                     </p>
                   </div>
                 </button>
@@ -797,8 +780,7 @@ export default function Editor() {
                 </li>
                 <li>
                   <b>📖 Legenda</b> → tutti gli oggetti spiegati ·{' '}
-                  <b>🌈 Stile</b> → cambia atmosfera del mondo (cartoon o
-                  medievale) · <b>🧍 Personaggio</b> → scegli chi interpreti
+                  <b>🧍 Personaggio</b> → scegli chi interpreti
                 </li>
               </ul>
             </DialogContent>

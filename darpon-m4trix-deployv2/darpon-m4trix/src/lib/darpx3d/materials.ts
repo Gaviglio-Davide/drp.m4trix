@@ -2,11 +2,14 @@
 // Darpx3D · materials — materiali PBR generati dalle parole
 // "spada d'oro" → metallo dorato lucido · "taverna di legno" →
 // legno caldo ruvido · "drago di ghiaccio" → tinte gelide.
-// Nessuna texture esterna: tutto colore + parametri PBR.
+// v7 REALISMO: ogni stile riceve una texture procedurale con
+// normal map (scaglie, pelle, legno, pietra, tessuto, metallo
+// spazzolato…) — niente file esterni, tutto su canvas in cache.
 // ============================================================
 
 import * as THREE from 'three'
 import type { RNG } from './rng'
+import { getTextures, type PbrKind } from '@/lib/pbr'
 
 export type MatStyle = {
   id: string
@@ -79,6 +82,34 @@ const STYLES: Record<string, MatStyle> = {
   ossa: { id: 'ossa', color: '#e6ddc8', metalness: 0.0, roughness: 0.75 },
   fungo: { id: 'fungo', metalness: 0.0, roughness: 0.6 },
   carta: { id: 'carta', color: '#efe6cf', metalness: 0.0, roughness: 0.95 },
+}
+
+// v7: texture procedurale per stile (kind + repeat). Gli stili
+// emissivi/cristallini restano lisci per conservare il glow.
+const TEX_KINDS: Record<string, { kind: PbrKind; rep: number; nScale: number }> = {
+  metallo: { kind: 'metallo', rep: 2, nScale: 0.5 },
+  oro: { kind: 'metallo', rep: 2, nScale: 0.45 },
+  argento: { kind: 'metallo', rep: 2, nScale: 0.4 },
+  ferro: { kind: 'metallo', rep: 2, nScale: 0.6 },
+  acciaio: { kind: 'metallo', rep: 2, nScale: 0.45 },
+  bronzo: { kind: 'metallo', rep: 2, nScale: 0.55 },
+  rame: { kind: 'metallo', rep: 2, nScale: 0.55 },
+  legno: { kind: 'legno', rep: 2, nScale: 0.8 },
+  quercia: { kind: 'legno', rep: 1.6, nScale: 0.9 },
+  pino: { kind: 'legno', rep: 1.6, nScale: 0.8 },
+  ebano: { kind: 'legno', rep: 2, nScale: 0.7 },
+  pietra: { kind: 'pietra', rep: 2, nScale: 1 },
+  granito: { kind: 'pietra', rep: 2.6, nScale: 1 },
+  sabbia: { kind: 'sabbia', rep: 2.4, nScale: 0.7 },
+  pelle: { kind: 'pelle', rep: 2.6, nScale: 0.6 },
+  squame: { kind: 'scaglie', rep: 3, nScale: 1 },
+  tessuto: { kind: 'tessuto', rep: 2.4, nScale: 0.7 },
+  velluto: { kind: 'tessuto', rep: 2.8, nScale: 0.6 },
+  cuoio: { kind: 'pelle', rep: 2, nScale: 0.8 },
+  pelliccia: { kind: 'foglie', rep: 3, nScale: 0.8 },
+  ossa: { kind: 'pelle', rep: 2, nScale: 0.5 },
+  fungo: { kind: 'pelle', rep: 1.8, nScale: 0.5 },
+  carta: { kind: 'tessuto', rep: 1.6, nScale: 0.5 },
 }
 
 const STYLE_WORDS: Record<string, string> = {
@@ -178,6 +209,14 @@ export function buildMaterials(
     if (s.opacity !== undefined && s.opacity < 1) {
       m.transparent = true
       m.opacity = s.opacity
+    }
+    // v7: texture procedurale (condivisa in cache) per il look realistico
+    const tex = TEX_KINDS[s.id]
+    if (tex) {
+      const t = getTextures(tex.kind, tex.rep, tex.rep)
+      m.map = t.map
+      m.normalMap = t.normalMap
+      m.normalScale = new THREE.Vector2(tex.nScale, tex.nScale)
     }
     return m
   }

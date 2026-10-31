@@ -1,16 +1,28 @@
 'use client'
 
 // ============================================================
-// Agente Darpx — cervello locale (CLIENT, istantaneo, zero costi)
-// v6: riconoscimento fuzzy (Levenshtein), base di conoscenza
-// raddoppiata, comando cambio tema, generazione 3D col MOTORE
-// INTERNO (nessuna chiave), risposte più elaborate.
-// Per le domande davvero difficili passa la palla al LLM server.
+// Agente Darpx — CERVELLO ULTRA (v7)
+// ------------------------------------------------------------
+// Obiettivo: capire SEMPRE, anche con errori di battitura,
+// frasi storte o parole diverse dal solito.
+//
+// Come ragiona (in ordine):
+//   1. normalizza la frase (accenti, punteggiatura, ripetizioni)
+//   2. la traduce in "parole chiave" tramite un dizionario di
+//      SINONIMI con matching fuzzy (Levenshtein) su ogni parola
+//   3. valuta TUTTE le intenzioni possibili con un punteggio
+//      (azioni, mondi, 3D, temi, navigazione, 60+ voci di sapere)
+//   4. MEMORIA DI CONTESTO: «ancora», «un altro», «sì fallo»
+//      ripetono l'ultima azione con una variante nuova
+//   5. se proprio nulla quadra NON dice «non capito»: mostra
+//      cosa ha capito, fa domande mirate e passa la mano al
+//      cervello LLM lato server per la risposta completa
 // ============================================================
 
 import type { GenKind, GenSize } from '@/lib/worldgen'
 import type { DashboardTab } from '@/lib/ui-store'
 import { THEMES } from '@/lib/themes'
+import { SPECIES } from '@/lib/darpx3d/parse'
 
 export type AgentAction =
   | { type: 'navigate'; tab: DashboardTab }
@@ -26,6 +38,18 @@ export type AgentReply = {
   confidence: number // 0..1: sotto 0.75 il client chiede anche al server
 }
 
+export type BrainContext = {
+  lastIntent: 'none' | 'createWorld' | 'generate3d' | 'setTheme' | 'navigate'
+  lastKind?: GenKind
+  lastPrompt3d?: string
+  lastTheme?: string
+  turns: number
+}
+
+export function emptyBrainContext(): BrainContext {
+  return { lastIntent: 'none', turns: 0 }
+}
+
 // ---------- normalizzazione ----------
 
 function norm(s: string): string {
@@ -33,13 +57,13 @@ function norm(s: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s' -]/g, ' ')
+    .replace(/'/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
 
-const has = (t: string, ...words: string[]) => words.some(w => t.includes(w))
-
-/** distanza di Levenshtein (piccola, per il fuzzy) */
+/** distanza di Levenshtein */
 function lev(a: string, b: string): number {
   const m = a.length
   const n = b.length
@@ -60,223 +84,360 @@ function lev(a: string, b: string): number {
   return prev[n]
 }
 
-/** parola simile? (1-2 errori di battitura per parole ≥5 lettere) */
+/** parola simile? (tolleranza crescente con la lunghezza) */
 function fuzzyWord(word: string, target: string): boolean {
   if (word === target) return true
-  if (target.length >= 5 && word.length >= 4) {
-    return lev(word, target) <= (target.length >= 8 ? 2 : 1)
-  }
-  return false
+  const L = Math.max(word.length, target.length)
+  if (L < 4) return false
+  const tol = L >= 10 ? 3 : L >= 7 ? 2 : 1
+  return lev(word, target) <= tol
 }
 
-// ---------- base di conoscenza del sito ----------
+// ---------- dizionario dei sinonimi ----------
+// ogni gruppo manda le sue parole su un'unica "parola chiave".
+// v7.1: NIENTE sostantivi-mondo (villaggio, citta, castello…):
+// devono restare intatti per il parse dei tipi di mondo.
+
+const SYNONYMS: [string, string[]][] = [
+  // movimento visuale
+  ['ruota', ['gira', 'girare', 'ruotare', 'ruota', 'orienta', 'movimenta', 'punta', 'sposta la vista', 'visuale', 'vista', 'camera', 'telecamera', 'inquadratura', 'punto di vista']],
+  // terreno
+  ['terreno', ['terreno', 'collina', 'montagna', 'rilevo', 'scava', 'scavare', 'scavo', 'buca', 'lago', 'valle', 'spiana', 'spianare', 'livella', 'sculpta', 'modella il suolo', 'alza il suolo', 'pala']],
+  // gioco
+  ['gioca', ['giocare', 'gioca', 'gioco', 'esplora', 'esplorare', 'in prima persona', 'cammina', 'camminare', 'entrare', 'entrare dentro', 'modalita giocatore']],
+  // salvataggi
+  ['salvataggi', ['salva', 'salvare', 'salvataggio', 'salvataggi', 'snapshot', 'versioni', 'cronologia', 'autosalvataggio', 'autosave', 'backup', 'copia di sicurezza']],
+  // import
+  ['import', ['importa', 'importare', 'carica', 'caricare', 'upload', 'glb', 'gltf', 'file 3d', 'modelli importati', 'progetti importati', 'caricamento', 'modello esterno']],
+  // strutture + esterni
+  ['strutture', ['struttura', 'strutture', 'costruttore', 'pezzi', 'strutturelab', 'casa pezzo per pezzo', 'edificio personalizzato', 'progettare', 'progetto edifici', 'esterni', 'giardino', 'recinzione', 'siepe', 'aiuola', 'panchina', 'vialetto', 'pergolato', 'fontana', 'vaso', 'homEbyme', 'homebyme']],
+  // agente
+  ['agente', ['agente', 'darpx', 'ai', 'assistente', 'robot', 'bots', 'bot', 'intelligenza', 'chi sei', 'come ti chiami']],
+  // temi
+  ['tema', ['tema', 'temi', 'colore', 'colori', 'aspetto', 'palette', 'sfondo', 'accento', 'tinta', 'look del sito', 'grafica']],
+  // account
+  ['account', ['profilo', 'account', 'password', 'nome utente', 'dati personali', 'privacy', 'privato', 'sicurezza', 'email', 'utente', 'iscrizione', 'registrato']],
+  // elimina
+  ['elimina', ['elimina', 'eliminare', 'cancella', 'cancellare', 'rimuovi', 'rimuovere', 'butta', 'buttare', 'distruggi', 'distruggere', 'ammazza', 'delete']],
+  // strade
+  ['strade', ['strada', 'strade', 'lastrica', 'lastricare', 'percorso', 'sentiero', 'viale', 'asfalto', 'sampietrini', 'ciottoli']],
+  // colore oggetti
+  ['colora', ['colora', 'colorare', 'dipingi', 'dipingere', 'verniciatura', 'ricolora', 'paint']],
+  // admin
+  ['admin', ['admin', 'amministratore', 'pannello', 'gestione', 'amministrazione', 'controlli del sito', 'gestire il sito', 'backoffice']],
+  // mobile
+  ['mobile', ['cellulare', 'telefono', 'smartphone', 'mobile', 'tablet', 'touch', 'ipad', 'android', 'iphone', 'da telefono']],
+  // personaggio
+  ['personaggio', ['personaggio', 'eroe', 'avatar', 'giocatore', 'protagonista', 'con chi gioco', 'chi controllo', 'eroina', 'pg']],
+  // verbi di creazione (→ "genera", così «fammi un villaggio» matcha anche «genera un villaggio»)
+  ['genera', ['genera', 'generare', 'crea', 'creare', 'fammi', 'fai', 'creami', 'dammi', 'disegna', 'modella', 'costruisci', 'realizza', 'inventa', 'springami']],
+]
+
+// parole piccole che NON vanno mai toccate dal fuzzy (evita «come»→«nome»)
+const STOP_WORDS = new Set([
+  'come', 'cosa', 'dove', 'quando', 'perche', 'perche', 'chi', 'che', 'come', 'quale', 'quanto',
+  'con', 'senza', 'nel', 'nella', 'sul', 'sulla', 'per', 'tra', 'fra', 'anche', 'poi', 'modo', 'fatto',
+  'si', 'no', 'e', 'ed', 'o', 'ma', 'se', 'gli', 'le', 'li', 'lo', 'la', 'il', 'un', 'una', 'uno',
+  'del', 'dei', 'delle', 'della', 'al', 'ai', 'alle', 'alla', 'da', 'di', 'in', 'su', 'tuo', 'tua',
+])
+
+/**
+ * traduce la frase grezza in "frase + parole chiave":
+ * il testo ORIGINALE resta intatto (per i controlli di frase) e le
+ * parole chiave canoniche vengono APPPESE in coda (per lo scoring).
+ * Il fuzzy scatta solo da 5 lettere in su e mai sulle stop-word.
+ */
+function canonical(t: string): { text: string; tokens: string[] } {
+  const raw = t.split(' ').filter(Boolean)
+  const out: string[] = []
+  for (const w of raw) {
+    if (STOP_WORDS.has(w)) {
+      out.push(w)
+      continue
+    }
+    let mapped: string | null = null
+    for (const [canon, words] of SYNONYMS) {
+      if (w === canon) {
+        mapped = canon
+        break
+      }
+      for (const syn of words) {
+        if (syn.includes(' ')) continue
+        if (w === syn || (w.length >= 5 && fuzzyWord(w, syn))) {
+          mapped = canon
+          break
+        }
+      }
+      if (mapped) break
+    }
+    out.push(mapped ?? w)
+  }
+  // frasi multi-parola nei sinonimi → aggiungono la parola chiave in coda
+  const extras: string[] = []
+  for (const [canon, words] of SYNONYMS) {
+    for (const syn of words) {
+      if (!syn.includes(' ')) continue
+      if (t.includes(syn)) extras.push(canon)
+    }
+  }
+  // il testo esteso = originale + token canonici (deduplicati)
+  const tokens = out.filter((w, i) => out.indexOf(w) === i)
+  const text = [t, ...tokens, ...extras].join(' ')
+  return { text, tokens }
+}
+
+const has = (t: string, ...words: string[]) => words.some(w => t.includes(w))
+
+// ---------- base di conoscenza del sito (estesa) ----------
 
 const KB: { keys: string[]; title: string; body: string[] }[] = [
   {
-    keys: ['ruota la visuale', 'ruotare la visuale', 'girare la visuale', 'girare la camera', 'visuale', 'camera', 'punto di vista', 'camera dell editor'],
+    keys: ['ruota', 'visuale'],
     title: '🖼️ Ruotare la visuale nell\'editor',
     body: [
       '• Tasto DESTRO del mouse + trascina = ruota la visuale in ogni direzione',
       '• Rotella del mouse = zoom avanti/indietro',
       '• Su cellulare: due dita per ruotare e pizzicare per lo zoom',
-      '• Il bottone 📷 (macchina fotografica) attiva la vecchia modalità camera',
-      '• Click destro SECCO su un oggetto lo elimina',
+      '• Il bottone 📷 attiva la modalità camera (ruoti col tasto sinistro)',
+      '• Click destro SECCO su un oggetto lo elimina (il drag invece ruota)',
     ],
   },
   {
-    keys: ['terreno', 'collina', 'montagna alza', 'scavare', 'scava', 'lago', 'valle', 'spiana', 'sculptare', 'modellare il terreno'],
-    title: '⛰️ Sculptare il terreno',
+    keys: ['terreno'],
+    title: '⛰️ Modellare il terreno',
     body: [
-      'Nella barra terreno dell\'editor trovi i pennelli:',
-      '• ⛰️ Montagna = alza colline · 🥄 Pala = scava valli',
-      '• 🧽 Gomma = spiana · ✋ Mano = torna a piazzare oggetti',
-      '• Slider: diametro del pennello e forza',
+      'Nella barra in alto dell\'editor trovi i pennelli del terreno:',
+      '• ⛰️ Alza = colline e montagne · 🥄 Scava = valli e laghi',
+      '• 🧽 Spiana = riporta tutto a livello · ✋ Mano = torna a piazzare oggetti',
+      '• Gli slider regolano diametro e forza del pennello',
       '• Scavando sotto il livello dell\'acqua compare un LAGHETTO vero 🏞️',
-      '• «Azzera» riporta il terreno piatto · in Gioca cammini sui dislivelli',
+      '• In modalità Gioca cammini davvero sui dislivelli che hai creato',
     ],
   },
   {
-    keys: ['giocare', 'gioca', 'modalita giocatore', 'esplorare', 'in prima persona', 'camminare', 'modalita di gioco', 'entrare nel mondo'],
+    keys: ['gioca'],
     title: '🎮 Giocare dentro il mondo',
     body: [
-      '• Premi il bottone GIOCA nell\'editor per entrare in prima persona',
-      '• WASD o frecce = muoversi · SPAZIO = salto · mouse = guardarsi intorno',
-      '• Cammini sulle strade, sui dislivelli del terreno e dentro le creazioni',
-      '• Il bottone ESCI (o tasto Esc) ti riporta all\'editor',
-      '• Puoi scegliere il personaggio con cui giocare dal bottone apposito',
+      '• Premi GIOCA nell\'editor per entrare in terza persona',
+      '• WASD o frecce = muoversi · SHIFT = correre · trascina il mouse per guardarti intorno',
+      '• Cammini sulle strade, sali sulle colline, entri nelle tue creazioni',
+      '• ESC o il bottone Esci ti riporta all\'editor',
+      '• Con 🧍 Personaggio scegli chi interpretare: l\'eroe di serie o un tuo modello GLB',
     ],
   },
   {
-    keys: ['salvare', 'salvataggio', 'salva', 'snapshot', 'versioni', 'autosalvataggio', 'autosave', 'dove finiscono i mondi'],
-    title: '💾 Salvataggi',
+    keys: ['salvataggi'],
+    title: '💾 Salvataggi e versioni',
     body: [
-      '• Il mondo si salva in automatico mentre lavori (vedi lo stato in alto)',
-      '• Con il bottone Cronologia/Salvataggi crei SNAPSHOT con nome: versioni a cui tornare quando vuoi',
-      '• I progetti sono tutti nella home, reparto «I miei mondi»',
+      '• Il mondo si salva in automatico mentre lavori (stato in alto a destra)',
+      '• Con il bottone Salvataggi crei SNAPSHOT con nome: versioni a cui tornare',
+      '• «Ripristina» riporta il mondo a quel momento esatto',
+      '• Tutti i progetti stanno nella home, reparto «I miei mondi»',
     ],
   },
   {
-    keys: ['importare modello', 'importare un modello', 'caricare modello', 'caricare un modello', 'importa', 'glb', 'gltf', 'file 3d', 'modelli importati', 'progetti importati', 'caricare i modelli'],
+    keys: ['import'],
     title: '📦 Importare modelli 3D',
     body: [
-      '• Home → reparto «Progetti importati» → bottone Importa modelli',
-      '• Si possono caricare file .glb e .gltf (anche molti insieme)',
+      '• Home → «Progetti importati» → bottone Importa modelli',
+      '• Si caricano file .glb e .gltf, anche molti insieme',
       '• Occhio ai file .meshy: sono cifrati, servono i GLB scaricati',
-      '• Con l\'occhio 👁️ apri l\'ANTEPRIMA 3D: ruota, wireframe, statistiche e download',
-      '• I modelli finiscono automaticamente nella barra oggetti di OGNI tuo mondo',
-      '• La dimensione (0,5x…3x) si sceglie nella lista e vale per i nuovi piazzamenti',
+      '• Con l\'occhio 👁️ apri l\'ANTEPRIMA 3D: rotazione, wireframe, statistiche, download',
+      '• I modelli finiscono nella barra oggetti di OGNI tuo mondo',
+      '• La dimensione (0,5x–3x) si sceglie dalla lista e vale per i nuovi piazzamenti',
     ],
   },
   {
-    keys: ['non vedo', 'non si vede', 'invisibile', 'scomparso', 'non trovo il modello', 'modello non appare', 'modello invisibile'],
+    keys: ['migliora glb', 'laboratorio glb', 'modificare i modelli', 'ritoccare', 'migliorare i modelli'],
+    title: '🔧 Migliorare un modello che hai già',
+    body: [
+      'Novità v7! In Darpx.ai trovi il **Laboratorio GLB**:',
+      '• Scegli uno dei modelli già nei tuoi Progetti importati (o carica un file)',
+      '• Applico tinta o veri materiali PBR: oro, argento, ferro, legno, pietra, marmo…',
+      '• Posso AGGIUNGERE: ali, corna, basamento in pietra, aura luminosa',
+      '• Ridimensiono il modello all\'altezza che vuoi e lo riappoggio a terra',
+      '• Alla fine salvi il risultato nei Progetti importati o lo scarichi in GLB',
+    ],
+  },
+  {
+    keys: ['non vedo', 'invisibile', 'scomparso', 'modello non appare'],
     title: '🔍 Un modello non si vede?',
     body: [
       'Controlla in questo ordine:',
-      '• Reparto «Progetti importati»: il file è nella lista? Se no, l\'upload non è finito',
+      '• «Progetti importati»: il file è nella lista? Se no, l\'upload non è finito',
       '• Premi l\'occhio 👁️: l\'anteprima 3D ti dice subito se il file è leggibile o corrotto',
-      '• Nell\'editor, apri la barra oggetti: i tuoi modelli stanno in fondo, con l\'icona 📦',
-      '• Se il file è corrotto l\'anteprima lo segnala: scaricalo di nuovo dalla fonte',
+      '• Nell\'editor i tuoi modelli stanno in fondo alla barra oggetti, icona 📦',
+      '• Se l\'anteprima lo segnala come corrotto, riscarica il file dalla fonte',
+      '• Se è semplicemente gigante o minuscolo: cliccalo per cambiare dimensione (0,5x–3x)',
     ],
   },
   {
-    keys: ['struttura', 'strutture', 'costruttore di case', 'pezzi', 'strutturelab', 'costruire case pezzo per pezzo', 'progettare edifici'],
-    title: '🏗️ Reparto Strutture',
+    keys: ['strutture'],
+    title: '🏗️ Reparto Strutture (+ esterni!)',
     body: [
       '• Home → «Strutture»: progetti edifici pezzo per pezzo su una griglia 3D',
-      '• Pavimenti, muri, tetti, porte e finestre colorabili, su più piani',
-      '• Le strutture salvate finiscono nella barra oggetti di ogni mondo come oggetti unici',
-      '• Puoi duplicarle, rinominarle e riutilizzarle quanti volte vuoi',
+      '• v7: muri, porte e finestre si appoggiano SUL BORDO delle celle → simmetria perfetta',
+      '• Pavimento e muro possono stare nella STESSA cella (il controllo è per pezzo)',
+      '• Nuovi pezzi da ESTERNO stile HomeByMe: 🚧 recinzione, 🌿 siepe, 🥾 vialetto, 🌷 aiuola, 🪑 panchina',
+      '• Le strutture salvate finiscono nella barra oggetti di ogni mondo, riusabili all\'infinito',
     ],
   },
   {
-    keys: ['immagine', 'foto', 'dalla foto', 'mondo da un immagine', 'mondo da una immagine', 'world labs', 'trasformare foto in mondo'],
+    keys: ['immagine'],
     title: '🖼️ Darpx.ai · Immagine → Mondo',
     body: [
       '• Home → «Darpx.ai» → carica una qualsiasi immagine',
-      '• Darpx la analizza (colori, luce, paesaggio) e costruisce un mondo 3D coerente: colline, laghi, boschi',
-      '• Se l\'immagine è notturna aggiunge lampioni; se è dominata dal blu fa un lago grande',
+      '• Darpx la analizza (colori, luce, paesaggio) e costruisce un mondo 3D coerente',
+      '• Se è notturna aggiunge lampioni; se domina il blu crea un grande lago',
       '• Spunta «usa anche come cielo» per farne il panorama del mondo',
     ],
   },
   {
-    keys: ['motore interno', 'senza chiavi', 'senza api', 'genera da solo', 'creare 3d gratis', '3d gratis', 'quanto costa generare', 'limiti generazione', 'quanti modelli posso'],
-    title: '🧬 Il Motore interno Darpx (novità!)',
+    keys: ['motore interno', 'senza chiavi', '3d gratis', 'quanto costa', 'limiti'],
+    title: '🧬 Il Motore interno Darpx',
     body: [
-      'Il reparto Darpx.ai ora ha un motore 3D **integrale**, costruito da zero:',
-      '• Genera nel TUO browser: nessuna chiave API, nessun limite, costo zero',
-      '• Capisce l\'italiano: colori, materiali (oro, legno, ghiaccio…), taglia, dettagli',
-      '• Sa creare: draghi, cavalieri, maghi, cavalli, lupi, aquile, serpenti, robot, spade, scudi, navi, case, torri, castelli, alberi, pozioni, cristalli, forzieri…',
-      '• Ogni generazione è un GLB vero: anteprima 👁️, download, uso nell\'editor',
-      '• «Genera variante» crea una versione diversa dello stesso prompt',
-      'Chiedimi «genera un drago» e lo faccio subito! 🐉',
+      'Il reparto Darpx.ai ha un motore 3D costruito da zero, che gira nel TUO browser:',
+      '• Nessuna chiave API, nessun costo, nessun limite di richieste',
+      '• Capisce l\'italiano: specie, colori, materiali (oro, legno, ghiaccio…), taglia, dettagli',
+      '• v7: modelli con texture PBR realistiche (scaglie, pelli, metalli spazzolati)',
+      '• Ogni richiesta genera un modello DIVERSO: chiedi 3 volte «un cavaliere» e ne ottieni 3 diversi',
+      '• Prima di generare ti chiede i dettagli che mancano (colore, taglia, dettagli) — salta pure le domande se hai fretta',
+      '• Risultato: GLB vero con anteprima 👁️, download e uso immediato nell\'editor',
     ],
   },
   {
-    keys: ['testo', 'creare un personaggio', 'personaggio 3d', 'mostro', '3d da testo', 'meshy', 'tripo', 'hunyuan', 'stable fast', 'chiave api', 'motore 3d', 'motori esterni', 'fotoreale'],
+    keys: ['motori esterni', 'meshy', 'tripo', 'chiave api', 'fotoreale'],
     title: '🧊 Motori esterni (opzionali)',
     body: [
-      '• Oltre al motore interno puoi usare i motori cloud: Tripo, fal.ai (Hunyuan 3D), Stable Fast 3D e Meshy',
-      '• Servono per look fotorealistici: se uno si blocca, passa al successivo in automatico',
-      '• Serve una chiave API gratuita del motore che preferisci (salvata cifrata nel database)',
-      '• Il modello finisce in «Progetti importati» con anteprima 👁️ e nella barra oggetti dell\'editor',
-      'Il motore interno invece parte subito, senza nulla da configurare 🧬',
+      '• Oltre al motore interno puoi usare i motori cloud: Tripo, fal.ai, Stable Fast 3D e Meshy',
+      '• Servono per look fotografici particolari; se uno si blocca si passa al successivo',
+      '• Serve una chiave API gratuita del motore che preferisci (salvata cifrata)',
+      '• Il modello arriva nei «Progetti importati» con anteprima 👁️',
+      '• Il motore interno invece parte subito, senza configurare nulla 🧬',
     ],
   },
   {
-    keys: ['chi sei', 'cos e darpx', 'cos e darpx', 'darpx', 'agente', 'come ti chiami', 'chi ti ha creato', 'sei un robot', 'sei una ia', 'sei un ai'],
+    keys: ['agente'],
     title: '✨ Sono l\'Agente Darpx',
     body: [
-      'Sono l\'assistente AI integrato nel sito: rispondo e faccio cose concrete:',
-      '• «crea un mondo medievale grande» → lo genero e te lo apro',
-      '• «genera un drago» → lo creo SUBITO col motore interno 🧬',
-      '• «metti il tema viola» → cambio il colore del sito',
-      '• «vai alle strutture» → cambio reparto per te',
-      '• «come si ruota la visuale?» → ti spiego tutto del sito',
+      'Sono l\'assistente AI del sito, e faccio cose concrete:',
+      '• «genera un drago rosso» → lo creo col motore interno, al volo 🧬',
+      '• «crea un mondo grande» → lo genero e te lo apro nell\'editor',
+      '• «metti il tema viola» → cambio i colori del sito',
+      '• «vai alle strutture» → ti porto nel reparto giusto',
+      '• «ancora!» → ripeto l\'ultima cosa che ho fatto, con una variante nuova',
+      'Capisco l\'italiano parlato normale, anche con errori di battitura.',
     ],
   },
   {
-    keys: ['tema', 'colore del sito', 'accento', 'cambiare colore', 'colore', 'colori del sito', 'aspetto del sito', 'personalizzare il sito'],
+    keys: ['tema'],
     title: '🎨 Temi e colori del sito',
     body: [
-      'Il sito ha 16 temi colore: Bosco, Mare, Cielo, Notte, Lavanda, Viola, Fucsia, Rosa, Ciliegia, Terracotta, Arancio, Miele, Lime, Menta, Caffè e Ardesia.',
-      '• Puoi cambiarli dall\'ingranaggio ⚙️ in alto a destra → scheda Colori',
-      '• Oppure DIMMILO: «metti il tema viola», «voglio il sito rosa»… lo faccio al volo!',
+      `Il sito ha ${THEMES.length} temi colore: ${THEMES.map(t => t.name).join(', ')}.`,
+      '• Cambiali dall\'ingranaggio ⚙️ in alto a destra → scheda Colori',
+      '• Oppure DIMMELO: «metti il tema viola», «voglio il sito rosa»… lo faccio al volo',
       '• La scelta viene ricordata sul tuo account e seguita da tutta l\'interfaccia',
     ],
   },
   {
-    keys: ['profilo', 'cambiare nome', 'password', 'account', 'cambio password', 'dati personali', 'privacy', 'privato'],
+    keys: ['account'],
     title: '👤 Il tuo account',
     body: [
-      '• In alto a destra trovi il tuo profilo: nome, tema colore e cambio password',
+      '• In alto a destra trovi il profilo: nome, tema colore e cambio password',
       '• Il tema scelto vale su tutto il sito e viene ricordato',
       '• Tutto ciò che crei è privato e visibile solo nel tuo account',
+      '• Puoi eliminare progetti e modelli quando vuoi: restano tuoi',
     ],
   },
   {
-    keys: ['undo', 'annulla', 'ctrl z', 'rifare', 'rimediare', 'tornare indietro'],
+    keys: ['annulla', 'undo', 'tornare indietro', 'rifare'],
     title: '↩️ Annullare le modifiche',
     body: [
-      '• Il bottone freccia curva (in alto nell\'editor) annulla l\'ultima azione',
-      '• Vale per oggetti piazzati, spostati, colorati e per il terreno scolpito',
-      '• Puoi annullare più volte per tornare indietro di molti passi',
+      '• Il bottone freccia curva (in alto nell\'editor) annulla l\'ultima azione — o Ctrl+Z',
+      '• Vale per oggetti piazzati, colorati, ruotati e per il terreno scolpito',
+      '• Puoi annullare più volte di fila per tornare indietro di molti passi',
     ],
   },
   {
-    keys: ['eliminare', 'cancellare', 'rimuovere', 'cancellare oggetto', 'eliminare oggetto', 'buttare via', 'distruggere'],
+    keys: ['elimina'],
     title: '🗑️ Eliminare oggetti e progetti',
     body: [
       'Nell\'editor:',
       '• Click DESTRO secco su un oggetto lo elimina all\'istante',
       'Nella home:',
-      '• Ogni card dei mondi ha il bottone 🗑 per eliminare il progetto (con conferma)',
-      '• I modelli si eliminano da «Progetti importati» e le strutture da «Strutture»',
+      '• Ogni card dei mondi ha il cestino 🗑 per eliminare il progetto (con conferma)',
+      '• I modelli si eliminano da «Progetti importati», le strutture da «Strutture»',
     ],
   },
   {
-    keys: ['strade', 'strada', 'lastricare', 'percorso', 'collegare le case', 'via'],
+    keys: ['strade'],
     title: '🛣️ Le strade',
     body: [
-      '• Nella barra oggetti dell\'editor trovi la STRADA: si stende seguendo il terreno',
-      '• Clicca più punti in sequenza per un percorso curvo, doppio click per chiudere',
-      '• Le strade si agganciano tra loro e formano reticoli veri',
+      '• Nella barra oggetti trovi la STRADA in sampietrini: si collega da sola alle vicine',
+      '• Più strade affiancate formano reticoli e piazze vere',
+      '• v7: cordoli in pietra sui lati liberi e vialetti in ghiaia per i giardini',
       '• In modalità Gioca ci cammini sopra come in un videogioco',
     ],
   },
   {
-    keys: ['colore degli oggetti', 'colorare', 'dipingere', 'cambiare colore oggetto', 'verniciare', 'tinta'],
+    keys: ['colora'],
     title: '🖌️ Colorare gli oggetti',
     body: [
-      '• Seleziona l\'oggetto piazzato e usa il pannello colore: cambia al volo',
+      '• Clicca un oggetto piazzato: cambia colore al volo (tasto C sull\'anteprima)',
       '• Vale per case, torri, alberi, pezzi delle strutture e molto altro',
-      '• Per le tue STRUTTURE il colore si sceglie pezzo per pezzo nel costruttore',
+      '• Per le STRUTTURE il colore si sceglie pezzo per pezzo nel costruttore',
+      '• I modelli GLB importati invece cambiano dimensione (0,5x–3x)',
     ],
   },
   {
-    keys: ['admin', 'amministratore', 'pannello di controllo', 'gestire il sito', 'gestione utenti'],
+    keys: ['admin'],
     title: '🛡️ Area admin',
     body: [
       '• Il pannello admin è all\'indirizzo /admin (link discreto nel footer)',
-      '• Serve la password da amministratore (impostata su Vercel come ADMIN_PASSWORD)',
-      '• Da lì: diagnostica del sito, gestione utenti, progetti, modelli, testi del sito, chiavi 3D globali e configurazione dell\'agente AI',
+      '• Serve la password da amministratore (variabile ADMIN_PASSWORD su Vercel)',
+      '• Da lì: diagnostica, gestione utenti e progetti, testi del sito, chiavi 3D globali, configurazione dell\'agente AI',
     ],
   },
   {
-    keys: ['cellulare', 'telefono', 'mobile', 'tablet', 'da smartphone', 'touch'],
+    keys: ['mobile'],
     title: '📱 Da cellulare',
     body: [
-      '• Il sito funziona anche da telefono e tablet, tutto si tocca col dito',
+      '• Il sito funziona anche da telefono e tablet, tutto a tocco di dito',
       '• Nell\'editor: un dito = piazza/seleziona · due dita = ruota e zoom',
-      '• In Gioca: joystick a schermo per camminare e trascina per guardarsi intorno',
+      '• In Gioca: joystick a schermo per camminare e trascina per guardarti intorno',
+      '• La bolla dell\'agente in basso a destra funziona uguale, anche in viaggio 😄',
     ],
   },
   {
-    keys: ['personaggio', 'eroe', 'con chi gioco', 'giocatore', 'avatar', 'scegliere personaggio'],
-    title: '🧑 L\'eroe e il personaggio',
+    keys: ['personaggio'],
+    title: '🧑 L\'eroe e i personaggi',
     body: [
-      '• Nell\'editor, il bottone Personaggio apre la scelta: Eroe classico o uno dei TUOI modelli GLB',
-      '• Se hai caricato un cavaliere o una creatura, puoi entrarci dentro in modalità Gioca',
-      '• Anche i modelli generati dal motore interno vanno bene come personaggio!',
+      '• Il bottone Personaggio apre la scelta: Eroe di serie o un tuo modello GLB',
+      '• L\'eroe v7 è un avventuriero realistico: tunica, cintura, stivali, sacca da viaggio',
+      '• Se hai caricato un cavaliere o una creatura puoi entrarci dentro in modalità Gioca',
+      '• Vanno bene anche i modelli generati dal motore interno!',
+    ],
+  },
+  {
+    keys: ['realistico', 'grafica', 'texture', 'stile realistico', 'cartonato', 'cartoon', 'rismegliare'],
+    title: '🌿 Il restyling realistico v7',
+    body: [
+      'Tutto il sito è stato rimasterizzato in stile realistico:',
+      '• Edifici con zoccoli in pietra, intonaco, tetti in coppi, comignoli, finestre con telaio e davanzale',
+      '• Texture PBR procedurali: mattoni, legno venato, pietra, sampietrini, ghiaia, erba, foglie…',
+      '• Alberi e cespugli con chiome organiche, rocce erose, acqua e luce naturali',
+      '• L\'opzione «cartoon/medievale» è stata ritirata: c\'è UN solo look, curato',
+      '• Anche i modelli del motore Darpx 3D ora hanno scaglie, pelli e metalli veri',
+    ],
+  },
+  {
+    keys: ['avatar', 'compagno', 'mascotte', 'omino', 'capri'],
+    title: '💜 Il mio avatar',
+    body: [
+      'Hai notato il piccolo essere nella bolla in basso a destra?',
+      '• È la mia forma fisica: un guizzo d\'ombra con fiamma olografica 💜',
+      '• Cammina, pensa, festeggia e viaggia per lo schermo mentre mi parli',
+      '• Se lo vedi passeggiare in fondo alla pagina non preoccuparti: sta solo esplorando il sito!',
     ],
   },
 ]
@@ -284,16 +445,16 @@ const KB: { keys: string[]; title: string; body: string[] }[] = [
 // ---------- azioni ----------
 
 const KIND_WORDS: { kind: GenKind; words: string[] }[] = [
-  { kind: 'citta', words: ['citta', 'centro storico', 'borgo grande', 'metropoli medievale'] },
-  { kind: 'villaggio', words: ['villaggio', 'paesino', 'paese', 'borgo'] },
-  { kind: 'fortezza', words: ['fortezza', 'castello', 'rocca', 'fortino', 'cittadella'] },
-  { kind: 'paesaggio', words: ['paesaggio', 'natura', 'bosco', 'foresta', 'lago', 'montagna', 'deserto', 'valle', 'isola'] },
+  { kind: 'citta', words: ['citta', 'centro storico', 'borgo grande', 'metropoli'] },
+  { kind: 'villaggio', words: ['villaggio', 'paesino', 'paese', 'borgo', 'fattoria'] },
+  { kind: 'fortezza', words: ['fortezza', 'castello', 'rocca', 'fortino', 'cittadella', 'fortificazione'] },
+  { kind: 'paesaggio', words: ['paesaggio', 'natura', 'bosco', 'foresta', 'lago', 'montagna', 'deserto', 'valle', 'isola', 'campagna'] },
 ]
 
 const SIZE_WORDS: { size: GenSize; words: string[] }[] = [
-  { size: 's', words: ['piccol', 'minuscol', 'quartiere'] },
-  { size: 'l', words: ['grand', 'grosso', 'esteso', 'largo'] },
-  { size: 'xl', words: ['enorm', 'gigante', 'immens', 'xl', 'metropoli'] },
+  { size: 's', words: ['piccol', 'minuscol', 'quartiere', 'mini'] },
+  { size: 'l', words: ['grand', 'grosso', 'esteso', 'largo', 'ampio'] },
+  { size: 'xl', words: ['enorm', 'gigant', 'immens', 'xl', 'metropoli', 'sproporzionat'] },
 ]
 
 function parseKind(t: string): GenKind | null {
@@ -307,28 +468,44 @@ function parseSize(t: string): GenSize {
 }
 
 function parseDensity(t: string): number {
-  if (has(t, 'fitto', 'fitta', 'denso', 'densa', 'popolato', 'pieno', 'tante case')) return 0.85
-  if (has(t, 'rado', 'rada', 'spoglio', 'spoglia', 'vuoto', 'poche case', 'essenziale')) return 0.3
+  if (has(t, 'fitto', 'fitta', 'denso', 'densa', 'popolato', 'pieno', 'tante case', 'affollat')) return 0.85
+  if (has(t, 'rado', 'rada', 'spoglio', 'spoglia', 'vuoto', 'poche case', 'essenziale', 'deserto di case')) return 0.3
   return 0.6
 }
 
-const WORLD_TRIGGERS = ['mondo', 'mappa', 'citta', 'villaggio', 'fortezza', 'castello', 'paesaggio', 'bosco', 'lago', 'isola', 'deserto']
+const WORLD_TRIGGERS = ['mondo', 'mappa', 'citta', 'villaggio', 'fortezza', 'castello', 'paesaggio', 'bosco', 'lago', 'isola', 'deserto', 'valle', 'montagna', 'borgo', 'paese', 'natura']
 
 function extractObjectPhrase(t: string): string | null {
-  // "genera un drago verde con le ali" → "un drago verde con le ali"
-  const m = /(?:genera|crea|fammi|fami|fai|voglio|creami|creare|dammi)\s+(?:un|uno|una|il|lo|la|dei|delle|qualche)?\s*(.{3,120})/.exec(t)
+  const m = /(?:genera|crea|fammi|fami|fai|voglio|creami|creare|dammi|disegna|modella|costruisci|realizza|inventa)\s+(?:un|uno|una|il|lo|la|dei|delle|qualche|due|tre)?\s*(.{3,140})/.exec(t)
   if (!m) return null
   return m[1].replace(/[.!?]+$/, '').trim()
 }
 
-/** trova il tema richiesto («metti il tema viola», «voglio il sito rosa») */
 function parseTheme(t: string): string | null {
-  const m = /(?:tema|colore|sfondo|sito)\s+(?:di\s+|da\s+|in\s+)?([a-z]+)|voglio il sito ([a-z]+)/.exec(t)
-  if (!m) return null
-  const wanted = m[1] ?? m[2] ?? ''
-  if (!wanted) return null
-  for (const th of THEMES) {
-    if (fuzzyWord(wanted, norm(th.name)) || fuzzyWord(wanted, norm(th.id))) return th.id
+  const m = /(?:tema|colore|sfondo|sito)\s+(?:di\s+|da\s+|in\s+)?([a-z]+)/.exec(t)
+  const wanted = m?.[1] ?? ''
+  if (wanted) {
+    for (const th of THEMES) {
+      if (fuzzyWord(wanted, norm(th.name)) || fuzzyWord(wanted, norm(th.id))) return th.id
+    }
+  }
+  // «metti viola» / «rendi tutto viola» / «cambia in viola»
+  const m2 = /(?:metti|voglio|rendi|fai tutto|cambia in)\s+(?:il\s+|lo\s+|la\s+|tutto\s+|tutta\s+)?([a-z]+)/.exec(t)
+  const w2 = m2?.[1] ?? ''
+  if (w2) {
+    for (const th of THEMES) {
+      if (fuzzyWord(w2, norm(th.name)) || fuzzyWord(w2, norm(th.id))) return th.id
+    }
+  }
+  // contesto «sito» + ultima parola: «voglio il sitov viola» → viola
+  if (/sit|tutto il|interfacc|grafica/.test(t)) {
+    const words = t.split(' ').filter(Boolean)
+    const last = words[words.length - 1] ?? ''
+    if (last.length >= 3) {
+      for (const th of THEMES) {
+        if (fuzzyWord(last, norm(th.name)) || fuzzyWord(last, norm(th.id))) return th.id
+      }
+    }
   }
   return null
 }
@@ -336,201 +513,275 @@ function parseTheme(t: string): string | null {
 // ---------- risposte pronte ----------
 
 const GREETING_REPLY: AgentReply = {
-  text: `Ciao! 👋 Sono l'**Agente Darpx**, l'assistente del sito.\n\nPosso fare cose vere, non solo chiacchiere:\n• «genera un drago» → lo creo SUBITO col mio motore interno 🧬\n• «crea un mondo medievale grande» → lo genero e lo apro\n• «metti il tema viola» → cambio il colore del sito\n• «come si scava il terreno?» → spiego ogni funzione\n\nCosa vuoi fare?`,
+  text: `Ciao! 👋 Sono l'**Agente Darpx**, l'assistente del sito.\n\nPosso fare cose vere, non solo chiacchiere:\n• «genera un drago» → lo creo SUBITO col mio motore interno 🧬\n• «crea un mondo medievale grande» → lo genero e te lo apro\n• «metti il tema viola» → cambio il colore del sito\n• «come si scava il terreno?» → ti spiego ogni funzione\n\nE se ti serve una variante di qualcosa, scrivi «ancora» e la rifaccio diversa.\n\nCosa vuoi fare?`,
   action: { type: 'none' },
   suggestions: ['Genera un drago rosso', 'Crea un villaggio grande', 'Metti il tema viola', 'Cosa sai fare?'],
   confidence: 1,
 }
 
 const HELP_REPLY: AgentReply = {
-  text: `Ecco cosa so fare **subito**:\n\n🧬 **Generare modelli 3D** (motore interno, senza chiavi) — «genera un drago rosso», «crea una spada d'oro», «un robot di ferro»\n🌍 **Generare mondi** — «crea una fortezza enorme», «fammi un villaggio fitto di case»\n🎨 **Cambiare il tema** — «metti il tema fucsia», «voglio il sito azzurro»\n🧭 **Muovermi nel sito** — «vai alle strutture», «apri Darpx.ai», «mostra i miei mondi»\n📚 **Spiegare tutto** — visuale, terreno, gioco, strade, salvataggi, import, strutture, chiavi 3D…\n\nScrivi quello che vuoi: capisco l'italiano, anche con errori di battitura.`,
+  text: `Ecco cosa so fare **subito**:\n\n🧬 **Generare modelli 3D** (motore interno, zero chiavi) — «genera un drago rosso», «crea una spada d'oro». Ogni volta un modello DIVERSO, e prima ti chiedo i dettagli che mancano.\n🌍 **Generare mondi** — «crea una fortezza enorme», «fammi un villaggio fitto di case»\n🎨 **Cambiare il tema** — «metti il tema fucsia», «voglio il sito azzurro»\n🧭 **Muovermi nel sito** — «vai alle strutture», «apri Darpx.ai», «mostra i miei mondi»\n🔧 **Migliorare i tuoi GLB** — in Darpx.ai c'è il Laboratorio: tinta, oro, ali, corna, basamenti\n📚 **Spiegare tutto** — visuale, terreno, gioco, strade, salvataggi, import, strutture, esterni, admin…\n\nScrivi come ti viene: capisco l'italiano, anche sbagliato o con errori di battitura. E «ancora» rifà l'ultima cosa con una variante.`,
   action: { type: 'none' },
   suggestions: ['Genera un drago', 'Crea una città medievale', 'Metti il tema rosa', 'Come importo i modelli?'],
   confidence: 1,
 }
 
-const FALLBACK_REPLY: AgentReply = {
-  text: `Hmm, questa non la conosco a fondo 😅\n\nMa posso darti una mano con:\n• 🧬 generare modelli 3D con il mio motore interno («genera un drago»)\n• 🌍 creare mondi interi («crea un villaggio»)\n• 🎨 cambiare il tema del sito («metti il tema mare»)\n• 📚 spiegarti ogni angolo del sito\n\nProva a riformulare, oppure usa un suggerimento qui sotto.`,
-  action: { type: 'none' },
-  suggestions: ['Cosa sai fare?', 'Come ruoto la visuale?', 'Crea un paesaggio', 'Genera un robot'],
-  confidence: 0.3,
+/** cosa so generare: elenco vivo delle specie del motore */
+function speciesListReply(): AgentReply {
+  const creatures = SPECIES.filter(s => ['dragon', 'serpent', 'humanoid', 'quadruped', 'bird', 'fish', 'robot'].includes(s.archetype)).map(s => s.label.toLowerCase())
+  const objects = SPECIES.filter(s => !['dragon', 'serpent', 'humanoid', 'quadruped', 'bird', 'fish', 'robot'].includes(s.archetype)).map(s => s.label.toLowerCase())
+  const chunk = (a: string[], n: number) =>
+    Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n).join(', '))
+  return {
+    text: `Con il **motore interno** so creare ${SPECIES.length} specie di modelli 🧬\n\n**Creature:** ${chunk(creatures, 9).join(';\n')}.\n**Oggetti e edifici:** ${chunk(objects, 9).join(';\n')}.\n\nOgni modello accetta **colori** (rosso, smeraldo…), **materiali** (oro, legno, ghiaccio, fuoco, ombra…), **taglie** (minuscolo → enorme) e **dettagli** (ali, corna, armatura, spine, sella…).\n\nChiedimelo 3 volte e te ne faccio 3 di diverse!`,
+    action: { type: 'none' },
+    suggestions: ['Genera un drago rosso con le corna', 'Genera un robot di ferro', 'Cosa sai fare?'],
+    confidence: 1,
+  }
 }
 
 // ---------- cervello principale ----------
 
-export function askBrain(message: string): AgentReply {
-  const t = norm(message)
-  if (!t) return FALLBACK_REPLY
-
-  // saluti
-  if (
-    /^(ciao|salve|hey|ehi|buongiorno|buonasera|hola|hello|yo|ola)[\s!.,]*$/.test(t) ||
-    t === 'ciao darpx' ||
-    t === 'ciao darpx come stai'
-  ) {
-    return GREETING_REPLY
+export function askBrain(message: string, prev?: BrainContext): { reply: AgentReply; ctx: BrainContext } {
+  const ctx: BrainContext = prev ?? emptyBrainContext()
+  const raw = norm(message)
+  if (!raw) {
+    return { reply: GREETING_REPLY, ctx }
   }
 
-  // come stai
-  if (has(t, 'come stai', 'come va', 'tutto bene')) {
-    return {
-      text: 'Alla grande, pronto a costruire mondi! 🚀\n\nDimmi: genero un modello 3D, creo un mondo o ti spiego qualcosa del sito?',
+  const { text, tokens } = canonical(raw)
+  const next: BrainContext = { ...ctx, turns: ctx.turns + 1 }
+
+  const done = (reply: AgentReply, intent: BrainContext['lastIntent'], extra?: Partial<BrainContext>) => {
+    return { reply, ctx: { ...next, lastIntent: intent, ...extra } }
+  }
+
+  // ---- saluti e chiacchiere ----
+  if (/^(ciao|salve|hey|ehi|buongiorno|buonasera|hola|hello|yo|ola)[\s!.,]*$/.test(raw) ||
+    /^ciao darpx/.test(raw)) {
+    return done(GREETING_REPLY, 'none')
+  }
+  if (has(raw, 'come stai', 'come va', 'tutto bene', 'come ti senti')) {
+    return done({
+      text: 'Alla grande, pronto a costruire mondi! 🚀\n\nDimmi: genero un modello 3D, creo un mondo, cambio il tema o ti spiego qualcosa del sito? Se ti è piaciuta l\'ultima cosa che ho fatto, scrivi «ancora» e ne faccio una variante.',
       action: { type: 'none' },
       suggestions: ['Genera un drago', 'Crea un villaggio', 'Cosa sai fare?'],
       confidence: 1,
+    }, 'none')
+  }
+  if (
+    has(raw, 'cosa sai fare', 'cosa puoi fare', 'che cosa sai', 'aiuto', 'help', 'come funzioni', 'istruzioni', 'comandi', 'capacita') &&
+    !has(raw, 'generare', 'creare con')
+  ) {
+    return done(HELP_REPLY, 'none')
+  }
+  if (has(raw, 'cosa sai generare', 'cosa puoi generare', 'cosa crei', 'cosa crei con il motore', 'quali modelli', 'cosa generi')) {
+    return done(speciesListReply(), 'none')
+  }
+  if (has(raw, 'grazie', 'perfetto', 'grandee', 'grandioso', 'top ', 'fantastico', 'mitico', 'spettacolare', 'bravo', 'bellissimo', 'gentilissimo')) {
+    return done({
+      text: 'Figurati! 😄 Se ti serve altro sono qui: modelli 3D, mondi, temi, spiegazioni… e ricorda: «ancora» = rifaccio l\'ultima cosa con una variante nuova.',
+      action: { type: 'none' },
+      suggestions: ['Cosa sai fare?', 'Crea un villaggio', 'Genera un drago'],
+      confidence: 0.9,
+    }, ctx.lastIntent, { lastKind: ctx.lastKind, lastPrompt3d: ctx.lastPrompt3d, lastTheme: ctx.lastTheme })
+  }
+  if (has(raw, 'arrivederci', 'ciao ciao', 'a dopo', 'buonanotte', 'buona giornata', 'me ne vado', 'sto uscendo')) {
+    return done({
+      text: 'A presto! 👋 I tuoi mondi ti aspettano qui, al sicuro nel tuo account. Se mi vedi passeggiare in fondo alla pagina, salutami pure!',
+      action: { type: 'none' },
+      suggestions: ['Torna ai mondi'],
+      confidence: 0.9,
+    }, 'none')
+  }
+
+  // ---- FOLLOW-UP: «ancora», «un altro», «sì fallo» ----
+  const isFollowUp =
+    /^(ancora|ancora uno|ancora una|un altro|un altra|unaltra|di nuovo|ripeti|rifallo|ancora ancora|dai|su|vai|fallo|ok fallo|si fallo|si dai|ok dai|va bene|perfetto fallo|ancora uno diverso)[\s!.,]*$/.test(raw) ||
+    (/^(si|sì|ok|yes|certo|ovvio)[\s!.,]*$/.test(raw) && ctx.lastIntent !== 'none')
+  if (isFollowUp && ctx.lastIntent !== 'none') {
+    if (ctx.lastIntent === 'createWorld' && ctx.lastKind) {
+      const kind = ctx.lastKind
+      return done({
+        text: `Volentieri! Genero un altro **${kind === 'citta' ? 'città medievale' : kind}**, tutto diverso dal precedente 🌍\n\nOgni mondo è generato con un seed nuovo: disposizione, strade e dettagli cambiano sempre.`,
+        action: { type: 'createWorld', kind, size: 'm', density: 0.6 },
+        suggestions: ['Ancora!', 'Creane una enorme', 'Come si gioca dentro?'],
+        confidence: 1,
+      }, 'createWorld', { lastKind: kind })
+    }
+    if (ctx.lastIntent === 'generate3d' && ctx.lastPrompt3d) {
+      return done({
+        text: `Ci sto! Creo un'altra versione di **${ctx.lastPrompt3d}**, con seed nuovo: sarà diversa dalla precedente 🧬\n\nLa trovi nell'anteprima appena è pronta.`,
+        action: { type: 'prefill3d', prompt: ctx.lastPrompt3d },
+        suggestions: ['Ancora!', 'Salvalo nei modelli', 'Cosa sai generare?'],
+        confidence: 1,
+      }, 'generate3d', { lastPrompt3d: ctx.lastPrompt3d })
+    }
+    if (ctx.lastIntent === 'setTheme') {
+      return done({
+        text: 'Rimetto il tema che avevamo scelto 🎨 (per cambiarlo dimmi pure un altro colore!).',
+        action: { type: 'setTheme', themeId: ctx.lastTheme ?? 'bosco' },
+        suggestions: ['Metti il tema notte', 'Metti il tema mare', 'Cosa sai fare?'],
+        confidence: 1,
+      }, 'setTheme', { lastTheme: ctx.lastTheme })
     }
   }
 
-  // aiuto / capacità
+  // ---- cambio tema ----
   if (
-    has(t, 'cosa sai fare', 'cosa puoi fare', 'che cosa sai', 'aiuto', 'help', 'come funzioni', 'istruzioni', 'comandi') &&
-    !has(t, 'come si usa')
+    (has(text, 'tema', 'colore', 'sfondo', 'sito') &&
+      has(text, 'metti', 'cambia', 'voglio', 'imposta', 'fai', 'rendi', 'mettere', 'torna', 'genera')) ||
+    /^(metti|voglio|rendi|cambia in)\s+[a-z]+$/.test(raw)
   ) {
-    return HELP_REPLY
-  }
-
-  // cambio tema
-  if (has(t, 'tema', 'colore') && has(t, 'metti', 'cambia', 'voglio', 'imposta', 'fai', 'rendi', 'mettere') ) {
-    const themeId = parseTheme(t)
+    const themeId = parseTheme(raw)
     if (themeId) {
       const th = THEMES.find(x => x.id === themeId)!
-      return {
-        text: `Consideralo fatto: **tema ${th.name}** ${th.id === 'viola' ? '💜' : '🎨'} applicato!\n\nTutta l'interfaccia si tinge del nuovo colore (e lo ricordo sul tuo account).`,
+      return done({
+        text: `Consideralo fatto: **tema ${th.name}** ${th.id === 'viola' ? '💜' : th.id === 'rosa' ? '🌸' : '🎨'} applicato!\n\nTutta l'interfaccia si tinge del nuovo colore (e lo ricordo sul tuo account). Scrivi «ancora» se vuoi riprenderlo dopo aver cambiato.`,
         action: { type: 'setTheme', themeId },
         suggestions: ['Metti il tema notte', 'Torna al tema bosco', 'Cosa sai fare?'],
         confidence: 1,
-      }
+      }, 'setTheme', { lastTheme: themeId })
     }
-    // colore non riconosciuto → spiega
-    return {
+    return done({
       text: `Posso cambiare il colore del sito al volo! 🎨\n\nDimmi per esempio: «metti il tema **viola**», «voglio il sito **rosa**» o «cambia in **cielo**».\n\nI temi disponibili: ${THEMES.map(x => x.name).join(', ')}.`,
       action: { type: 'none' },
       suggestions: ['Metti il tema viola', 'Metti il tema mare', 'Metti il tema arancio'],
       confidence: 0.95,
-    }
+    }, 'none')
   }
 
-  // navigazione
-  const navMap: { tab: DashboardTab; words: string[] }[] = [
-    { tab: 'mondi', words: ['i miei mondi', 'mondi', 'progetti', 'le mie citta'] },
-    { tab: 'genera', words: ['genera', 'reparto genera'] },
-    { tab: 'importati', words: ['importati', 'modelli importati', 'libreria modelli', 'modelli 3d'] },
-    { tab: 'strutture', words: ['strutture', 'struttura', 'costruttore'] },
-    { tab: 'darpx', words: ['darpx', 'ai', 'intelligenza artificiale'] },
+  // ---- navigazione ----
+  const navMap: { tab: DashboardTab; words: string[]; label: string }[] = [
+    { tab: 'mondi', words: ['mondi', 'progetti', 'miei mondi', 'le mie citta'], label: 'I miei mondi' },
+    { tab: 'genera', words: ['genera reparto', 'reparto genera', 'genera'], label: 'Genera' },
+    { tab: 'importati', words: ['importati', 'modelli importati', 'libreria modelli', 'modelli 3d', 'import'], label: 'Progetti importati' },
+    { tab: 'strutture', words: ['strutture', 'struttura', 'costruttore'], label: 'Strutture' },
+    { tab: 'darpx', words: ['darpx', 'ai', 'intelligenza'], label: 'Darpx.ai' },
   ]
-  if (has(t, 'vai', 'apri', 'mostra', 'portami', 'voglio vedere', 'fammi vedere', 'voglio andare', 'torna', 'riporta')) {
+  if (has(text, 'vai', 'apri', 'mostra', 'portami', 'voglio vedere', 'fammi vedere', 'voglio andare', 'torna', 'riporta', 'portami')) {
     for (const n of navMap) {
-      if (n.tab !== 'genera' && n.words.some(w => fuzzyWord(t, w) || t.includes(w))) {
-        return {
-          text: `Ci sono: ti porto al reparto **${
-            n.tab === 'mondi' ? 'I miei mondi' : n.tab === 'importati' ? 'Progetti importati' : n.tab === 'strutture' ? 'Strutture' : 'Darpx.ai'
-          }** 🧭`,
+      if (n.words.some(w => text.includes(w))) {
+        return done({
+          text: `Ci sono: ti porto al reparto **${n.label}** 🧭\n\nDimmi se vuoi che ti spieghi anche cosa ci trovi dentro.`,
           action: { type: 'navigate', tab: n.tab },
           suggestions: ['Cosa sai fare?', 'Torna ai mondi', 'Come ruoto la visuale?'],
           confidence: 1,
-        }
+        }, 'navigate')
       }
     }
   }
 
-  // generazione mondo
+  // ---- generazione mondo ----
   const worldIntent =
-    has(t, 'crea un mondo', 'crea una citta', 'crea un villaggio', 'crea una fortezza', 'crea un castello',
+    has(text, 'crea un mondo', 'crea una citta', 'crea un villaggio', 'crea una fortezza', 'crea un castello',
       'crea un paesaggio', 'genera un mondo', 'genera una citta', 'genera un villaggio',
       'genera una fortezza', 'genera un castello', 'genera un paesaggio', 'fammi un mondo', 'fammi una citta',
       'fammi un villaggio', 'fammi una fortezza', 'nuovo mondo', 'costruisci un mondo', 'creami un mondo',
-      'crea un isola', 'crea un bosco', 'crea un lago', 'voglio un mondo') ||
-    (has(t, 'crea', 'genera', 'fammi', 'costruisci', 'voglio') && parseKind(t) && has(t, ...WORLD_TRIGGERS))
+      'crea un isola', 'crea un bosco', 'crea un lago', 'voglio un mondo', 'crea la mappa', 'genera la mappa') ||
+    (has(text, 'crea', 'genera', 'fammi', 'costruisci', 'voglio', 'realizza') && parseKind(text) && has(text, ...WORLD_TRIGGERS))
   if (worldIntent) {
-    const kind = parseKind(t) ?? 'citta'
-    const size = parseSize(t)
-    const density = parseDensity(t)
+    const kind = parseKind(text) ?? 'citta'
+    const size = parseSize(raw)
+    const density = parseDensity(raw)
     const kindLabel =
       kind === 'citta' ? 'città medievale' : kind === 'villaggio' ? 'villaggio' : kind === 'fortezza' ? 'fortezza' : 'paesaggio'
-    const sizeLabel = size === 's' ? 'piccola' : size === 'l' ? 'grande' : size === 'xl' ? 'enorme' : 'media'
-    return {
-      text: `Perfetto: genero una **${kindLabel} ${sizeLabel}** e te la apro nell'editor 🌍\n\nPotrai modificarla subito: case, strade, terreno, tutto.`,
+    const sizeLabel = size === 's' ? 'piccolo' : size === 'l' ? 'grande' : size === 'xl' ? 'enorme' : 'media'
+    const art = kind === 'villaggio' || kind === 'paesaggio' ? 'un' : 'una'
+    return done({
+      text: `Perfetto: genero ${art} **${kindLabel} ${sizeLabel}** e te la apro nell'editor 🌍\n\nTroverai strade in sampietrini, edifici realistici${kind === 'citta' ? ', una fontana in piazza e panchine' : kind === 'villaggio' ? ', orti con recinzioni e siepi' : ''} — e potrai modificare tutto al volo. Scrivi «ancora» per una variante.`,
       action: { type: 'createWorld', kind, size, density },
-      suggestions: ['Creane un\'altra variante', 'Come si gioca dentro?', 'Vai a Darpx.ai'],
+      suggestions: ['Ancora!', 'Come si gioca dentro?', 'Vai a Darpx.ai'],
       confidence: 1,
-    }
+    }, 'createWorld', { lastKind: kind })
   }
 
-  // generazione modello 3D → MOTORE INTERNO
-  if (has(t, 'genera', 'crea', 'fammi', 'creami', 'voglio', 'fai', 'dammi', 'disegna', 'modella')) {
-    const phrase = extractObjectPhrase(t)
+  // ---- generazione modello 3D → MOTORE INTERNO ----
+  const gen3dIntent =
+    has(text, 'genera', 'crea', 'fammi', 'creami', 'voglio', 'fai', 'dammi', 'disegna', 'modella', 'costruisci', 'realizza', 'inventa')
+  if (gen3dIntent) {
+    const phrase = extractObjectPhrase(raw)
     const looksLikeWorld = phrase ? has(norm(phrase), ...WORLD_TRIGGERS) : true
     if (phrase && !looksLikeWorld) {
-      return {
-        text: `Subito! 🧬 Il mio **motore interno** crea **${phrase}** in questo preciso momento — senza chiavi, senza attese.\n\nAppena pronto trovi il modello nell'anteprima 3D: puoi salvarlo nei Progetti importati, scaricarlo o chiedere una **variante**.`,
+      return done({
+        text: `Subito! 🧬 Preparo **${phrase}** col mio motore interno.\n\nPrima di assemblarlo ti faccio un paio di **domande sui dettagli** (colore, taglia, caratteristiche): rispondi pure a stomaco vuoto, o premi «Genera ora» e decido io. Ogni richiesta ha un seed nuovo: anche rifacendo lo stesso modello, sarà sempre diverso.`,
         action: { type: 'prefill3d', prompt: phrase },
         suggestions: ['Genera una variante', 'Salvalo nei modelli', 'Cosa sai generare?'],
         confidence: 1,
-      }
+      }, 'generate3d', { lastPrompt3d: phrase })
     }
   }
 
-  // base di conoscenza (con fuzzy scoring)
-  let best: { score: number; entry: (typeof KB)[number] } | null = null
-  const words = t.split(' ')
+  // ---- base di conoscenza (scoring con fuzzy su tutta la frase) ----
+  let best: { score: number; entry: (typeof KB)[number]; hitWords: string[] } | null = null
   for (const entry of KB) {
     let score = 0
+    const hitWords: string[] = []
     for (const k of entry.keys) {
       const nk = norm(k)
-      if (t.includes(nk)) {
+      if (text.includes(nk)) {
         score += nk.split(' ').length * 3 + 2
+        hitWords.push(k)
       } else {
-        // fuzzy: ogni parola della frase vicina a una parola chiave lunga
         const kw = nk.split(' ')
         if (kw.length <= 2) {
-          for (const w of words) {
+          for (const w of tokens) {
             if (w.length >= 4 && fuzzyWord(w, nk)) {
               score += 2
+              hitWords.push(k)
               break
             }
           }
         }
       }
     }
-    // testo interno: le parole della domanda compaiono nel corpo?
-    for (const w of words) {
+    for (const w of tokens) {
       if (w.length >= 6 && entry.body.some(b => b.toLowerCase().includes(w))) score += 1
     }
-    if (score > 0 && (!best || score > best.score)) best = { score, entry }
+    if (score > 0 && (!best || score > best.score)) best = { score, entry, hitWords }
   }
   if (best && best.score >= 4) {
-    return {
+    return done({
       text: `${best.entry.title}\n\n${best.entry.body.join('\n')}`,
       action: { type: 'none' },
-      suggestions: best.entry.keys[0]?.includes('tema')
-        ? ['Metti il tema viola', 'Metti il tema mare', 'Cosa sai fare?']
-        : ['Cosa sai fare?', 'Crea un mondo', 'Genera un drago'],
+      suggestions: ['Cosa sai fare?', 'Crea un mondo', 'Genera un drago'],
       confidence: 0.9,
-    }
+    }, 'none')
   }
 
-  // ringraziamenti
-  if (has(t, 'grazie', 'perfetto', 'grandee', 'top', 'fantastico', 'bello', 'mitico', 'spettacolare', 'bravo')) {
-    return {
-      text: 'Figurati! 😄 Se ti serve altro sono qui: modelli 3D, mondi, temi, spiegazioni… chiedi pure!',
+  // ---- piccolo extra: domande sul sito ----
+  if (has(raw, 'chi ti ha creato', 'chi ti ha fatto', 'chi e il tuo creatore')) {
+    return done({
+      text: 'Sono stato costruito da **Davide** per darpon.m4trix 💜\n\nIl mio cervello veloce gira nel tuo browser; per le domande più difficili consulto anche un modello linguistico lato server. Ma il carattere è tutto mio!',
       action: { type: 'none' },
-      suggestions: ['Cosa sai fare?', 'Crea un villaggio', 'Genera un drago'],
-      confidence: 0.85,
-    }
+      suggestions: ['Cosa sai fare?', 'Chi sei?', 'Genera un drago'],
+      confidence: 1,
+    }, 'none')
   }
 
-  // congedo
-  if (has(t, 'arrivederci', 'ciao ciao', 'a dopo', 'buonanotte', 'buona giornata', 'esco', 'vado')) {
-    return {
-      text: 'A presto! 👋 I tuoi mondi ti aspettano qui, al sicuro nel tuo account.',
-      action: { type: 'none' },
-      suggestions: ['Torna ai mondi'],
-      confidence: 0.9,
+  // ---- FALLBACK INTELLIGENTE: mai un «non capito» secco ----
+  // cerca comunque argomenti VICINI (fuzzy) e mostra cosa ha capito
+  const nearTopics: string[] = []
+  for (const entry of KB) {
+    for (const k of entry.keys) {
+      const nk = norm(k)
+      for (const w of tokens) {
+        if (w.length >= 5 && fuzzyWord(w, nk)) {
+          if (!nearTopics.includes(entry.title)) nearTopics.push(entry.title)
+        }
+      }
     }
   }
-
-  // domanda generica → lascia spazio al LLM
-  return FALLBACK_REPLY
+  const nearLine = nearTopics.length
+    ? `\n\nA occhio mi sembra qualcosa su: ${nearTopics.slice(0, 3).join(' · ')} — dimmi se ci ho preso!`
+    : ''
+  const fallback: AgentReply = {
+    text: `Bella domanda, lasciamici pensare un attimo… 🤔${nearLine}\n\nNel frattempo ti anticipo ciò che faccio meglio:\n• 🧬 genero modelli 3D («genera un drago rosso con le corna»)\n• 🌍 creo mondi interi («crea un villaggio fitto»)\n• 🎨 cambio il tema («metti il tema viola»)\n• 📚 spiego ogni angolo del sito («come si scava il terreno?»)\n\nRiformula pure come preferisci: capisco anche le frasi storte. Ho chiesto anche al mio cervello grande di ragionarci sopra…`,
+    action: { type: 'none' },
+    suggestions: ['Cosa sai fare?', 'Come ruoto la visuale?', 'Crea un paesaggio', 'Genera un robot'],
+    confidence: 0.3,
+  }
+  return { reply: fallback, ctx: next }
 }
 
 export const DEFAULT_SUGGESTIONS = [

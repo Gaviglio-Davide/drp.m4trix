@@ -2,21 +2,27 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bot, Loader2, Send, Sparkles, X } from 'lucide-react'
+import { Loader2, Send, Sparkles, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { fetchAuth } from '@/lib/http'
 import { useUI } from '@/lib/ui-store'
 import { useWorld, nextId } from '@/lib/world-store'
 import { generateWorld, type GenKind, type GenSize } from '@/lib/worldgen'
 import { encodeTerrain } from '@/lib/terrain'
-import { askBrain, type AgentReply } from '@/lib/agent-brain'
+import {
+  askBrain,
+  emptyBrainContext,
+  type AgentReply,
+  type BrainContext,
+} from '@/lib/agent-brain'
+import DarpxAvatar, { type AvatarMood } from '@/components/DarpxAvatar'
 
 // ============================================================
-// Agente Darpx — assistente AI fluttuante della home (v6).
-// • La bolla e il pannello seguono il TEMA COLORE del sito
-// • Prima di rispondere "riflette" un istante (qualità > velocità)
-// • Esegue AZIONI: genera mondi, avvia il motore 3D interno,
-//   cambia il tema del sito, naviga tra i reparti
+// Agente Darpx v7 — con CORPO E CARATTERE 💜
+// • La bolla ora ospita l'AVATAR DARPX (il guizzo d'ombra con
+//   fiamma olografica): cammina, pensa, parla, festeggia
+// • Ricorda il CONTESTO: «ancora» rifà l'ultima azione variandola
+// • Quando è tranquillo VIAGGIA per il fondo dello schermo
 // • Per le domande difficili interpella il LLM lato server
 // ============================================================
 
@@ -29,7 +35,7 @@ type Msg = {
 const HELLO: Msg = {
   role: 'assistant',
   content:
-    'Ciao! 👋 Sono l\'**Agente Darpx**.\n\nPosso **generare modelli 3D col mio motore interno** 🧬, creare mondi, cambiare il tema del sito e spiegarti tutto.\n\nDimmi pure cosa ti serve!',
+    'Ciao! 👋 Sono l\'**Agente Darpx**.\n\nPosso **generare modelli 3D col mio motore interno** 🧬, creare mondi, migliorare i tuoi GLB, cambiare il tema del sito e spiegarti tutto.\n\nScrivi come ti pare: capisco anche gli errori di battitura. E se scrivi **«ancora»** rifaccio l\'ultima cosa con una variante nuova!',
 }
 
 export default function DarpxAgent() {
@@ -44,8 +50,17 @@ export default function DarpxAgent() {
     'Crea una città medievale',
     'Metti il tema viola',
   ])
+  const [mood, setMood] = useState<AvatarMood>('idle')
+  const moodTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // viaggio nel sito (quando la bolla è chiusa e l'utente è tranquillo)
+  const [travelX, setTravelX] = useState(0)
+  const [traveling, setTraveling] = useState(false)
+  const lastActivity = useRef(Date.now())
+
   const listRef = useRef<HTMLDivElement>(null)
   const busyRef = useRef(false)
+  const brainCtx = useRef<BrainContext>(emptyBrainContext())
 
   const setTab = useUI(s => s.setTab)
   const setAccent = useWorld(s => s.setAccent)
@@ -54,11 +69,44 @@ export default function DarpxAgent() {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight
   }, [msgs, thinking, open])
 
+  /** umore temporaneo: dopo N secondi torna idle */
+  const setMoodFor = useCallback((m: AvatarMood, ms: number) => {
+    setMood(m)
+    if (moodTimer.current) clearTimeout(moodTimer.current)
+    if (m !== 'idle' && m !== 'walk') {
+      moodTimer.current = setTimeout(() => setMood('idle'), ms)
+    }
+  }, [])
+
+  // ---------- il viaggio dell'avatar ----------
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const idleFor = Date.now() - lastActivity.current
+      if (!open && !traveling && !busyRef.current && idleFor > 16000) {
+        // parte per una passeggiata sul fondo dello schermo
+        const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
+        const maxLeft = Math.min(340, vw * 0.34)
+        const target = -Math.round(20 + Math.random() * maxLeft)
+        setTraveling(true)
+        setMood('walk')
+        setTravelX(target)
+      }
+    }, 2500)
+    return () => clearInterval(iv)
+  }, [open, traveling])
+
+  const stopTravel = useCallback(() => {
+    setTraveling(false)
+    setMood('idle')
+    lastActivity.current = Date.now()
+  }, [])
+
   // ---------- azioni ----------
 
   const createWorld = useCallback(
     async (kind: GenKind, size: GenSize, density: number) => {
       try {
+        setMoodFor('happy', 2600)
         const seed = Math.floor(Math.random() * 90000) + 1000
         const result = generateWorld({ kind, size, density, seed })
         const name = `${kind === 'citta' ? 'Città medievale' : kind === 'villaggio' ? 'Villaggio' : kind === 'fortezza' ? 'Fortezza' : 'Paesaggio'} · Agente #${seed}`
@@ -99,27 +147,30 @@ export default function DarpxAgent() {
         toast.error(e instanceof Error ? e.message : 'Errore creazione mondo')
       }
     },
-    []
+    [setMoodFor]
   )
 
   const runAction = useCallback(
     (reply: AgentReply) => {
       if (reply.action.type === 'navigate') {
         setTab(reply.action.tab)
+        setMoodFor('happy', 1800)
       } else if (reply.action.type === 'prefill3d') {
-        // il motore interno parte da solo: precompila E genera
+        // il motore interno parte da solo: precompila e apre il laboratorio
         useUI.getState().setDarpxPrefill(reply.action.prompt)
         setTab('darpx')
-        toast.info('Motore interno acceso: sto generando… 🧬')
+        setMoodFor('glitch', 3200)
+        toast.info('Motore interno acceso: ti chiedo un paio di dettagli 🧬')
       } else if (reply.action.type === 'createWorld') {
         void createWorld(reply.action.kind, reply.action.size, reply.action.density)
       } else if (reply.action.type === 'setTheme') {
         setAccent(reply.action.themeId, true)
+        setMoodFor('happy', 2000)
         toast.success('Tema aggiornato! 🎨')
       }
       if (reply.suggestions.length) setSuggestions(reply.suggestions)
     },
-    [createWorld, setTab, setAccent]
+    [createWorld, setTab, setAccent, setMoodFor]
   )
 
   // ---------- invio ----------
@@ -129,21 +180,28 @@ export default function DarpxAgent() {
       const text = (raw ?? input).trim()
       if (!text || busyRef.current) return
       busyRef.current = true
+      lastActivity.current = Date.now()
+      stopTravel()
       setInput('')
       setMsgs(m => [...m, { role: 'user', content: text }])
 
-      // 1) riflessione breve: l'agente elabora prima di parlare
-      const reply = askBrain(text)
+      // 1) riflessione: il cervello locale elabora (con memoria di contesto)
+      const { reply, ctx } = askBrain(text, brainCtx.current)
+      brainCtx.current = ctx
+
       if (reply.confidence >= 0.99) {
         // azioni e saluti: risposta asciutta
         setMsgs(m => [...m, { role: 'assistant', content: reply.text, instant: true }])
         runAction(reply)
+        setMoodFor('talk', 2600)
       } else {
         setThinking(true)
         setThinkLabel('Sto pensando…')
-        await new Promise(r => setTimeout(r, 420 + Math.random() * 480))
+        setMood('think')
+        await new Promise(r => setTimeout(r, 480 + Math.random() * 520))
         setMsgs(m => [...m, { role: 'assistant', content: reply.text, instant: true }])
         runAction(reply)
+        setMoodFor('talk', 2600)
         setThinking(false)
       }
 
@@ -151,6 +209,7 @@ export default function DarpxAgent() {
       if (reply.confidence < 0.75) {
         setThinking(true)
         setThinkLabel('Approfondisco…')
+        setMood('think')
         try {
           const history = msgs
             .slice(-8)
@@ -163,7 +222,6 @@ export default function DarpxAgent() {
           if (res.ok) {
             const data = (await res.json()) as { answer?: string }
             if (data.answer && data.answer.trim()) {
-              // sostituisce la risposta di cortesia con quella vera
               setMsgs(m => {
                 const next = [...m]
                 for (let i = next.length - 1; i >= 0; i--) {
@@ -174,6 +232,7 @@ export default function DarpxAgent() {
                 }
                 return next
               })
+              setMoodFor('talk', 2600)
             }
           }
         } catch {
@@ -184,43 +243,61 @@ export default function DarpxAgent() {
       }
       busyRef.current = false
     },
-    [input, msgs, runAction]
+    [input, msgs, runAction, setMoodFor, stopTravel]
   )
 
   // stili legati al tema corrente (CSS variables, si aggiornano da sole)
   const grad = 'linear-gradient(to bottom, var(--primary), var(--primary-strong))'
   const gradH = 'linear-gradient(to right, var(--primary), var(--primary-strong))'
 
+  const bubbleMood: AvatarMood = thinking ? 'think' : traveling ? 'walk' : mood
+
   return (
     <>
-      {/* bolla */}
-      <motion.button
-        initial={{ scale: 0, rotate: -30 }}
-        animate={{ scale: 1, rotate: 0 }}
-        whileHover={{ scale: 1.08 }}
-        whileTap={{ scale: 0.92 }}
-        onClick={() => setOpen(o => !o)}
-        style={{ backgroundImage: grad }}
-        className="fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-2xl text-white shadow-xl shadow-black/25 ring-2 ring-white/60"
-        title="Agente Darpx"
+      {/* bolla con l'avatar che viaggia */}
+      <div
+        className="fixed bottom-5 right-5 z-50"
+        style={{ transform: `translateX(${travelX}px)`, transition: traveling ? 'transform 5.2s ease-in-out' : 'transform 0.35s ease' }}
       >
-        <AnimatePresence mode="wait">
+        <motion.button
+          initial={{ scale: 0, rotate: -30 }}
+          animate={{ scale: 1, rotate: 0 }}
+          whileHover={{ scale: 1.08 }}
+          whileTap={{ scale: 0.92 }}
+          onClick={() => {
+            stopTravel()
+            setTravelX(0)
+            setOpen(o => !o)
+          }}
+          style={{ backgroundImage: grad }}
+          className="relative flex h-16 w-16 items-center justify-center rounded-2xl text-white shadow-xl shadow-black/25 ring-2 ring-white/60"
+          title="Agente Darpx"
+        >
           {open ? (
-            <X className="h-6 w-6" key="x" />
+            <X className="h-6 w-6" />
           ) : (
-            <Bot className="h-7 w-7" key="bot" />
+            <DarpxAvatar mood={bubbleMood} size={58} />
           )}
-        </AnimatePresence>
-        {!open && (
-          <span className="absolute -right-1 -top-1 flex h-4 w-4">
-            <span
-              className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
-              style={{ background: 'var(--primary-strong)' }}
-            />
-            <span className="relative inline-flex h-4 w-4 rounded-full bg-white ring-2" style={{ ['--tw-ring-color' as never]: 'var(--primary)' }} />
-          </span>
+          {!open && (
+            <span className="absolute -right-1 -top-1 flex h-4 w-4">
+              <span
+                className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
+                style={{ background: 'var(--primary-strong)' }}
+              />
+              <span className="relative inline-flex h-4 w-4 rounded-full bg-white ring-2" style={{ ['--tw-ring-color' as never]: 'var(--primary)' }} />
+            </span>
+          )}
+        </motion.button>
+        {traveling && !open && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="pointer-events-none absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/65 px-2.5 py-1 text-[10px] font-medium text-white/90 shadow"
+          >
+            🚶 sto girando per il sito…
+          </motion.div>
         )}
-      </motion.button>
+      </div>
 
       {/* pannello */}
       <AnimatePresence>
@@ -230,21 +307,21 @@ export default function DarpxAgent() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 24, scale: 0.96 }}
             transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-            className="fixed bottom-[92px] right-5 z-50 flex h-[min(68vh,560px)] w-[min(92vw,400px)] flex-col overflow-hidden rounded-3xl bg-white/95 shadow-2xl ring-1 ring-black/10 backdrop-blur"
+            className="fixed bottom-[100px] right-5 z-50 flex h-[min(68vh,560px)] w-[min(92vw,400px)] flex-col overflow-hidden rounded-3xl bg-white/95 shadow-2xl ring-1 ring-black/10 backdrop-blur"
           >
-            {/* header */}
+            {/* header con avatar */}
             <div
               className="flex items-center gap-2.5 px-4 py-3 text-white"
               style={{ backgroundImage: gradH }}
             >
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15">
-                <Bot className="h-5 w-5" />
+              <span className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-black/25">
+                <DarpxAvatar mood={thinking ? 'think' : mood} size={42} />
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-black leading-tight">Agente Darpx</p>
                 <p className="flex items-center gap-1 text-[11px] text-white/75">
                   <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-300" />
-                  motore 3D interno attivo · elabora e risponde
+                  {thinking ? 'sta riflettendo…' : mood === 'talk' ? 'parla con te' : mood === 'happy' ? 'felice!' : 'motore 3D interno attivo'}
                 </p>
               </div>
               <Sparkles className="h-4 w-4 text-white/75" />

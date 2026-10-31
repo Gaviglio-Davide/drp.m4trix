@@ -5,7 +5,7 @@
 // ============================================================
 
 import * as THREE from 'three'
-import { makeRng, hashSeed, randomSeed } from './rng'
+import { makeRng, randomSeed } from './rng'
 import { parsePrompt, type GenSpec } from './parse'
 import { buildMaterials } from './materials'
 import { ARCHETYPES, type Ctx } from './anatomy'
@@ -44,7 +44,9 @@ const TARGET_HEIGHT: Record<string, number> = {
 
 /** genera il modello 3D dal prompt (tutto nel browser, zero server) */
 export function generateModel(prompt: string, opts: { seed?: number } = {}): BuiltModel {
-  const seed = opts.seed ?? hashSeed(prompt.toLowerCase().trim())
+  // v7: seed CASUALE di default → chiedere 3 volte «un cavaliere» dà
+  // 3 cavalieri DIVERSI. Il seed esplicito resta per riprodurre un modello.
+  const seed = opts.seed ?? randomSeed()
   const spec = parsePrompt(prompt, seed)
   const rng = makeRng(spec.seed)
   const mats = buildMaterials(spec.subject, rng, spec.colorHex, spec.styleId)
@@ -87,7 +89,8 @@ function normalize(group: THREE.Group, targetH: number): void {
   group.updateMatrixWorld(true)
 }
 
-function computeStats(group: THREE.Group): ModelStats {
+/** statistiche di un gruppo qualunque (usata anche dal laboratorio GLB) */
+export function computeStats(group: THREE.Group): ModelStats {
   let triangles = 0
   let meshes = 0
   const mats = new Set<string>()

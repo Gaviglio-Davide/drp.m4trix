@@ -10,9 +10,13 @@
 // Come funziona: il prompt in italiano viene analizzato
 // (parse.ts) → il generatore assembla anatomie organiche e
 // oggetti parametrici (anatomy.ts, objects.ts) con materiali
-// PBR derivati dalle parole (materials.ts) → il tutto viene
-// normalizzato, rifinito e serializzato in GLB (build.ts,
-// export.ts), lo stesso formato dei modelli importati.
+// PBR + texture procedurali (materials.ts, ../pbr.ts) → il
+// tutto viene normalizzato, rifinito e serializzato in GLB
+// (build.ts, export.ts), lo stesso formato dei modelli importati.
+//
+// v7: enhance.ts = LABORATORIO GLB — carica un modello che
+// già possiedi e lo migliora (tinta, materiali, ali, corna,
+// basamento, aura, ridimensionamento) sempre nel browser.
 // ============================================================
 
 export { parsePrompt, normPrompt, PROMPT_SUGGESTIONS } from './parse'
@@ -21,3 +25,11 @@ export { generateModel, generateVariant } from './build'
 export type { BuiltModel, ModelStats } from './build'
 export { exportGlb, exportGlbBlob, exportGlbFile } from './export'
 export { makeRng, hashSeed, randomSeed } from './rng'
+export {
+  loadGlbFromUrl,
+  loadGlbFromArrayBuffer,
+  enhanceModel,
+  type EnhanceOpts,
+  type EnhanceAdditions,
+  type EnhancedModel,
+} from './enhance'

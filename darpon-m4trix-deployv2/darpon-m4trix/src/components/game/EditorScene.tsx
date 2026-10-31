@@ -6,6 +6,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Sky } from '@react-three/drei'
 import { useWorld, GRID_HALF, terrainHeightAt, type WorldObject } from '@/lib/world-store'
 import { getTheme } from '@/lib/scene-theme'
+import { pbrMat } from '@/lib/pbr'
 import {
   getAssetDef,
   GhostGroup,
@@ -63,12 +64,18 @@ export function SculptedTerrain() {
   return (
     <group>
       <mesh geometry={geometry} receiveShadow>
-        <meshStandardMaterial color={t.grass} roughness={1} />
+        <primitive
+          object={pbrMat('erba', t.grass, { roughness: 1, rx: 30, ry: 30 })}
+          attach="material"
+        />
       </mesh>
       {/* bordo sabbia morbido attorno all'isola */}
       <mesh position={[0, -0.05, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <ringGeometry args={[GRID_HALF + 0.4, GRID_HALF + 2.6, 64]} />
-        <meshStandardMaterial color={t.sand} roughness={1} />
+        <primitive
+          object={pbrMat('sabbia', t.sand, { roughness: 1, rx: 12, ry: 2 })}
+          attach="material"
+        />
       </mesh>
     </group>
   )
@@ -386,7 +393,12 @@ export function IslandEnvironment() {
       {/* oceano: visibile anche nei laghi scavati sotto -0.28 */}
       <mesh position={[0, -0.28, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <circleGeometry args={[220, 48]} />
-        <meshStandardMaterial color={t.ocean} roughness={0.35} metalness={0.1} />
+        <meshStandardMaterial
+          color={t.ocean}
+          roughness={0.16}
+          metalness={0.12}
+          envMapIntensity={0.8}
+        />
       </mesh>
     </group>
   )
@@ -407,6 +419,8 @@ export function SunLight() {
         shadow-camera-top={46}
         shadow-camera-bottom={-46}
         shadow-camera-far={110}
+        shadow-bias={-0.00035}
+        shadow-normalBias={0.02}
       />
       <ambientLight intensity={t.ambientIntensity} />
       <hemisphereLight args={[t.hemiSky, t.hemiGround, t.hemiIntensity]} />

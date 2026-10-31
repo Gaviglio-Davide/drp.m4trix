@@ -51,7 +51,7 @@ export const DEFAULT_PARAGRAPHS: HomeParagraph[] = [
   {
     id: 'p-gioca',
     title: '🎮 Gioca dentro i tuoi mondi',
-    text: "Premi Gioca ed esplora in prima persona quello che hai costruito: cammina tra le strade, entra nelle tue creazioni e scegli lo stile che preferisci, dal cartoon al medievale. Scopri tutti gli oggetti nella Legenda dell'editor.",
+    text: "Premi Gioca ed esplora in prima persona quello che hai costruito: cammina tra le strade, entra nelle tue creazioni e goditi la resa realistica di edifici e natura. Scopri tutti gli oggetti nella Legenda dell'editor.",
   },
   {
     id: 'p-riservatezza',
