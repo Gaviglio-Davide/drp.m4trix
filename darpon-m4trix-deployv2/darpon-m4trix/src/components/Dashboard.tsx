@@ -34,12 +34,15 @@ import {
 import { toast } from 'sonner'
 import {
   Box as Cube,
-  Library,
+  Gamepad2,
+  Globe2,
   Hammer,
+  Library,
   LogOut,
   Package,
   Pencil,
   Plus,
+  ScrollText,
   Sparkles,
   Trash2,
   Wand2,
@@ -52,6 +55,9 @@ import WorldGen from '@/components/WorldGen'
 import DarpxAI from '@/components/DarpxAI'
 import DarpxAgent from '@/components/DarpxAgent'
 import ProfileDialog from '@/components/ProfileDialog'
+import GameStudio from '@/components/studio/GameStudio'
+import CreaDaScript from '@/components/creagame/CreaDaScript'
+import WorldForge from '@/components/worldforge/WorldForge'
 import { SITE_DEFAULTS, type SiteConfig } from '@/lib/site'
 import { sectionOf, useUI, type DashboardTab } from '@/lib/ui-store'
 
@@ -195,7 +201,7 @@ export default function Dashboard() {
       <div className="pointer-events-none fixed -left-40 top-0 h-96 w-96 rounded-full bg-[var(--site-blob)] opacity-70 blur-3xl" />
       <div className="pointer-events-none fixed -right-40 bottom-0 h-96 w-96 rounded-full bg-[var(--site-blob-2)] opacity-70 blur-3xl" />
 
-      <header className="sticky top-0 z-10 border-b border-black/5 bg-[var(--site-bg)]/90 backdrop-blur">
+      <header className="sticky top-0 z-10 border-b border-[var(--line)] bg-[var(--site-bg)]/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between p-4">
           <div className="flex items-center gap-2">
             <motion.span
@@ -205,12 +211,12 @@ export default function Dashboard() {
             >
               <Cube className="h-5 w-5" />
             </motion.span>
-            <span className="text-lg font-black tracking-tight text-stone-800">
+            <span className="text-lg font-black tracking-tight text-[var(--tx)]">
               {siteName}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="mr-1 hidden text-sm font-medium text-stone-600 sm:inline">
+            <span className="mr-1 hidden text-sm font-medium text-[var(--tx-dim)] sm:inline">
               Ciao, {user?.name || user?.email} 👋
             </span>
             <ProfileDialog />
@@ -227,7 +233,7 @@ export default function Dashboard() {
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-4 flex items-start gap-2.5 rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 to-fuchsia-50 p-3.5 text-sm text-purple-900 shadow-sm"
+            className="mb-4 flex items-start gap-2.5 rounded-2xl border border-purple-200 bg-gradient-to-r from-[var(--primary-soft)] to-[var(--panel-soft)] p-3.5 text-sm text-[var(--tx)] shadow-sm"
           >
             <span className="text-base leading-none">📣</span>
             <p className="min-w-0 flex-1 whitespace-pre-wrap">{site.announcement.text}</p>
@@ -235,9 +241,12 @@ export default function Dashboard() {
         )}
 
         {/* ===== barra dei reparti ===== */}
-        <div className="mb-6 flex flex-wrap items-center gap-1.5 rounded-2xl bg-white/70 p-1.5 ring-1 ring-black/5">
+        <div className="mb-6 flex flex-wrap items-center gap-1.5 rounded-2xl bg-[var(--panel)] p-1.5 ring-1 ring-[var(--line)]">
           {(
             [
+              { id: 'gamestudio' as Tab, icon: <Gamepad2 className="h-4 w-4" />, label: sectionOf(site.sections, 'gamestudio').title, enabled: sectionOf(site.sections, 'gamestudio').enabled },
+              { id: 'creagame' as Tab, icon: <ScrollText className="h-4 w-4" />, label: sectionOf(site.sections, 'creagame').title, enabled: sectionOf(site.sections, 'creagame').enabled },
+              { id: 'worldforge' as Tab, icon: <Globe2 className="h-4 w-4" />, label: sectionOf(site.sections, 'worldforge').title, enabled: sectionOf(site.sections, 'worldforge').enabled },
               { id: 'mondi' as Tab, icon: <Cube className="h-4 w-4" />, label: sectionOf(site.sections, 'mondi').title, enabled: sectionOf(site.sections, 'mondi').enabled },
               { id: 'genera' as Tab, icon: <Wand2 className="h-4 w-4" />, label: sectionOf(site.sections, 'genera').title, enabled: sectionOf(site.sections, 'genera').enabled },
               { id: 'importati' as Tab, icon: <Package className="h-4 w-4" />, label: sectionOf(site.sections, 'importati').title, enabled: sectionOf(site.sections, 'importati').enabled },
@@ -251,7 +260,7 @@ export default function Dashboard() {
               className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-all ${
                 tab === t.id
                   ? 'bg-[var(--primary)] text-white shadow-md'
-                  : 'text-stone-600 hover:bg-[var(--primary-soft)] hover:text-[var(--primary-strong)]'
+                  : 'text-[var(--tx-dim)] hover:bg-[var(--primary-soft)] hover:text-[var(--primary-strong)]'
               }`}
             >
               {t.icon}
@@ -268,10 +277,10 @@ export default function Dashboard() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ type: 'spring', stiffness: 160, damping: 18 }}
           >
-            <h1 className="text-2xl font-black tracking-tight text-stone-800">
+            <h1 className="text-2xl font-black tracking-tight text-[var(--tx)]">
               I tuoi mondi
             </h1>
-            <p className="text-sm text-stone-500">
+            <p className="text-sm text-[var(--tx-dim)]">
               Crea un nuovo progetto, costruisci il mondo e trasformalo in un
               videogioco.
             </p>
@@ -321,7 +330,7 @@ export default function Dashboard() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.1 }}
           >
-            <Card className="border-dashed bg-white/60">
+            <Card className="border-dashed bg-[var(--panel)]">
               <CardContent className="flex flex-col items-center gap-2 py-14 text-center">
                 <motion.span
                   className="text-5xl"
@@ -330,10 +339,10 @@ export default function Dashboard() {
                 >
                   🌍
                 </motion.span>
-                <p className="text-lg font-semibold text-stone-700">
+                <p className="text-lg font-semibold text-[var(--tx)]">
                   Ancora nessun mondo
                 </p>
-                <p className="max-w-md text-sm text-stone-500">
+                <p className="max-w-md text-sm text-[var(--tx-dim)]">
                   Premi <b>Nuovo progetto</b> per iniziare: piazza case, strade
                   e alberi con un clic, poi premi <b>Gioca</b> per esplorarci
                   dentro con il tuo cavaliere.
@@ -350,7 +359,7 @@ export default function Dashboard() {
               animate="show"
               whileHover={{ y: -4 }}
               onClick={() => setCreateOpen(true)}
-              className="flex min-h-44 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-stone-300 bg-white/40 p-6 text-stone-500 transition-colors hover:border-[var(--primary)] hover:bg-[var(--primary-soft)] hover:text-[var(--primary-strong)]"
+              className="flex min-h-44 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--line-strong)] bg-[var(--panel-soft)] p-6 text-[var(--tx-dim)] transition-colors hover:border-[var(--primary)] hover:bg-[var(--primary-soft)] hover:text-[var(--primary-strong)]"
             >
               <motion.span
                 animate={{ rotate: [0, 90, 90, 90] }}
@@ -369,11 +378,11 @@ export default function Dashboard() {
                 animate="show"
                 whileHover={{ y: -4 }}
               >
-                <Card className="flex h-full flex-col justify-between overflow-hidden rounded-2xl border-black/5 bg-white shadow-sm transition-shadow hover:shadow-lg">
+                <Card className="flex h-full flex-col justify-between overflow-hidden rounded-2xl border-[var(--line)] bg-[var(--panel)] shadow-sm transition-shadow hover:shadow-lg">
                   <CardHeader className="pb-2">
                     <CardTitle className="truncate text-base">{p.name}</CardTitle>
                   </CardHeader>
-                  <CardContent className="pb-2 pt-0 text-xs text-stone-500">
+                  <CardContent className="pb-2 pt-0 text-xs text-[var(--tx-dim)]">
                     <p>
                       Modificato il{' '}
                       {new Date(p.updatedAt).toLocaleString('it-IT', {
@@ -410,7 +419,7 @@ export default function Dashboard() {
                     </Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button size="sm" variant="outline" className="text-red-600">
+                        <Button size="sm" variant="outline" className="text-red-400">
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </AlertDialogTrigger>
@@ -443,6 +452,15 @@ export default function Dashboard() {
         )}
           </>
         )}
+
+        {/* REPARTO: game studio — editor di videogiochi stile Godot/Unity */}
+        {tab === 'gamestudio' && <GameStudio />}
+
+        {/* REPARTO: crea un gioco giocabile da una sceneggiatura */}
+        {tab === 'creagame' && <CreaDaScript />}
+
+        {/* REPARTO: mappe procedurali personalizzabili stile Watabou */}
+        {tab === 'worldforge' && <WorldForge />}
 
         {/* REPARTO: modelli 3D importati dall'utente (disponibili in ogni editor) */}
         {tab === 'importati' && <ImportedModels />}

@@ -13,208 +13,175 @@ import { useWorld, type SessionUser } from '@/lib/world-store'
 import { SITE_DEFAULTS, DEFAULT_PARAGRAPHS, type SiteConfig, type HomeParagraph } from '@/lib/site'
 
 // ============================================================
-// Piccola città fluttuante — pura animazione CSS/divs
+// Skyline cyberpunk — grattacieli, finestre neon, droni e
+// griglia all'orizzonte. Puro CSS/divs animati.
 // ============================================================
 
-const float = (duration: number, delay = 0, dist = 6) => ({
-  animate: { y: [0, -dist, 0] },
-  transition: { duration, repeat: Infinity, ease: 'easeInOut' as const, delay },
-})
+const NEONS = ['#00f0ff', '#ff2bd6', '#fcee0a', '#00ff9c', '#b26bff']
 
-function Smoke({ className }: { className?: string }) {
+type TowerDef = {
+  left: string
+  w: number
+  h: number
+  delay: number
+}
+
+const TOWERS: TowerDef[] = [
+  { left: '2%', w: 64, h: 150, delay: 0.0 },
+  { left: '12%', w: 46, h: 96, delay: 0.4 },
+  { left: '20%', w: 74, h: 190, delay: 0.9 },
+  { left: '33%', w: 54, h: 120, delay: 0.2 },
+  { left: '43%', w: 88, h: 220, delay: 1.3 },
+  { left: '56%', w: 50, h: 104, delay: 0.6 },
+  { left: '64%', w: 70, h: 172, delay: 1.0 },
+  { left: '76%', w: 58, h: 132, delay: 0.3 },
+  { left: '86%', w: 46, h: 92, delay: 1.6 },
+]
+
+function Windows({ w, h, seed }: { w: number; h: number; seed: number }) {
+  const cols = Math.max(2, Math.floor(w / 14))
+  const rows = Math.max(3, Math.floor(h / 18))
+  const cells: { x: number; y: number; c: string; on: boolean }[] = []
+  for (let r0 = 0; r0 < rows; r0++)
+    for (let c0 = 0; c0 < cols; c0++) {
+      const on = (r0 * 7 + c0 * 13 + seed) % 5 < 3
+      cells.push({
+        x: 4 + c0 * (w - 8) / cols,
+        y: 6 + r0 * (h - 10) / rows,
+        c: NEONS[(r0 * 3 + c0 + seed) % NEONS.length],
+        on,
+      })
+    }
   return (
-    <div className={`pointer-events-none absolute ${className ?? ''}`}>
-      {[0, 1, 2].map(i => (
+    <>
+      {cells.map((c, i) => (
         <motion.span
           key={i}
-          className="absolute h-2 w-2 rounded-full bg-white/80"
-          style={{ left: 0, bottom: 0 }}
-          animate={{ y: [-2, -26], x: [0, 6], opacity: [0, 0.9, 0], scale: [0.7, 1.4] }}
+          className="absolute rounded-[1px]"
+          style={{
+            left: c.x,
+            top: c.y,
+            width: 5,
+            height: 7,
+            background: c.on ? c.c : 'rgba(255,255,255,0.06)',
+            boxShadow: c.on ? `0 0 6px ${c.c}` : 'none',
+          }}
+          animate={c.on ? { opacity: [1, 0.55, 1] } : undefined}
           transition={{
-            duration: 2.6,
+            duration: 2 + ((i * 7) % 5) * 0.7,
             repeat: Infinity,
-            delay: i * 0.9,
-            ease: 'easeOut',
+            delay: (i % 9) * 0.35,
           }}
         />
       ))}
-    </div>
+    </>
   )
 }
 
-function House({
-  w,
-  wall,
-  roof,
-  className,
-  delay = 0,
-}: {
-  w: number
-  wall: string
-  roof: string
-  className?: string
-  delay?: number
-}) {
+function Drone({ top, delay, dur, dir }: { top: string; delay: number; dur: number; dir: 1 | -1 }) {
   return (
     <motion.div
-      className={`absolute ${className ?? ''}`}
-      style={{ width: w }}
-      {...float(4.5, delay)}
+      className="absolute"
+      style={{ top }}
+      initial={{ x: dir === 1 ? '-10%' : '110%' }}
+      animate={{ x: dir === 1 ? '110%' : '-10%' }}
+      transition={{ duration: dur, repeat: Infinity, ease: 'linear', delay }}
     >
-      <div
-        style={{
-          width: w,
-          height: w * 0.46,
-          background: roof,
-          clipPath: 'polygon(50% 0%, 102% 100%, -2% 100%)',
-        }}
-      />
-      <div
-        className="relative"
-        style={{ width: w, height: w * 0.66, background: wall }}
-      >
-        <span
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[2px] bg-[#ffd97a] ring-1 ring-black/15"
-          style={{ width: w * 0.22, height: w * 0.22 }}
-        />
-      </div>
-    </motion.div>
-  )
-}
-
-function Tree({
-  size,
-  className,
-  delay = 0,
-}: {
-  size: number
-  className?: string
-  delay?: number
-}) {
-  return (
-    <motion.div
-      className={`absolute ${className ?? ''}`}
-      style={{ width: size }}
-      {...float(3.8, delay, 4)}
-    >
-      <div
-        className="mx-auto rounded-full bg-[#5d8a4f] ring-1 ring-black/10"
-        style={{ width: size, height: size }}
-      />
-      <div
-        className="mx-auto bg-[#7a5236]"
-        style={{ width: size * 0.18, height: size * 0.55 }}
+      <span className="block h-1 w-5 rounded-full bg-[var(--neon)] shadow-[0_0_8px_var(--neon)]" />
+      <motion.span
+        className="mt-0.5 block h-1 w-1 rounded-full bg-[#ff3355]"
+        animate={{ opacity: [1, 0.2, 1] }}
+        transition={{ duration: 0.8, repeat: Infinity }}
       />
     </motion.div>
   )
 }
 
-function TownScene() {
+function CyberCityScene() {
   return (
     <motion.div
-      className="relative mx-auto mt-12 h-60 w-full max-w-md select-none"
+      className="relative mx-auto mt-10 h-64 w-full max-w-xl select-none overflow-hidden"
       aria-hidden
       initial={{ opacity: 0, y: 40 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.7, type: 'spring', stiffness: 60, damping: 16 }}
+      transition={{ delay: 0.55, type: 'spring', stiffness: 60, damping: 16 }}
     >
-      {/* nuvole */}
-      <motion.div
-        className="absolute left-0 top-1 z-10"
-        animate={{ x: [0, 30, 0] }}
-        transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }}
-      >
-        <div className="relative h-6 w-20">
-          <span className="absolute left-3 top-0 h-6 w-6 rounded-full bg-white" />
-          <span className="absolute left-7 top-1 h-7 w-9 rounded-full bg-white" />
-          <span className="absolute left-12 top-1 h-5 w-6 rounded-full bg-white" />
-        </div>
-      </motion.div>
-      <motion.div
-        className="absolute right-2 top-6 z-10 opacity-80"
-        animate={{ x: [0, -24, 0] }}
-        transition={{ duration: 13, repeat: Infinity, ease: 'easeInOut', delay: 1.5 }}
-      >
-        <div className="relative h-5 w-16">
-          <span className="absolute left-2 top-0 h-5 w-5 rounded-full bg-white" />
-          <span className="absolute left-6 top-0.5 h-6 w-7 rounded-full bg-white" />
-        </div>
-      </motion.div>
-
-      {/* isola che fluttua */}
-      <motion.div
-        className="absolute inset-x-0 bottom-7"
-        animate={{ y: [0, -14, 0] }}
-        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-      >
-        <div className="relative mx-auto h-44 w-80 max-w-full">
-          {/* blocco terra */}
-          <div className="absolute inset-x-0 bottom-0 h-40 overflow-hidden rounded-[2.2rem] border border-black/10 shadow-2xl">
-            {/* prato */}
-            <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-[#9cc47c] to-[#82ad66]" />
-            {/* terra */}
-            <div className="absolute inset-x-0 top-16 bottom-0 bg-gradient-to-b from-[#8a6a4a] to-[#6e4f34]" />
-            <div className="absolute inset-x-0 top-16 h-2 bg-[#6f9455]" />
-
-            {/* torre con bandiera */}
-            <motion.div
-              className="absolute bottom-9 left-8"
-              {...float(5, 0.4)}
-            >
-              <div className="relative w-12">
-                <div className="flex justify-between">
-                  {[0, 1, 2].map(i => (
-                    <span key={i} className="h-2 w-2.5 bg-[#c9c2b4]" />
-                  ))}
-                </div>
-                <div className="h-20 w-12 bg-gradient-to-b from-[#d9d2c3] to-[#bfb6a3] ring-1 ring-black/5">
-                  <span className="mx-auto mt-3 block h-2 w-2 rounded-[2px] bg-[#ffd97a] ring-1 ring-black/10" />
-                  <span className="mx-auto mt-2 block h-2 w-2 rounded-[2px] bg-[#ffd97a] ring-1 ring-black/10" />
-                </div>
-                {/* asta + bandiera */}
-                <div className="absolute -top-5 left-1/2 h-6 w-0.5 -translate-x-1/2 bg-stone-500">
-                  <motion.span
-                    className="absolute left-0.5 top-0 block h-2.5 w-4 origin-left bg-[var(--primary)]"
-                    style={{ clipPath: 'polygon(0 0, 100% 50%, 0 100%)' }}
-                    animate={{ scaleX: [1, 0.75, 1], rotate: [0, -4, 0] }}
-                    transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-                  />
-                </div>
-                <Smoke className="-top-4 left-3" />
-              </div>
-            </motion.div>
-
-            {/* case */}
-            <House w={16} wall="#f2d6b3" roof="#c96b4a" className="bottom-9 left-24" delay={0.6} />
-            <House w={19} wall="#e9b284" roof="#7d3b2e" className="bottom-9 left-[8.6rem]" delay={1.1} />
-            <House w={15} wall="#8a9b8e" roof="#a34a35" className="bottom-9 right-9" delay={1.7} />
-
-            {/* alberi */}
-            <Tree size={13} className="bottom-8 right-24" delay={0.3} />
-            <Tree size={10} className="bottom-8 left-4" delay={1.3} />
-
-            {/* stradina */}
-            <div className="absolute bottom-0 left-1/2 h-9 w-14 -translate-x-1/2 bg-[#cbb79a]" />
-          </div>
-
-          {/* punta rocciosa sotto */}
-          <div
-            className="absolute inset-x-10 -bottom-3 h-8 bg-[#5d4229]"
-            style={{ clipPath: 'polygon(0 0, 100% 0, 55% 100%, 45% 100%)' }}
-          />
-          <div
-            className="absolute bottom-[-3.2rem] left-1/2 h-9 w-10 -translate-x-1/2 bg-[#4a3520]"
-            style={{ clipPath: 'polygon(20% 0, 80% 0, 60% 100%, 40% 100%)' }}
-          />
-        </div>
-      </motion.div>
-
-      {/* ombra */}
-      <motion.div
-        className="absolute bottom-1 left-1/2 h-4 w-44 rounded-full bg-black/20 blur-md"
-        animate={{ scale: [1, 0.82, 1], opacity: [0.5, 0.3, 0.5], x: '-50%' }}
-        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+      {/* luna/sole sintetico */}
+      <div
+        className="absolute left-1/2 top-6 h-20 w-20 -translate-x-1/2 rounded-full"
+        style={{
+          background: 'linear-gradient(180deg, var(--neon-2), transparent 70%)',
+          opacity: 0.55,
+          filter: 'blur(2px)',
+        }}
       />
+      <div
+        className="absolute left-1/2 top-10 h-16 w-32 -translate-x-1/2"
+        style={{
+          background:
+            'repeating-linear-gradient(180deg, transparent 0 6px, var(--site-bg) 6px 9px)',
+          opacity: 0.8,
+        }}
+      />
+
+      {/* droni */}
+      <Drone top="18%" delay={0.5} dur={14} dir={1} />
+      <Drone top="30%" delay={6} dur={18} dir={-1} />
+
+      {/* skyline */}
+      <div className="absolute inset-x-0 bottom-12 flex items-end justify-center gap-2">
+        {TOWERS.map((t, i) => (
+          <motion.div
+            key={i}
+            className="relative shrink-0 bg-[#0d1224] ring-1 ring-[var(--line)]"
+            style={{ width: t.w, height: t.h }}
+            animate={{ y: [0, -4, 0] }}
+            transition={{ duration: 5 + (i % 4), repeat: Infinity, ease: 'easeInOut', delay: t.delay }}
+          >
+            <Windows w={t.w} h={t.h} seed={i * 17} />
+            {/* antenna con luce */}
+            {i % 3 === 0 && (
+              <>
+                <span className="absolute -top-3 left-1/2 h-3 w-0.5 -translate-x-1/2 bg-[var(--line-strong)]" />
+                <motion.span
+                  className="absolute -top-4 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-[#ff3355]"
+                  animate={{ opacity: [1, 0.1, 1] }}
+                  transition={{ duration: 1.6, repeat: Infinity, delay: i * 0.4 }}
+                />
+              </>
+            )}
+            {/* insegna neon verticale */}
+            {i % 4 === 2 && (
+              <motion.span
+                className="absolute right-1 top-3 text-[10px] font-bold"
+                style={{
+                  color: NEONS[i % NEONS.length],
+                  textShadow: `0 0 8px ${NEONS[i % NEONS.length]}`,
+                  writingMode: 'vertical-rl',
+                }}
+                animate={{ opacity: [1, 0.5, 1, 0.8, 1] }}
+                transition={{ duration: 3.5, repeat: Infinity }}
+              >
+                電脳
+              </motion.span>
+            )}
+          </motion.div>
+        ))}
+      </div>
+
+      {/* strada riflessi + griglia prospettica */}
+      <div className="absolute inset-x-0 bottom-0 h-12 border-t border-[var(--line-strong)] bg-[#05070d]">
+        <div
+          className="absolute inset-0 opacity-60"
+          style={{
+            backgroundImage:
+              'linear-gradient(90deg, color-mix(in srgb, var(--neon) 30%, transparent) 1px, transparent 1px), linear-gradient(180deg, color-mix(in srgb, var(--neon-2) 22%, transparent) 1px, transparent 1px)',
+            backgroundSize: '40px 12px',
+            transform: 'perspective(120px) rotateX(58deg)',
+            transformOrigin: 'top',
+          }}
+        />
+      </div>
     </motion.div>
   )
 }
@@ -291,7 +258,7 @@ export default function AuthLanding() {
       setUser(data.user as SessionUser)
       setView('dashboard')
       toast.success(
-        mode === 'login' ? 'Bentornato! 👋' : 'Account creato, benvenuto! 🎉'
+        mode === 'login' ? 'Bentornato in rete! 👋' : 'Account creato: benvenuto nella rete! 🎉'
       )
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Errore')
@@ -315,26 +282,14 @@ export default function AuthLanding() {
         animate={{ x: [0, -55, 0], y: [0, 55, 0] }}
         transition={{ duration: 20, repeat: Infinity, ease: 'easeInOut' }}
       />
-      <motion.div
-        className="pointer-events-none absolute bottom-0 left-1/3 h-80 w-80 rounded-full bg-[var(--site-blob)] blur-3xl"
-        animate={{ x: [0, 40, 0], y: [0, -35, 0] }}
-        transition={{ duration: 15, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
-      />
-      {/* griglia a puntini */}
-      <div
-        className="pointer-events-none absolute inset-0 opacity-40"
-        style={{
-          backgroundImage:
-            'radial-gradient(circle, rgba(60,50,30,0.10) 1px, transparent 1px)',
-          backgroundSize: '26px 26px',
-        }}
-      />
+      {/* griglia cyberpunk */}
+      <div className="cp-grid-bg pointer-events-none absolute inset-0" />
 
       <main className="relative mx-auto grid min-h-screen max-w-6xl grid-cols-1 items-center gap-10 px-4 py-12 lg:grid-cols-[1.15fr_0.85fr] lg:gap-12">
         {/* ---------- hero ---------- */}
         <section className="text-center lg:text-left">
           <motion.div
-            className="mb-5 inline-flex items-center gap-2 rounded-full bg-white/70 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--primary-strong)] ring-1 ring-[var(--primary)]/25 backdrop-blur"
+            className="cp-chip cp-chip-active mb-5 inline-flex items-center gap-2 px-4 py-1.5 text-xs uppercase"
             initial={{ opacity: 0, y: -16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ type: 'spring', stiffness: 160, damping: 16 }}
@@ -343,12 +298,12 @@ export default function AuthLanding() {
               animate={{ rotate: [0, 20, -12, 0] }}
               transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
             >
-              🌍
+              🕹️
             </motion.span>
             {config.tagline}
           </motion.div>
 
-          <h1 className="text-5xl font-black leading-[1.06] tracking-tight text-stone-800 sm:text-6xl lg:text-[4.2rem]">
+          <h1 className="neon-title text-5xl font-black leading-[1.06] tracking-wide sm:text-6xl lg:text-[4.2rem]">
             {headline.map((w, i) => (
               <motion.span
                 key={i}
@@ -368,7 +323,7 @@ export default function AuthLanding() {
             ))}
             <br />
             <motion.span
-              className="animate-gradient-x inline-block bg-[linear-gradient(90deg,var(--primary-strong),var(--primary),var(--primary-strong))] bg-[length:200%_auto] bg-clip-text text-transparent"
+              className="animate-gradient-x animate-flicker inline-block bg-[linear-gradient(90deg,var(--neon-2),var(--neon),var(--neon-2))] bg-[length:200%_auto] bg-clip-text text-transparent"
               initial={{ opacity: 0, y: 28 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{
@@ -383,7 +338,7 @@ export default function AuthLanding() {
           </h1>
 
           <motion.p
-            className="mx-auto mt-5 max-w-md text-lg text-stone-600 lg:mx-0"
+            className="mx-auto mt-5 max-w-md text-lg text-[var(--tx-dim)] lg:mx-0"
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.65 }}
@@ -400,23 +355,23 @@ export default function AuthLanding() {
             animate="show"
           >
             {[
-              '🏗️ Costruzione facilissima',
-              '🎨 Colori al clic',
-              '⚔️ Il tuo cavaliere',
+              '🎮 Giochi completi da uno script',
+              '🗺️ Mappe procedurali infinite',
+              '👾 Nemici, boss e dialoghi',
               '💾 Salvataggi automatici',
             ].map(t => (
               <motion.span
                 key={t}
                 variants={CHIP_ITEM}
                 whileHover={{ scale: 1.06, y: -2 }}
-                className="cursor-default rounded-full bg-white/85 px-3.5 py-1.5 text-sm font-medium text-stone-700 shadow-sm ring-1 ring-black/5"
+                className="cp-chip cursor-default px-3.5 py-1.5 text-[13px] tracking-normal normal-case"
               >
                 {t}
               </motion.span>
             ))}
           </motion.div>
 
-          <TownScene />
+          <CyberCityScene />
         </section>
 
         {/* ---------- card auth ---------- */}
@@ -425,23 +380,23 @@ export default function AuthLanding() {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ delay: 0.35, type: 'spring', stiffness: 120, damping: 17 }}
         >
-          <Card className="w-full max-w-md rounded-3xl border-black/5 bg-white/90 shadow-2xl shadow-black/10 backdrop-blur lg:ml-auto">
+          <Card className="cp-panel w-full max-w-md rounded-none shadow-2xl shadow-black/40 backdrop-blur lg:ml-auto">
             <CardHeader>
               <motion.div
-                className="mx-auto mb-1 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-white shadow-lg"
+                className="cp-panel cp-panel-neon mx-auto mb-1 flex h-12 w-12 items-center justify-center"
                 initial={{ rotate: -12, scale: 0.8 }}
                 animate={{ rotate: 0, scale: 1 }}
                 transition={{ delay: 0.55, type: 'spring', stiffness: 220, damping: 12 }}
               >
-                <span className="text-xl">🧱</span>
+                <span className="text-xl">👾</span>
               </motion.div>
-              <CardTitle className="text-center text-xl">
-                Entra nel tuo hub
+              <CardTitle className="neon-title text-center text-xl">
+                Collegati alla rete
               </CardTitle>
             </CardHeader>
             <CardContent>
               {dbMissing && (
-                <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+                <div className="mb-4 border border-amber-400/40 bg-[var(--panel-soft)] p-3 text-xs leading-relaxed text-amber-300">
                   ⚠️ <b>Database non collegato</b>: accedi e registrati non
                   possono funzionare. Su Vercel apri il tuo progetto → tab{' '}
                   <b>Storage</b> → <b>Create Database → Postgres</b> →{' '}
@@ -462,7 +417,7 @@ export default function AuthLanding() {
                     setPassword={setPassword}
                     onEnter={() => submit('login')}
                   />
-                  <Button disabled={busy} onClick={() => submit('login')}>
+                  <Button disabled={busy} onClick={() => submit('login')} className="cp-btn">
                     {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Accedi
                   </Button>
@@ -474,7 +429,7 @@ export default function AuthLanding() {
                       id="name"
                       value={name}
                       onChange={e => setName(e.target.value)}
-                      placeholder="Il tuo nome"
+                      placeholder="Il tuo alias in rete"
                     />
                   </div>
                   <EmailPass
@@ -484,13 +439,13 @@ export default function AuthLanding() {
                     setPassword={setPassword}
                     onEnter={() => submit('signup')}
                   />
-                  <Button disabled={busy} onClick={() => submit('signup')}>
+                  <Button disabled={busy} onClick={() => submit('signup')} className="cp-btn">
                     {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Crea account
                   </Button>
                 </TabsContent>
               </Tabs>
-              <p className="mt-4 text-center text-xs text-stone-400">
+              <p className="mt-4 text-center text-xs text-[var(--tx-faint)]">
                 Tutto ciò che costruisci viene salvato nel tuo account.
               </p>
             </CardContent>
@@ -509,12 +464,12 @@ export default function AuthLanding() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: '-60px' }}
                 transition={{ delay: i * 0.08, type: 'spring', stiffness: 90, damping: 16 }}
-                className="rounded-3xl border border-black/5 bg-white/85 p-6 shadow-lg shadow-black/5 backdrop-blur"
+                className="cp-panel p-6"
               >
-                <h2 className="text-base font-black tracking-tight text-stone-800">
+                <h2 className="text-base font-black tracking-tight text-[var(--tx)]">
                   {p.title}
                 </h2>
-                <p className="mt-2 text-sm leading-relaxed text-stone-600">
+                <p className="mt-2 text-sm leading-relaxed text-[var(--tx-dim)]">
                   {p.text}
                 </p>
               </motion.article>
@@ -523,7 +478,7 @@ export default function AuthLanding() {
         </section>
       )}
 
-      <footer className="relative pb-6 text-center text-xs text-stone-400">
+      <footer className="relative pb-6 text-center text-xs text-[var(--tx-faint)]">
         {config.footer}
         <a href="/admin" className="ml-2 opacity-50 underline-offset-2 hover:opacity-100 hover:underline">
           Admin

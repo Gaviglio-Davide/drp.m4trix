@@ -6,7 +6,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-body);
   --font-mono: var(--font-geist-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -43,116 +43,230 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-:root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: #2e7d5b;
-  --primary-foreground: #ffffff;
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: #eaf3ee;
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: #2e7d5b;
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: #2e7d5b;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
+/* ============================================================
+   darpon.m4trix — CYBERPUNK DESIGN SYSTEM
+   Dark totale, neon, griglia, scanline, glitch.
+   ============================================================ */
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+:root {
+  --radius: 0.375rem;
+
+  /* superficie scura base (il tema neon ridefinisce accenti) */
+  --background: #05070d;
+  --foreground: #e8ecf6;
+  --card: #0b0f1c;
+  --card-foreground: #e8ecf6;
+  --popover: #0b0f1c;
+  --popover-foreground: #e8ecf6;
+  --primary: #00f0ff;
+  --primary-foreground: #04060d;
+  --secondary: rgba(255, 255, 255, 0.06);
+  --secondary-foreground: #e8ecf6;
+  --muted: rgba(255, 255, 255, 0.06);
+  --muted-foreground: #9aa3b8;
+  --accent: rgba(0, 240, 255, 0.1);
+  --accent-foreground: #e8ecf6;
+  --destructive: #ff3355;
+  --border: rgba(130, 150, 200, 0.16);
+  --input: rgba(130, 150, 200, 0.22);
+  --ring: #00f0ff;
+  --chart-1: #00f0ff;
+  --chart-2: #ff2bd6;
+  --chart-3: #fcee0a;
+  --chart-4: #00ff9c;
+  --chart-5: #b26bff;
+  --sidebar: #0b0f1c;
+  --sidebar-foreground: #e8ecf6;
+  --sidebar-primary: #00f0ff;
+  --sidebar-primary-foreground: #04060d;
+  --sidebar-accent: rgba(255, 255, 255, 0.06);
+  --sidebar-accent-foreground: #e8ecf6;
+  --sidebar-border: rgba(130, 150, 200, 0.16);
+  --sidebar-ring: #00f0ff;
+
+  /* ---- variabili darpon (sovrascritte dal tema neon) ---- */
+  --tx: #e8ecf6;
+  --tx-dim: #9aa3b8;
+  --tx-faint: #626c85;
+  --panel: rgba(11, 15, 28, 0.92);
+  --panel-soft: rgba(255, 255, 255, 0.05);
+  --line: rgba(130, 150, 200, 0.16);
+  --line-strong: rgba(130, 150, 200, 0.32);
+  --neon: #00f0ff;
+  --neon-2: #ff2bd6;
+  --primary-strong: #7ff7ff;
+  --primary-soft: rgba(0, 240, 255, 0.12);
+  --site-bg: #05070d;
+  --site-blob: rgba(0, 240, 255, 0.14);
+  --site-blob-2: rgba(255, 43, 214, 0.1);
+  --glow: 0 0 12px rgba(0, 240, 255, 0.45), 0 0 32px rgba(0, 240, 255, 0.15);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    color-scheme: dark;
+  }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-body), system-ui, sans-serif;
+    background-image:
+      radial-gradient(1200px 700px at 15% -10%, var(--site-blob), transparent 60%),
+      radial-gradient(1000px 600px at 110% 110%, var(--site-blob-2), transparent 55%);
+    background-attachment: fixed;
+  }
+  h1, h2, h3 {
+    font-family: var(--font-display), var(--font-body), sans-serif;
+  }
+  ::selection {
+    background: var(--neon);
+    color: #04060d;
   }
 }
 
-/* ---------- darpon.m4trix: tema e animazioni ---------- */
-
-:root {
-  --primary-strong: #215d43;
-  --primary-soft: #e4f0e9;
-  --site-bg: #f3f1e6;
-  --site-blob: rgba(46, 125, 91, 0.32);
-  --site-blob-2: rgba(33, 93, 67, 0.2);
+/* ---------- griglia cyberpunk di sfondo ---------- */
+.cp-grid-bg {
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, black 30%, transparent 78%);
 }
 
+/* ---------- scanline CRT leggerissime ---------- */
+.cp-scanlines::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.022) 0px,
+    rgba(255, 255, 255, 0.022) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+}
+
+/* ---------- pannelli con angoli tagliati ---------- */
+.cp-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  position: relative;
+}
+.cp-panel-neon {
+  border-color: color-mix(in srgb, var(--neon) 45%, transparent);
+  box-shadow: var(--glow);
+}
+
+/* ---------- titolo neon ---------- */
+.neon-title {
+  font-family: var(--font-display), sans-serif;
+  color: #f2f6ff;
+  text-shadow:
+    0 0 8px color-mix(in srgb, var(--neon) 70%, transparent),
+    0 0 26px color-mix(in srgb, var(--neon) 35%, transparent),
+    2px 2px 0 color-mix(in srgb, var(--neon-2) 55%, transparent);
+  letter-spacing: 0.04em;
+}
+.neon-text {
+  color: var(--neon);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--neon) 60%, transparent);
+}
+.neon-text-2 {
+  color: var(--neon-2);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--neon-2) 60%, transparent);
+}
+
+/* ---------- chip / tab stile terminale ---------- */
+.cp-chip {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx-dim);
+  border: 1px solid var(--line);
+  background: var(--panel-soft);
+  padding: 0.18rem 0.55rem;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+.cp-chip-active {
+  color: #04060d;
+  background: var(--neon);
+  border-color: var(--neon);
+  box-shadow: var(--glow);
+  font-weight: 700;
+}
+
+/* ---------- bottone neon ---------- */
+.cp-btn {
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  transition: box-shadow 0.2s, filter 0.2s;
+}
+.cp-btn:hover {
+  box-shadow: var(--glow);
+  filter: brightness(1.1);
+}
+
+/* ---------- animazioni ---------- */
 @keyframes gradient-x {
-  0%,
-  100% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
 }
-
 .animate-gradient-x {
   animation: gradient-x 4s ease infinite;
+}
+
+@keyframes neon-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.animate-neon-pulse {
+  animation: neon-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.4; }
+  94% { opacity: 1; }
+  96% { opacity: 0.65; }
+  97% { opacity: 1; }
+}
+.animate-flicker {
+  animation: flicker 5s linear infinite;
+}
+
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+.animate-float-y {
+  animation: float-y 4.5s ease-in-out infinite;
+}
+
+/* ---------- scrollbar dark ---------- */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--neon) 25%, #141a2c);
+  border-radius: 0;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--neon) 45%, #141a2c);
 }
 
 /* scrollbar morbida per gli asset strip */
 .overflow-x-auto::-webkit-scrollbar {
   height: 6px;
-}
-.overflow-x-auto::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 999px;
-}
-.overflow-x-auto::-webkit-scrollbar-track {
-  background: transparent;
 }

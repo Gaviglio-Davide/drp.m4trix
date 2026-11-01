@@ -16,7 +16,15 @@ import {
 // dall'admin, senza prop-drilling.
 // ============================================================
 
-export type DashboardTab = 'mondi' | 'genera' | 'importati' | 'strutture' | 'darpx'
+export type DashboardTab =
+  | 'gamestudio'
+  | 'creagame'
+  | 'worldforge'
+  | 'mondi'
+  | 'genera'
+  | 'importati'
+  | 'strutture'
+  | 'darpx'
 
 type SiteContent = {
   config: SiteConfig
@@ -33,6 +41,11 @@ type UIState = {
   darpxPrefill: string | null
   setDarpxPrefill: (p: string | null) => void
 
+  // quando un altro reparto crea un gioco, apre direttamente
+  // l'editor del Game Studio su quel progetto
+  studioOpenId: string | null
+  setStudioOpenId: (id: string | null) => void
+
   // contenuto del sito (admin), caricato una volta sola
   site: SiteContent
   siteLoaded: boolean
@@ -40,7 +53,10 @@ type UIState = {
 }
 
 export const DEFAULT_SECTIONS: Record<string, { title: string; subtitle: string; enabled: boolean }> = {
-  mondi: { title: 'I miei mondi', subtitle: 'Crea un nuovo progetto, costruisci il mondo e trasformalo in un videogioco.', enabled: true },
+  gamestudio: { title: 'Game Studio', subtitle: 'Il reparto stile Godot/Unity: costruisci videogiochi veri — scene, nemici, boss, dialoghi, combattimento e porte tra livelli. Provali al volo con ▶ Gioca.', enabled: true },
+  creagame: { title: 'Crea da Script', subtitle: 'Scrivi il tuo gioco come una sceneggiatura: il sistema rileva ambientazione, nemici e obiettivo, chiede conferma dei dettagli e compila un gioco giocabile. Stesso script, seed diverso → gioco diverso.', enabled: true },
+  worldforge: { title: 'World Forge', subtitle: 'Crea il tuo mondo da zero: genera una mappa casuale e personalizza tutto — città con edifici e mura, villaggi, dungeon, caverne, fiumi e strade. Poi manda tutto nel Game Studio.', enabled: true },
+  mondi: { title: 'Mondi 3D (prova)', subtitle: 'Il vecchio laboratorio di mondi 3D: case, strade e alberi con un clic. Ora lo usi come banco di prova — i giochi veri nascono negli altri reparti.', enabled: true },
   genera: { title: 'Genera', subtitle: 'Città medievali, villaggi, fortezze e paesaggi generati in un click.', enabled: true },
   importati: { title: 'Progetti importati', subtitle: 'Carica qui tutti i modelli 3D che vuoi (.glb / .gltf): restano in ordine, scegli la loro dimensione e li trovi pronti nell\'editor di ogni tuo progetto.', enabled: true },
   strutture: { title: 'Strutture', subtitle: 'Progetta case e edifici pezzo per pezzo: la tua libreria è disponibile in ogni mondo.', enabled: true },
@@ -48,11 +64,14 @@ export const DEFAULT_SECTIONS: Record<string, { title: string; subtitle: string;
 }
 
 export const useUI = create<UIState>((set, get) => ({
-  tab: 'mondi',
+  tab: 'creagame',
   setTab: tab => set({ tab }),
 
   darpxPrefill: null,
   setDarpxPrefill: darpxPrefill => set({ darpxPrefill }),
+
+  studioOpenId: null,
+  setStudioOpenId: studioOpenId => set({ studioOpenId }),
 
   site: {
     config: { ...SITE_DEFAULTS },

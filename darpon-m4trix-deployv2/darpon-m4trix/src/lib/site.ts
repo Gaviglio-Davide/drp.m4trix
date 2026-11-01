@@ -11,12 +11,12 @@
 
 export const SITE_DEFAULTS = {
   siteName: 'darpon.m4trix',
-  tagline: "L'hub per creare videogiochi",
-  headline: 'Costruisci mondi 3D.',
-  headlineAccent: 'Giocaci dentro.',
+  tagline: 'GAME FACTORY // CYBERPUNK',
+  headline: 'Crea videogiochi veri.',
+  headlineAccent: 'Dal tuo script, in rete.',
   intro:
-    'Costruisci il tuo mondo con un semplice clic: case, torri, strade e alberi prendono vita davanti ai tuoi occhi. Scegli i colori, carica i tuoi modelli 3D e quando tutto è pronto... premi Gioca ed esplora il mondo da dentro.',
-  footer: 'darpon.m4trix — costruisci, gioca, sogna. 🏰',
+    'Scrivi una sceneggiatura e ottieni un gioco giocabile con nemici, boss e dialoghi. Costruisci livelli nello studio stile Godot/Unity, genera mappe procedurali infinite e quando tutto è pronto... premi Gioca e giocaci dentro.',
+  footer: 'darpon.m4trix — scrivi, costruisci, gioca. // CYBERPUNK',
 }
 
 export type SiteConfig = typeof SITE_DEFAULTS
@@ -44,19 +44,19 @@ export type HomeParagraph = {
 
 export const DEFAULT_PARAGRAPHS: HomeParagraph[] = [
   {
-    id: 'p-costruisci',
-    title: '🏗️ Costruisci il tuo mondo',
-    text: 'Piazza case, torri, strade e alberi con un clic: scegli i colori, ruota gli oggetti e disegna il tuo villaggio. Con il costruttore di strutture puoi anche creare case da zero, pezzo per pezzo, e salvarle come oggetti da riutilizzare.',
+    id: 'p-script',
+    title: '📜 Dallo script al gioco',
+    text: 'Scrivi l\'idea del tuo gioco come una sceneggiatura: il sistema riconosce ambientazione, nemici, arma, obiettivo e difficoltà (anche se sbagli qualche lettera), ti fa confermare i dettagli e compila un gioco giocabile con combattimento, porte e dialoghi. Stesso script con seed diverso = gioco sempre diverso.',
   },
   {
-    id: 'p-gioca',
-    title: '🎮 Gioca dentro i tuoi mondi',
-    text: "Premi Gioca ed esplora in prima persona quello che hai costruito: cammina tra le strade, entra nelle tue creazioni e goditi la resa realistica di edifici e natura. Scopri tutti gli oggetti nella Legenda dell'editor.",
+    id: 'p-studio',
+    title: '🛠️ Game Studio stile Godot/Unity',
+    text: 'Scene multiple, tilemap da dipingere, nemici con HP e IA, torrette, boss, NPC con dialoghi, casse, chiavi, porte tra livelli e portale obiettivo. Modifichi tutto dall\'ispettore e provi al volo con ▶ Gioca, direttamente nel browser.',
   },
   {
-    id: 'p-riservatezza',
-    title: '🔒 Le tue creazioni restano tue',
-    text: 'Progetti, modelli e strutture sono visibili solo dentro il tuo account: nessun altro può vedere, usare o scaricare quello che hai creato.',
+    id: 'p-worldforge',
+    title: '🗺️ Mondi procedurali (Watabou style)',
+    text: 'Genera una mappa del mondo casuale e poi personalizza tutto: biomi col pennello, città con isolati, edifici e mura, villaggi, dungeon, caverne, fiumi e strade. Con un clic la mappa diventa un livello esplorabile nel Game Studio.',
   },
 ]
 
@@ -96,7 +96,10 @@ export const SECTIONS_KEY = 'homeSections'
 
 /** chiavi dei reparti modificabili + etichette per l'admin */
 export const SECTION_DEFS: { key: string; defaultTitle: string; label: string }[] = [
-  { key: 'mondi', defaultTitle: 'I miei mondi', label: 'I miei mondi (progetti)' },
+  { key: 'gamestudio', defaultTitle: 'Game Studio', label: 'Game Studio (editor di videogiochi)' },
+  { key: 'creagame', defaultTitle: 'Crea da Script', label: 'Crea da Script (gioco da sceneggiatura)' },
+  { key: 'worldforge', defaultTitle: 'World Forge', label: 'World Forge (mappe procedurali)' },
+  { key: 'mondi', defaultTitle: 'Mondi 3D (prova)', label: 'Mondi 3D (il vecchio laboratorio, per prova)' },
   { key: 'genera', defaultTitle: 'Genera', label: 'Genera (città e paesaggi)' },
   { key: 'importati', defaultTitle: 'Progetti importati', label: 'Progetti importati (modelli 3D)' },
   { key: 'strutture', defaultTitle: 'Strutture', label: 'Strutture (costruttore)' },
@@ -104,7 +107,14 @@ export const SECTION_DEFS: { key: string; defaultTitle: string; label: string }[
 ]
 
 export const DEFAULT_SECTION_SUBTITLES: Record<string, string> = {
-  mondi: 'Crea un nuovo progetto, costruisci il mondo e trasformalo in un videogioco.',
+  gamestudio:
+    'Il reparto stile Godot/Unity: costruisci videogiochi veri — scene, nemici, boss, dialoghi, combattimento e porte tra livelli.',
+  creagame:
+    'Scrivi il tuo gioco come una sceneggiatura: dettagli confermabili, compilazione e variazioni infinite.',
+  worldforge:
+    'Crea il tuo mondo da zero: mappa casuale poi personalizza tutto — città, villaggi, dungeon, caverne, acqua.',
+  mondi:
+    'Il vecchio laboratorio di mondi 3D: case, strade e alberi con un clic. Ora come banco di prova.',
   genera: 'Città medievali, villaggi, fortezze e paesaggi generati in un click.',
   importati:
     'Carica qui tutti i modelli 3D che vuoi (.glb / .gltf): restano in ordine, scegli la loro dimensione e li trovi pronti nell\'editor di ogni tuo progetto.',
