@@ -51,7 +51,7 @@ export default function Home() {
       <div className="flex min-h-screen items-center justify-center bg-[var(--site-bg)]">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]" />
-          <p className="text-sm font-medium text-stone-500">
+          <p className="text-sm font-medium text-[var(--tx-dim)]">
             Accendo darpon.m4trix...
           </p>
         </div>

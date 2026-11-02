@@ -90,6 +90,7 @@
   --tx-faint: #626c85;
   --panel: rgba(11, 15, 28, 0.92);
   --panel-soft: rgba(255, 255, 255, 0.05);
+  --panel-hover: rgba(255, 255, 255, 0.1);
   --line: rgba(130, 150, 200, 0.16);
   --line-strong: rgba(130, 150, 200, 0.32);
   --neon: #00f0ff;

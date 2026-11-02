@@ -180,13 +180,13 @@ export default function AdminPage() {
   if (!admin) {
     return (
       <Centered>
-        <Card className="w-full max-w-sm rounded-3xl border-black/5 bg-white/90 shadow-2xl backdrop-blur">
+        <Card className="w-full max-w-sm rounded-3xl border-[var(--line)] bg-[var(--panel)] shadow-2xl backdrop-blur">
           <CardHeader>
             <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-b from-[#f2620f] to-[#c2410c] text-white shadow-lg">
               <Flame className="h-7 w-7" />
             </div>
             <CardTitle className="text-center text-xl">Area Admin</CardTitle>
-            <p className="text-center text-sm text-stone-500">
+            <p className="text-center text-sm text-[var(--tx-dim)]">
               darpon.m4trix — gestione del sito
             </p>
           </CardHeader>
@@ -209,7 +209,7 @@ export default function AdminPage() {
             </Button>
             <a
               href="/"
-              className="text-center text-xs text-stone-400 underline-offset-2 hover:underline"
+              className="text-center text-xs text-[var(--tx-faint)] underline-offset-2 hover:underline"
             >
               ← Torna al sito
             </a>
@@ -498,17 +498,17 @@ function AdminPanel({
 
   return (
     <div className="min-h-screen bg-[var(--site-bg)] pb-16">
-      <header className="sticky top-0 z-10 border-b border-black/5 bg-[var(--site-bg)]/90 backdrop-blur">
+      <header className="sticky top-0 z-10 border-b border-[var(--line)] bg-[var(--site-bg)]/90 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between p-4">
           <div className="flex items-center gap-2.5">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-b from-[#f2620f] to-[#c2410c] text-white shadow-md">
               <Flame className="h-5 w-5" />
             </span>
             <div>
-              <p className="text-base font-black leading-tight tracking-tight text-stone-800">
+              <p className="text-base font-black leading-tight tracking-tight text-[var(--tx)]">
                 darpon.m4trix — Admin
               </p>
-              <p className="text-xs text-stone-500">Pannello di gestione del sito</p>
+              <p className="text-xs text-[var(--tx-dim)]">Pannello di gestione del sito</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -552,7 +552,7 @@ function AdminPanel({
               <StatCard icon={<ImageIcon className="h-4 w-4" />} label="Modelli 3D" value={assets.length} />
             </div>
 
-            <Card className="rounded-2xl border-black/5">
+            <Card className="rounded-2xl border-[var(--line)]">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Diagnostica del deploy</CardTitle>
               </CardHeader>
@@ -580,17 +580,17 @@ function AdminPanel({
 
           {/* ---------------- UTENTI ---------------- */}
           <TabsContent value="utenti" className="flex flex-col gap-3">
-            <p className="text-xs text-stone-400">
+            <p className="text-xs text-[var(--tx-faint)]">
               Puoi rinominare gli utenti, cambiare la loro password (reset) o
               eliminarli con tutti i loro progetti.
             </p>
             {users.length === 0 && <Empty text="Nessun utente registrato" />}
             {users.map(u => (
-              <Card key={u.id} className="rounded-2xl border-black/5 p-4">
+              <Card key={u.id} className="rounded-2xl border-[var(--line)] p-4">
                 {userEdit?.id === u.id ? (
                   <div className="flex flex-col gap-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-stone-800">
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--tx)]">
                         {u.email}
                       </span>
                     </div>
@@ -617,11 +617,11 @@ function AdminPanel({
                 ) : (
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-stone-800">
-                        {u.name || <i className="text-stone-400">senza nome</i>}
-                        <span className="ml-2 font-normal text-stone-500">{u.email}</span>
+                      <p className="truncate text-sm font-semibold text-[var(--tx)]">
+                        {u.name || <i className="text-[var(--tx-faint)]">senza nome</i>}
+                        <span className="ml-2 font-normal text-[var(--tx-dim)]">{u.email}</span>
                       </p>
-                      <p className="text-xs text-stone-400">
+                      <p className="text-xs text-[var(--tx-faint)]">
                         {u._count.projects} progetti · {u._count.modelAssets} modelli · registrato il {fmtDate(u.createdAt)}
                         {u.accentColor ? ` · tema: ${u.accentColor}` : ''}
                       </p>
@@ -644,7 +644,7 @@ function AdminPanel({
           <TabsContent value="progetti" className="flex flex-col gap-3">
             {projects.length === 0 && <Empty text="Nessun progetto" />}
             {projects.map(p => (
-              <Card key={p.id} className="flex items-center justify-between gap-3 rounded-2xl border-black/5 p-4">
+              <Card key={p.id} className="flex items-center justify-between gap-3 rounded-2xl border-[var(--line)] p-4">
                 <div className="min-w-0">
                   {renaming?.id === p.id ? (
                     <div className="flex items-center gap-2">
@@ -659,9 +659,9 @@ function AdminPanel({
                       <Button size="sm" variant="ghost" onClick={() => setRenaming(null)}>Annulla</Button>
                     </div>
                   ) : (
-                    <p className="truncate text-sm font-semibold text-stone-800">{p.name}</p>
+                    <p className="truncate text-sm font-semibold text-[var(--tx)]">{p.name}</p>
                   )}
-                  <p className="text-xs text-stone-400">
+                  <p className="text-xs text-[var(--tx-faint)]">
                     di {p.owner.name || p.owner.email} · {p.saves} salvataggi · {fmtBytes(p.stateBytes)} ·
                     aggiornato {fmtDate(p.updatedAt)}
                   </p>
@@ -680,16 +680,16 @@ function AdminPanel({
 
           {/* ---------------- MODELLI 3D ---------------- */}
           <TabsContent value="modelli" className="flex flex-col gap-3">
-            <p className="text-xs text-stone-400">
+            <p className="text-xs text-[var(--tx-faint)]">
               Archivio: {assetStore === 'blob' ? 'Vercel Blob (produzione)' : 'public/uploads (locale)'} ·
               con l&apos;occhio 👁️ apri l&apos;anteprima 3D di ogni modello
             </p>
             {assets.length === 0 && <Empty text="Nessun modello caricato" />}
             {assets.map(a => (
-              <Card key={a.url} className="flex items-center justify-between gap-3 rounded-2xl border-black/5 p-4">
+              <Card key={a.url} className="flex items-center justify-between gap-3 rounded-2xl border-[var(--line)] p-4">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-stone-800">{a.name}</p>
-                  <p className="truncate text-xs text-stone-400">
+                  <p className="truncate text-sm font-semibold text-[var(--tx)]">{a.name}</p>
+                  <p className="truncate text-xs text-[var(--tx-faint)]">
                     {fmtBytes(a.bytes)} · {fmtDate(a.uploadedAt)}
                   </p>
                 </div>
@@ -715,9 +715,9 @@ function AdminPanel({
 
           {/* ---------------- CHIAVI 3D (GLOBALI) ---------------- */}
           <TabsContent value="chiavi" className="flex flex-col gap-3">
-            <Card className="rounded-2xl border-black/5 bg-gradient-to-br from-white to-stone-50">
+            <Card className="rounded-2xl border-[var(--line)] bg-gradient-to-br from-white to-stone-50">
               <CardContent className="p-4">
-                <p className="text-sm text-stone-600">
+                <p className="text-sm text-[var(--tx-dim)]">
                   Le chiavi che imposti qui sono <b>globali</b>: valgono per
                   TUTTI gli utenti del sito, che potranno generare modelli 3D
                   da Darpx.ai senza chiavi personali. Vengono salvate{' '}
@@ -727,13 +727,13 @@ function AdminPanel({
               </CardContent>
             </Card>
             {providers.map(p => (
-              <Card key={p.id} className="rounded-2xl border-black/5 p-4">
+              <Card key={p.id} className="rounded-2xl border-[var(--line)] p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="text-xl">{p.icon}</span>
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-stone-800">{p.label}</p>
-                      <p className="text-[11px] text-stone-400">{p.note}</p>
+                      <p className="truncate text-sm font-bold text-[var(--tx)]">{p.label}</p>
+                      <p className="text-[11px] text-[var(--tx-faint)]">{p.note}</p>
                     </div>
                   </div>
                   <span
@@ -742,7 +742,7 @@ function AdminPanel({
                         ? 'bg-emerald-100 text-emerald-700'
                         : p.envKey
                           ? 'bg-blue-100 text-blue-700'
-                          : 'bg-stone-200 text-stone-500'
+                          : 'bg-[var(--panel-hover)] text-[var(--tx-dim)]'
                     }`}
                   >
                     {p.siteKey ? '✅ chiave globale attiva' : p.envKey ? '⚙️ da variabile d\'ambiente' : 'non configurato'}
@@ -814,40 +814,40 @@ function AdminPanel({
 
           {/* ---------------- AGENTE AI ---------------- */}
           <TabsContent value="agente" className="flex flex-col gap-3">
-            <Card className="rounded-2xl border-black/5">
+            <Card className="rounded-2xl border-[var(--line)]">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Bot className="h-4 w-4" /> Agente Darpx · stato
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-2 text-sm">
-                <div className="flex items-center justify-between gap-2 rounded-xl bg-stone-50 px-3 py-2">
+                <div className="flex items-center justify-between gap-2 rounded-xl bg-[var(--panel-soft)] px-3 py-2">
                   <span>🧠 Cervello locale (istantaneo, senza chiavi)</span>
                   <span className="font-bold text-emerald-600">SEMPRE ATTIVO</span>
                 </div>
-                <div className="flex items-center justify-between gap-2 rounded-xl bg-stone-50 px-3 py-2">
+                <div className="flex items-center justify-between gap-2 rounded-xl bg-[var(--panel-soft)] px-3 py-2">
                   <span>⚙️ z-ai SDK (variabili d&apos;ambiente sul server)</span>
-                  <span className={`font-bold ${zaiEnv ? 'text-emerald-600' : 'text-stone-400'}`}>
+                  <span className={`font-bold ${zaiEnv ? 'text-emerald-600' : 'text-[var(--tx-faint)]'}`}>
                     {zaiEnv ? 'ATTIVO' : 'non configurato'}
                   </span>
                 </div>
-                <div className="flex items-center justify-between gap-2 rounded-xl bg-stone-50 px-3 py-2">
+                <div className="flex items-center justify-between gap-2 rounded-xl bg-[var(--panel-soft)] px-3 py-2">
                   <span>🔌 Endpoint OpenAI-compatibile (qui sotto)</span>
-                  <span className={`font-bold ${ai?.hasKey ? 'text-emerald-600' : 'text-stone-400'}`}>
+                  <span className={`font-bold ${ai?.hasKey ? 'text-emerald-600' : 'text-[var(--tx-faint)]'}`}>
                     {ai?.hasKey ? `ATTIVO ${ai.keyPreview ? `(${ai.keyPreview})` : ''}` : 'non configurato'}
                   </span>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="rounded-2xl border-black/5">
+            <Card className="rounded-2xl border-[var(--line)]">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <KeyRound className="h-4 w-4" /> Endpoint OpenAI-compatibile (opzionale)
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                <p className="text-xs leading-relaxed text-stone-500">
+                <p className="text-xs leading-relaxed text-[var(--tx-dim)]">
                   Con una chiave qualsiasi di un servizio compatibile con OpenAI
                   (OpenAI, OpenRouter, Groq, Together…), l&apos;Agente Darpx
                   risponde anche alle domande complesse con un vero modello
@@ -908,7 +908,7 @@ function AdminPanel({
           {/* ---------------- CONTENUTI ---------------- */}
           <TabsContent value="contenuti" className="flex flex-col gap-4">
             {/* banner annuncio */}
-            <Card className="rounded-2xl border-black/5">
+            <Card className="rounded-2xl border-[var(--line)]">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Megaphone className="h-4 w-4" /> Banner annuncio (visibile a tutti in home)
@@ -923,7 +923,7 @@ function AdminPanel({
                   placeholder="Es: 🎉 Novità: crea modelli 3D con Tripo e Hunyuan! Prova la sezione Darpx.ai"
                   className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
                 />
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-stone-600">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--tx-dim)]">
                   <input
                     type="checkbox"
                     checked={announcement.enabled}
@@ -936,14 +936,14 @@ function AdminPanel({
             </Card>
 
             {/* reparti on/off + titoli */}
-            <Card className="rounded-2xl border-black/5">
+            <Card className="rounded-2xl border-[var(--line)]">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Database className="h-4 w-4" /> Reparti della home (titoli, descrizioni, on/off)
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                <p className="text-xs text-stone-400">
+                <p className="text-xs text-[var(--tx-faint)]">
                   Puoi rinominare i reparti, cambiarne la descrizione oppure
                   nasconderli: la barra della home si aggiorna subito.
                 </p>
@@ -952,10 +952,10 @@ function AdminPanel({
                   return (
                     <div
                       key={def.key}
-                      className="flex flex-col gap-2 rounded-2xl border border-black/5 bg-stone-50/60 p-3"
+                      className="flex flex-col gap-2 rounded-2xl border border-[var(--line)] bg-[var(--panel-soft)] p-3"
                     >
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-[var(--primary-soft)] px-2 py-0.5 text-[11px] font-bold text-stone-600">
+                        <span className="rounded-full bg-[var(--primary-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--tx-dim)]">
                           {def.label}
                         </span>
                         <Input
@@ -964,7 +964,7 @@ function AdminPanel({
                           placeholder={def.defaultTitle}
                           className="h-8 flex-1"
                         />
-                        <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-stone-600">
+                        <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-[var(--tx-dim)]">
                           <input
                             type="checkbox"
                             checked={s?.enabled !== false}
@@ -988,7 +988,7 @@ function AdminPanel({
             </Card>
 
             {/* testi principali */}
-            <Card className="rounded-2xl border-black/5">
+            <Card className="rounded-2xl border-[var(--line)]">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Type className="h-4 w-4" /> Testi mostrati nella home
@@ -1015,7 +1015,7 @@ function AdminPanel({
             </Card>
 
             {/* paragrafi */}
-            <Card className="rounded-2xl border-black/5">
+            <Card className="rounded-2xl border-[var(--line)]">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center justify-between gap-2 text-base">
                   <span className="flex items-center gap-2">
@@ -1027,7 +1027,7 @@ function AdminPanel({
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                <p className="text-xs text-stone-400">
+                <p className="text-xs text-[var(--tx-faint)]">
                   Crea quante sezioni vuoi: compariranno sulla home come schede,
                   nell&apos;ordine in cui le dispositi. Titolo e testo sono liberi.
                 </p>
@@ -1037,10 +1037,10 @@ function AdminPanel({
                 {paragraphs.map((p, idx) => (
                   <div
                     key={p.id}
-                    className="flex flex-col gap-2 rounded-2xl border border-black/5 bg-stone-50/60 p-3"
+                    className="flex flex-col gap-2 rounded-2xl border border-[var(--line)] bg-[var(--panel-soft)] p-3"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-[var(--primary-soft)] px-2 py-0.5 text-[11px] font-bold text-stone-600">
+                      <span className="rounded-full bg-[var(--primary-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--tx-dim)]">
                         {idx + 1}
                       </span>
                       <Input
@@ -1096,7 +1096,7 @@ function AdminPanel({
         </Tabs>
 
         <div className="mt-8 text-center">
-          <a href="/" className="inline-flex items-center gap-1 text-sm text-stone-400 underline-offset-2 hover:underline">
+          <a href="/" className="inline-flex items-center gap-1 text-sm text-[var(--tx-faint)] underline-offset-2 hover:underline">
             <ArrowLeft className="h-3.5 w-3.5" /> Torna al sito
           </a>
         </div>
@@ -1125,13 +1125,13 @@ function StatCard({ icon, label, value }: { icon: ReactNode; label: string; valu
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl border border-black/5 bg-white/85 p-4 shadow-sm"
+      className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-4 shadow-sm"
     >
-      <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-stone-400">
+      <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-[var(--tx-faint)]">
         {icon} {label}
       </div>
-      <p className="mt-1 text-2xl font-black text-stone-800">
-        {value === undefined ? <Loader2 className="h-5 w-5 animate-spin text-stone-300" /> : value}
+      <p className="mt-1 text-2xl font-black text-[var(--tx)]">
+        {value === undefined ? <Loader2 className="h-5 w-5 animate-spin text-[var(--tx-faint)]" /> : value}
       </p>
     </motion.div>
   )
@@ -1157,11 +1157,11 @@ function Check({
         <XCircle className={`mt-0.5 h-4.5 w-4.5 shrink-0 ${warning ? 'text-amber-500' : 'text-red-500'}`} />
       )}
       <div className="min-w-0">
-        <p className={`text-sm font-medium ${ok ? 'text-stone-700' : warning ? 'text-amber-700' : 'text-red-600'}`}>
+        <p className={`text-sm font-medium ${ok ? 'text-[var(--tx)]' : warning ? 'text-amber-700' : 'text-red-600'}`}>
           {label}
         </p>
-        {!ok && hint && <p className="text-xs text-stone-500">{hint}</p>}
-        {ok && warning && hint && <p className="text-xs text-stone-400">{hint}</p>}
+        {!ok && hint && <p className="text-xs text-[var(--tx-dim)]">{hint}</p>}
+        {ok && warning && hint && <p className="text-xs text-[var(--tx-faint)]">{hint}</p>}
       </div>
     </div>
   )
@@ -1169,7 +1169,7 @@ function Check({
 
 function Empty({ text }: { text: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-stone-200 p-8 text-center text-sm text-stone-400">
+    <div className="rounded-2xl border border-dashed border-[var(--line)] p-8 text-center text-sm text-[var(--tx-faint)]">
       {text}
     </div>
   )
