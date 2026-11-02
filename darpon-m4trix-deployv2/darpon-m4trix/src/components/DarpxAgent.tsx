@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Loader2, Send, Sparkles, X } from 'lucide-react'
+import { Loader2, Mic, Send, Sparkles, Volume2, VolumeX, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { fetchAuth } from '@/lib/http'
 import { useUI } from '@/lib/ui-store'
@@ -16,13 +16,23 @@ import {
   type BrainContext,
 } from '@/lib/agent-brain'
 import DarpxAvatar, { type AvatarMood } from '@/components/DarpxAvatar'
+import {
+  listen,
+  micSupported,
+  speak,
+  stopSpeak,
+  ttsSupported,
+  warmupVoices,
+} from '@/lib/darpx-voice'
 
 // ============================================================
-// Agente Darpx v7 — con CORPO E CARATTERE 💜
-// • La bolla ora ospita l'AVATAR DARPX (il guizzo d'ombra con
-//   fiamma olografica): cammina, pensa, parla, festeggia
+// Agente Darpx v10 — IL SAMURAI DIGITALE ⚔️
+// • La bolla ospita il SAMURAI GEOMETRICO (il personaggio creato
+//   dall'utente): occhi vivi che seguono il cursore, glitch,
+//   cammina per il sito, festeggia
+// • PARLA con una voce italiana (altoparlante del browser)
+// • ASCOLTA col microfono: premi 🎙 e gli parli direttamente
 // • Ricorda il CONTESTO: «ancora» rifà l'ultima azione variandola
-// • Quando è tranquillo VIAGGIA per il fondo dello schermo
 // • Per le domande difficili interpella il LLM lato server
 // ============================================================
 
@@ -35,7 +45,7 @@ type Msg = {
 const HELLO: Msg = {
   role: 'assistant',
   content:
-    'Ciao! 👋 Sono l\'**Agente Darpx**.\n\nPosso **generare modelli 3D col mio motore interno** 🧬, creare mondi, migliorare i tuoi GLB, cambiare il tema del sito e spiegarti tutto.\n\nScrivi come ti pare: capisco anche gli errori di battitura. E se scrivi **«ancora»** rifaccio l\'ultima cosa con una variante nuova!',
+    'Ciao! 👋 Sono l\'**Agente Darpx**, ora con le sembianze del **Samurai Geometrico** ⚔️.\n\nPosso **generare modelli 3D col mio motore interno** 🧬, creare mondi, migliorare i tuoi GLB, cambiare il tema del sito e spiegarti tutto.\n\nNuovo: **parlo con la voce** 🔊 (pulsante in alto) e posso **ascoltarti col microfono** 🎙 (pulsante accanto alla barra). Scrivi come ti pare: capisco anche gli errori di battitura!',
 }
 
 export default function DarpxAgent() {
@@ -53,6 +63,15 @@ export default function DarpxAgent() {
   const [mood, setMood] = useState<AvatarMood>('idle')
   const moodTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // voce + microfono (il samurai parla e ascolta)
+  const [voiceOn, setVoiceOn] = useState(false)
+  const [listening, setListening] = useState(false)
+  const [micOK, setMicOK] = useState(false)
+  const [ttsOK, setTtsOK] = useState(false)
+  const voiceOnRef = useRef(false)
+  const micRef = useRef<{ stop: () => void } | null>(null)
+  const finalTextRef = useRef('')
+
   // viaggio nel sito (quando la bolla è chiusa e l'utente è tranquillo)
   const [travelX, setTravelX] = useState(0)
   const [traveling, setTraveling] = useState(false)
@@ -64,6 +83,75 @@ export default function DarpxAgent() {
 
   const setTab = useUI(s => s.setTab)
   const setAccent = useWorld(s => s.setAccent)
+
+  // init voce/microfono dal browser (solo lato client)
+  useEffect(() => {
+    try {
+      setVoiceOn(localStorage.getItem('darpx-voice') !== 'off' && ttsSupported())
+    } catch {
+      setVoiceOn(ttsSupported())
+    }
+    setMicOK(micSupported())
+    setTtsOK(ttsSupported())
+    warmupVoices()
+  }, [])
+  useEffect(() => {
+    voiceOnRef.current = voiceOn
+  }, [voiceOn])
+
+  const speakIfOn = useCallback((text: string) => {
+    if (voiceOnRef.current) speak(text)
+  }, [])
+
+  const toggleVoice = useCallback(() => {
+    setVoiceOn(v => {
+      const nv = !v
+      try {
+        localStorage.setItem('darpx-voice', nv ? 'on' : 'off')
+      } catch {
+        /* private mode */
+      }
+      if (!nv) stopSpeak()
+      else speak('Ecco la mia voce!')
+      return nv
+    })
+  }, [])
+
+  // microfono: ascolta e invia da solo quello che senti
+  const sendRef = useRef<(raw?: string) => Promise<void>>(async () => {})
+  const toggleMic = useCallback(() => {
+    if (micRef.current) {
+      micRef.current.stop()
+      micRef.current = null
+      setListening(false)
+      return
+    }
+    stopSpeak() // non voglio sentire me stesso
+    finalTextRef.current = ''
+    const handle = listen({
+      onPartial: t => setInput(t),
+      onFinal: t => {
+        finalTextRef.current = t
+        setInput(t)
+      },
+      onDone: () => {
+        micRef.current = null
+        setListening(false)
+        const said = finalTextRef.current.trim()
+        if (said) void sendRef.current(said) // invia da solo
+      },
+      onError: msg => {
+        micRef.current = null
+        setListening(false)
+        toast.error(msg)
+      },
+    })
+    micRef.current = handle
+    if (handle) {
+      setListening(true)
+      setInput('')
+    }
+  }, [])
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight
@@ -182,6 +270,7 @@ export default function DarpxAgent() {
       busyRef.current = true
       lastActivity.current = Date.now()
       stopTravel()
+      stopSpeak() // nuova domanda: il samurai smette di parlare
       setInput('')
       setMsgs(m => [...m, { role: 'user', content: text }])
 
@@ -194,6 +283,7 @@ export default function DarpxAgent() {
         setMsgs(m => [...m, { role: 'assistant', content: reply.text, instant: true }])
         runAction(reply)
         setMoodFor('talk', 2600)
+        speakIfOn(reply.text)
       } else {
         setThinking(true)
         setThinkLabel('Sto pensando…')
@@ -203,6 +293,7 @@ export default function DarpxAgent() {
         runAction(reply)
         setMoodFor('talk', 2600)
         setThinking(false)
+        speakIfOn(reply.text)
       }
 
       // 2) risposta incerta? chiedo anche al cervello LLM lato server
@@ -233,6 +324,8 @@ export default function DarpxAgent() {
                 return next
               })
               setMoodFor('talk', 2600)
+              stopSpeak()
+              speakIfOn(data.answer)
             }
           }
         } catch {
@@ -243,8 +336,10 @@ export default function DarpxAgent() {
       }
       busyRef.current = false
     },
-    [input, msgs, runAction, setMoodFor, stopTravel]
+    [input, msgs, runAction, setMoodFor, stopTravel, speakIfOn]
   )
+  // il microfono invoca sempre l'ultima versione di send
+  sendRef.current = send
 
   // stili legati al tema corrente (CSS variables, si aggiornano da sole)
   const grad = 'linear-gradient(to bottom, var(--primary), var(--primary-strong))'
@@ -321,9 +416,26 @@ export default function DarpxAgent() {
                 <p className="text-sm font-black leading-tight">Agente Darpx</p>
                 <p className="flex items-center gap-1 text-[11px] text-white/75">
                   <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-300" />
-                  {thinking ? 'sta riflettendo…' : mood === 'talk' ? 'parla con te' : mood === 'happy' ? 'felice!' : 'motore 3D interno attivo'}
+                  {listening
+                    ? 'ti sta ascoltando 🎙'
+                    : thinking
+                      ? 'sta riflettendo…'
+                      : mood === 'talk'
+                        ? 'parla con te'
+                        : mood === 'happy'
+                          ? 'felice!'
+                          : 'samurai digitale · motore 3D attivo'}
                 </p>
               </div>
+              {ttsOK && (
+                <button
+                  onClick={toggleVoice}
+                  title={voiceOn ? 'Voce attiva · clic per spegnerla' : 'Voce spenta · clic per accenderla'}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 transition hover:bg-white/20"
+                >
+                  {voiceOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+                </button>
+              )}
               <Sparkles className="h-4 w-4 text-white/75" />
             </div>
 
@@ -385,10 +497,23 @@ export default function DarpxAgent() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && void send()}
-                placeholder="Chiedi o comando qualcosa…"
+                placeholder={listening ? 'Ti sto ascoltando… parla! 🎙' : 'Chiedi o comando qualcosa…'}
                 className="h-10 flex-1 rounded-xl bg-[var(--panel-soft)] px-3.5 text-sm outline-none ring-[var(--primary)] transition focus:ring-2"
                 maxLength={500}
               />
+              {micOK && (
+                <button
+                  onClick={toggleMic}
+                  title={listening ? 'Ferma il microfono' : 'Parla col samurai: invia da solo'}
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-md transition ${
+                    listening
+                      ? 'animate-pulse bg-red-500 text-white ring-2 ring-red-300'
+                      : 'bg-[var(--panel-soft)] text-[var(--tx)] ring-1 ring-[var(--line)] hover:brightness-110'
+                  }`}
+                >
+                  <Mic className="h-4 w-4" />
+                </button>
+              )}
               <button
                 onClick={() => void send()}
                 disabled={!input.trim()}

@@ -1,23 +1,35 @@
 'use client'
 
 // ============================================================
-// DARPX AVATAR (v7) — la forma fisica dell'agente
+// DARPX AVATAR (v10) — IL SAMURAI GEOMETRICO
 // ------------------------------------------------------------
-// Un guizzo d'ombra con la fiamma olografica al posto della
-// testa: il Beheaded di Dead Cells fuso con Capri, l'IA
-// «chaos gremlin» di Cyberpunk: Edgerunners 2.
-//   • corpo scuro da spadaccino con capa svolazzante
-//   • fiamma ciano/viola al posto del viso
-//   • collarino neurale, circuiti al neon, spalla olografica
-// Umori (animazioni procedurali): idle · walk · think · talk ·
-// happy · glitch. Tutto in un Canvas piccolo e leggero.
+// Il personaggio creato dall'utente diventa la forma fisica
+// dell'agente, vivo come i desktop pet:
+//   • OCCHI: luccicano, seguono il cursore, fanno saccadi e
+//     sbattono le palpebre; ti guardano quando passi col mouse
+//   • GLITCH: burst casuali + scatti su evento (fette spostate,
+//     doppio fantasma RGB, scanline)
+//   • CAMMINA: dondolio e rimbalzo mentre gira per il sito
+//   • PENSA: occhi in alto + puntini orbitanti sul cappello
+//   • PARLA: bagliore della bocca + barre della voce
+//   • FESTEGGIA: scintille d'oro e salti
+// Canvas 2D leggero: nessuna libreria 3D, gira ovunque.
 // ============================================================
 
 import { useEffect, useRef } from 'react'
-import * as THREE from 'three'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import spriteImport from '@/assets/darpx-samurai.png'
 
 export type AvatarMood = 'idle' | 'walk' | 'think' | 'talk' | 'happy' | 'glitch'
+
+// Volto nell'immagine sorgente 512×512 (frazioni misurate sul file)
+const EYE_L = { x: 225 / 512, y: 127 / 512 }
+const EYE_R = { x: 272 / 512, y: 127 / 512 }
+const MOUTH = { x: 245 / 512, y: 152 / 512 }
+
+const SPRITE_SRC =
+  typeof spriteImport === 'string'
+    ? (spriteImport as unknown as string)
+    : ((spriteImport as { src?: string }).src ?? '')
 
 export default function DarpxAvatar({
   mood = 'idle',
@@ -28,321 +40,283 @@ export default function DarpxAvatar({
   size?: number
   className?: string
 }) {
-  return (
-    <div className={className} style={{ width: size, height: size, lineHeight: 0 }}>
-      <Canvas
-        gl={{ alpha: true, antialias: true }}
-        dpr={[1, 2]}
-        camera={{ fov: 34, near: 0.1, far: 20, position: [0, 1.05, 3.4] }}
-        style={{ background: 'transparent' }}
-      >
-        <AvatarCamera />
-        <ambientLight intensity={0.75} />
-        <directionalLight position={[2.5, 4, 3]} intensity={1.35} color="#cfe4ff" />
-        <pointLight position={[0, 1.35, 0.35]} intensity={2.2} distance={2.6} color="#57e0ff" />
-        <AvatarRig mood={mood} />
-      </Canvas>
-    </div>
-  )
-}
-
-/** inquadra l'avatar: sempre centrato sul busto (non sull'origine) */
-function AvatarCamera() {
-  const { camera } = useThree()
-  useEffect(() => {
-    camera.position.set(0, 1.05, 3.4)
-    camera.lookAt(0, 0.92, 0)
-  }, [camera])
-  return null
-}
-
-function AvatarRig({ mood }: { mood: AvatarMood }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
   const moodRef = useRef<AvatarMood>(mood)
+
   useEffect(() => {
     moodRef.current = mood
   }, [mood])
 
-  const root = useRef<THREE.Group>(null)
-  const body = useRef<THREE.Group>(null)
-  const legL = useRef<THREE.Group>(null)
-  const legR = useRef<THREE.Group>(null)
-  const armL = useRef<THREE.Group>(null)
-  const armR = useRef<THREE.Group>(null)
-  const cape = useRef<THREE.Group>(null)
-  const flameCore = useRef<THREE.Mesh>(null)
-  const flameHalo = useRef<THREE.Mesh>(null)
-  const flameSpark = useRef<THREE.Mesh>(null)
-  const dots = useRef<THREE.Group>(null)
-  const shadowDisc = useRef<THREE.Mesh>(null)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
 
-  useFrame(state => {
-    const t = state.clock.elapsedTime
-    const m = moodRef.current
-    const g = root.current
-    if (!g) return
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    canvas.width = Math.round(size * dpr)
+    canvas.height = Math.round(size * dpr)
 
-    // parametri per umore
-    const walking = m === 'walk'
-    const thinking = m === 'think'
-    const talking = m === 'talk'
-    const happy = m === 'happy'
-    const glitch = m === 'glitch'
+    const img = new Image()
+    if (SPRITE_SRC) img.src = SPRITE_SRC
 
-    // camminata: gambe + braccia oscillano
-    const speed = walking ? 7.5 : 0
-    const swing = walking ? Math.sin(t * speed) * 0.7 : 0
-    if (legL.current) legL.current.rotation.x = swing
-    if (legR.current) legR.current.rotation.x = -swing
+    // cursore: posizione normalizzata 0..1 rispetto alla canvas
+    const mouse = { x: 0.5, y: 0.3, t: 0 }
+    const onMouse = (e: MouseEvent) => {
+      const r = canvas.getBoundingClientRect()
+      if (!r.width || !r.height) return
+      mouse.x = (e.clientX - r.left) / r.width
+      mouse.y = (e.clientY - r.top) / r.height
+      mouse.t = performance.now()
+    }
+    window.addEventListener('mousemove', onMouse, { passive: true })
 
-    if (thinking) {
-      // mano al mento + l'altro braccio incrociato
-      if (armR.current) {
-        armR.current.rotation.x = -2.1
-        armR.current.rotation.z = -0.5
+    let raf = 0
+    let dead = false
+    const t0 = performance.now()
+
+    // eventi casuali della vita
+    let nextBlinkAt = 2 + Math.random() * 3
+    let blinkUntil = -1
+    let nextGlitchAt = 4 + Math.random() * 6
+    let glitchUntil = -1
+    let nextSaccadeAt = 1.5 + Math.random() * 2
+    let saccade = { x: 0, y: 0 }
+
+    const loop = (now: number) => {
+      if (dead) return
+      const t = (now - t0) / 1000
+      const m = moodRef.current
+
+      /* ---------- programmazione eventi ---------- */
+      if (t >= nextBlinkAt) {
+        blinkUntil = t + 0.13
+        nextBlinkAt = t + 2.6 + Math.random() * 3.4
       }
-      if (armL.current) {
-        armL.current.rotation.x = -0.7
-        armL.current.rotation.z = 0.55
+      if (t >= nextGlitchAt) {
+        glitchUntil = t + 0.22 + Math.random() * 0.26
+        nextGlitchAt = t + 5 + Math.random() * 8
       }
-    } else if (talking) {
-      if (armR.current) {
-        armR.current.rotation.x = -1.15 + Math.sin(t * 5.2) * 0.35
-        armR.current.rotation.z = -0.25
+      if (t >= nextSaccadeAt) {
+        const a = Math.random() * Math.PI * 2
+        const r = Math.random() * 0.8
+        saccade = { x: Math.cos(a) * r, y: Math.sin(a) * r * 0.7 }
+        nextSaccadeAt = t + 1.6 + Math.random() * 2.8
       }
-      if (armL.current) {
-        armL.current.rotation.x = -0.25 + Math.sin(t * 3.1 + 1) * 0.15
-        armL.current.rotation.z = 0.3
+      const glitching = m === 'glitch' || t < glitchUntil
+
+      /* ---------- movimento del corpo ---------- */
+      const walking = m === 'walk'
+      const happy = m === 'happy'
+      const thinking = m === 'think'
+      const talking = m === 'talk'
+
+      const bob = walking
+        ? Math.abs(Math.sin(t * 8)) * size * 0.022
+        : happy
+          ? Math.abs(Math.sin(t * 6)) * size * 0.045
+          : Math.sin(t * 1.9) * size * 0.012
+      const rock = walking
+        ? Math.sin(t * 8) * 0.05
+        : thinking
+          ? Math.sin(t * 1.2) * 0.02
+          : Math.sin(t * 0.8) * 0.012
+      const sway = walking ? Math.sin(t * 1.7) * size * 0.02 : Math.sin(t * 0.6) * size * 0.006
+      const jitterX = glitching
+        ? (Math.sin(Math.floor(t * 22) * 12.9898) % 1) * size * 0.05
+        : 0
+      const jitterY = glitching
+        ? (Math.sin(Math.floor(t * 22) * 78.233) % 1) * size * 0.03
+        : 0
+
+      /* ---------- sguardo ---------- */
+      const maxOff = size * 0.042
+      let gx = saccade.x * maxOff
+      let gy = saccade.y * maxOff
+      const freshMouse = now - mouse.t < 3500
+      if (freshMouse) {
+        // segue il cursore (le coordinate volto sono nella metà alta)
+        const dx = mouse.x * size - (MOUTH.x * size + sway)
+        const dy = mouse.y * size - (EYE_L.y * size + bob)
+        const len = Math.max(0.0001, Math.hypot(dx, dy))
+        const k = Math.min(1, len / (size * 0.5))
+        gx = (dx / len) * maxOff * k
+        gy = (dy / len) * maxOff * k
+      } else if (thinking) {
+        gx = 0
+        gy = -maxOff * 0.75 // guarda in alto, pensa
       }
-    } else {
-      if (armL.current) {
-        armL.current.rotation.x = -swing * 0.75 + (happy ? -2.6 : 0)
-        armL.current.rotation.z = happy ? -0.9 : 0.22 + Math.sin(t * 1.6) * 0.05
+
+      /* ---------- disegno ---------- */
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, size, size)
+
+      ctx.save()
+      ctx.translate(size / 2 + sway + jitterX, size / 2 + bob + jitterY)
+      ctx.rotate(rock)
+
+      const half = size / 2
+      if (img.complete && img.naturalWidth) {
+        // fantasmi RGB durante il glitch
+        if (glitching) {
+          ctx.globalCompositeOperation = 'lighter'
+          ctx.globalAlpha = 0.28
+          try {
+            ctx.filter = 'hue-rotate(130deg) saturate(2.4)'
+          } catch {
+            /* Safari vecchi: senza filtro va bene uguale */
+          }
+          ctx.drawImage(img, -half - size * 0.012, -half, size, size)
+          try {
+            ctx.filter = 'hue-rotate(-130deg) saturate(2.4)'
+          } catch {
+            /* idem */
+          }
+          ctx.drawImage(img, -half + size * 0.012, -half, size, size)
+          ctx.filter = 'none'
+          ctx.globalAlpha = 1
+          ctx.globalCompositeOperation = 'source-over'
+        }
+
+        ctx.drawImage(img, -half, -half, size, size)
+
+        // fette spostate (glitch classico)
+        if (glitching) {
+          const seed = Math.floor(t * 22)
+          for (let i = 0; i < 3; i++) {
+            const sy =
+              ((Math.sin((seed + i * 31) * 41.7) + 1) / 2) * (512 - 512 * 0.12)
+            const sh = 512 * (0.05 + ((Math.sin((seed + i * 7) * 17.3) + 1) / 2) * 0.07)
+            const off =
+              ((Math.sin((seed + i * 13) * 29.1) > 0 ? 1 : -1) *
+                (0.03 + ((Math.sin((seed + i) * 11.7) + 1) / 2) * 0.06)) *
+              size
+            ctx.drawImage(img, 0, sy, 512, sh, -half + off, -half + sy * (size / 512), size, sh * (size / 512))
+          }
+        }
       }
-      if (armR.current) {
-        armR.current.rotation.x = swing * 0.75 + (happy ? -2.6 : 0)
-        armR.current.rotation.z = happy ? 0.9 : -0.22 - Math.sin(t * 1.6 + 0.5) * 0.05
+
+      /* ---------- occhi vivi ---------- */
+      const blinkK = t < blinkUntil ? 0.12 : 1
+      const pulse = 1 + Math.sin(t * 6.2) * 0.1
+      const boost = happy ? 1.35 : talking ? 1.18 : glitching ? 1.25 : 1
+      const eyeR0 = size * 0.052 * pulse * boost
+
+      ctx.globalCompositeOperation = 'lighter'
+      for (const EYE of [EYE_L, EYE_R]) {
+        const ex = EYE.x * size - half + gx
+        const ey = EYE.y * size - half + gy
+        ctx.save()
+        ctx.translate(ex, ey)
+        ctx.scale(1, blinkK)
+        const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, eyeR0)
+        grad.addColorStop(0, 'rgba(255,240,190,0.95)')
+        grad.addColorStop(0.35, 'rgba(255,214,96,0.55)')
+        grad.addColorStop(1, 'rgba(120,255,180,0)')
+        ctx.fillStyle = grad
+        ctx.beginPath()
+        ctx.ellipse(0, 0, eyeR0, eyeR0 * 0.72, 0, 0, Math.PI * 2)
+        ctx.fill()
+        // nucleo
+        ctx.fillStyle = 'rgba(255,246,205,0.9)'
+        ctx.beginPath()
+        ctx.ellipse(0, 0, eyeR0 * 0.3, eyeR0 * 0.22, 0, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.restore()
       }
+
+      /* ---------- bocca che parla ---------- */
+      if (talking) {
+        const amp = Math.abs(Math.sin(t * 11) * 0.6 + Math.sin(t * 17.3 + 1) * 0.4)
+        const mx = MOUTH.x * size - half
+        const my = MOUTH.y * size - half + gy * 0.4
+        const mr = size * (0.028 + amp * 0.02)
+        const mgrad = ctx.createRadialGradient(mx, my, 0, mx, my, mr)
+        mgrad.addColorStop(0, `rgba(255,224,130,${0.5 + amp * 0.4})`)
+        mgrad.addColorStop(1, 'rgba(255,180,60,0)')
+        ctx.fillStyle = mgrad
+        ctx.beginPath()
+        ctx.arc(mx, my, mr, 0, Math.PI * 2)
+        ctx.fill()
+
+        // barre della voce sotto la bocca
+        const bars = 5
+        const bw = size * 0.022
+        const gap = size * 0.014
+        const totalW = bars * bw + (bars - 1) * gap
+        let bx = MOUTH.x * size - half - totalW / 2
+        const by = size * 0.40
+        for (let i = 0; i < bars; i++) {
+          const h =
+            size * (0.02 + Math.abs(Math.sin(t * 9 + i * 1.7) * Math.sin(t * 4.1 + i)) * 0.05)
+          ctx.fillStyle = `rgba(255,214,96,${0.55 + 0.35 * Math.sin(t * 7 + i)})`
+          ctx.fillRect(bx, by - h, bw, h)
+          bx += bw + gap
+        }
+      }
+
+      /* ---------- puntini del pensiero ---------- */
+      if (thinking) {
+        const cx0 = size * 0.16
+        const cy0 = size * 0.075
+        for (let i = 0; i < 3; i++) {
+          const a = t * 2.1 + i * 2.09
+          const dx = Math.cos(a) * size * 0.05
+          const dy = Math.sin(a * 1.4) * size * 0.02
+          ctx.fillStyle = `rgba(255,215,94,${0.55 + 0.35 * Math.sin(t * 5 + i * 2)})`
+          ctx.beginPath()
+          ctx.arc(cx0 + dx, cy0 + dy, size * 0.011, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+
+      /* ---------- scintille felici ---------- */
+      if (happy) {
+        for (let i = 0; i < 7; i++) {
+          const px = size * (0.18 + (((i * 0.37 + t * 0.05) % 1) * 0.64))
+          const py = size * (0.78 - (((t * 0.14 + i * 0.17) % 1) * 0.55))
+          const a = 1 - (((t * 0.14 + i * 0.17) % 1))
+          const s = size * 0.016 * (0.5 + a)
+          ctx.strokeStyle = `rgba(255,225,120,${a * 0.9})`
+          ctx.lineWidth = Math.max(1, size * 0.006)
+          ctx.beginPath()
+          ctx.moveTo(px - s, py)
+          ctx.lineTo(px + s, py)
+          ctx.moveTo(px, py - s)
+          ctx.lineTo(px, py + s)
+          ctx.stroke()
+        }
+      }
+
+      ctx.globalCompositeOperation = 'source-over'
+
+      /* ---------- scanline del glitch ---------- */
+      if (glitching) {
+        ctx.fillStyle = 'rgba(0,0,0,0.14)'
+        for (let y = (Math.floor(t * 30) % 4); y < size; y += 4) {
+          ctx.fillRect(-half, -half + y, size, 1)
+        }
+        ctx.fillStyle = 'rgba(87,224,255,0.08)'
+        ctx.fillRect(-half, -half + ((t * 60) % size), size, size * 0.02)
+      }
+
+      ctx.restore()
+      raf = requestAnimationFrame(loop)
     }
 
-    // corpo: galleggio dolce / salti di gioia
-    const bob = walking
-      ? Math.abs(Math.sin(t * speed)) * 0.045
-      : happy
-        ? Math.abs(Math.sin(t * 6)) * 0.16
-        : Math.sin(t * 1.9) * 0.03
-    if (body.current) body.current.position.y = bob
-
-    // rotazione: gira piano da fermo, gira su se stesso se felice
-    g.rotation.y = happy
-      ? t * 4.2
-      : Math.sin(t * 0.45) * 0.28
-
-    // glitch: scatti casuali
-    if (glitch) {
-      const j = (n: number) => (Math.sin(t * 31 + n * 7) > 0.72 ? (Math.random() - 0.5) * 0.06 : 0)
-      g.position.x = j(1)
-      g.position.y = j(2)
-      g.position.z = j(3)
-    } else {
-      g.position.set(0, 0, 0)
+    raf = requestAnimationFrame(loop)
+    return () => {
+      dead = true
+      cancelAnimationFrame(raf)
+      window.removeEventListener('mousemove', onMouse)
     }
-
-    // capa: ondeggiamento
-    if (cape.current) {
-      cape.current.rotation.x = 0.22 + Math.sin(t * 2.6) * 0.07 + (walking ? 0.22 : 0)
-      cape.current.rotation.z = Math.sin(t * 1.7) * 0.05
-    }
-
-    // fiamma: tremolio continuo, più intensa se parla/felice
-    const flameScale = 1 + Math.sin(t * 9) * 0.09 + Math.sin(t * 23) * 0.05
-    const boost = talking ? 1.18 : happy ? 1.32 : glitch ? 1.1 : 1
-    if (flameCore.current) {
-      flameCore.current.scale.set(flameScale * boost, flameScale * 1.25 * boost, flameScale * boost)
-      flameCore.current.rotation.y = t * 1.4
-      flameCore.current.rotation.x = Math.sin(t * 2.2) * 0.12
-    }
-    if (flameHalo.current) {
-      const hs = (1 + Math.sin(t * 5.5) * 0.06) * boost
-      flameHalo.current.scale.set(hs, hs * 1.15, hs)
-      const mat = flameHalo.current.material as THREE.MeshStandardMaterial
-      mat.emissiveIntensity = glitch ? (Math.sin(t * 27) > 0 ? 2.4 : 0.6) : 1.1
-    }
-    if (flameSpark.current) {
-      flameSpark.current.position.y = 1.62 + Math.sin(t * 4.4) * 0.05
-      flameSpark.current.rotation.y = -t * 2
-      flameSpark.current.visible = !thinking
-    }
-
-    // pallini del pensiero (orbita sopra la fiamma)
-    if (dots.current) {
-      dots.current.visible = thinking
-      dots.current.rotation.y = t * 2.4
-      dots.current.children.forEach((c, i) => {
-        c.position.y = Math.sin(t * 3 + i * 2.1) * 0.04
-      })
-    }
-
-    // ombra a terra respira con l'altezza
-    if (shadowDisc.current) {
-      const k = 1 - bob * 2.2
-      shadowDisc.current.scale.setScalar(Math.max(0.55, k))
-    }
-  })
-
-  const dark = '#14141c'
-  const darkCloth = '#1c1524'
-  const cyan = '#57e0ff'
-  const violet = '#a06bff'
+  }, [size])
 
   return (
-    <group ref={root}>
-      {/* ombra morbida */}
-      <mesh ref={shadowDisc} position={[0, 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[0.34, 24]} />
-        <meshBasicMaterial color="#1a1030" transparent opacity={0.28} depthWrite={false} />
-      </mesh>
-
-      <group ref={body}>
-        {/* gambe */}
-        <group ref={legL} position={[-0.09, 0.52, 0]}>
-          <mesh position={[0, -0.24, 0]}>
-            <capsuleGeometry args={[0.052, 0.3, 4, 10]} />
-            <meshStandardMaterial color={dark} roughness={0.55} metalness={0.35} />
-          </mesh>
-          <mesh position={[0, -0.47, 0.02]}>
-            <boxGeometry args={[0.1, 0.07, 0.15]} />
-            <meshStandardMaterial color="#0e0e15" roughness={0.4} metalness={0.5} />
-          </mesh>
-        </group>
-        <group ref={legR} position={[0.09, 0.52, 0]}>
-          <mesh position={[0, -0.24, 0]}>
-            <capsuleGeometry args={[0.052, 0.3, 4, 10]} />
-            <meshStandardMaterial color={dark} roughness={0.55} metalness={0.35} />
-          </mesh>
-          <mesh position={[0, -0.47, 0.02]}>
-            <boxGeometry args={[0.1, 0.07, 0.15]} />
-            <meshStandardMaterial color="#0e0e15" roughness={0.4} metalness={0.5} />
-          </mesh>
-        </group>
-
-        {/* torso */}
-        <mesh position={[0, 0.78, 0]}>
-          <capsuleGeometry args={[0.13, 0.3, 6, 12]} />
-          <meshStandardMaterial color={dark} roughness={0.5} metalness={0.4} />
-        </mesh>
-        {/* cintura con nucleo luminoso */}
-        <mesh position={[0, 0.63, 0]}>
-          <cylinderGeometry args={[0.125, 0.135, 0.06, 12]} />
-          <meshStandardMaterial color="#25202e" roughness={0.45} metalness={0.5} />
-        </mesh>
-        <mesh position={[0, 0.63, 0.125]}>
-          <sphereGeometry args={[0.028, 10, 8]} />
-          <meshStandardMaterial color={cyan} emissive={cyan} emissiveIntensity={2.4} toneMapped={false} />
-        </mesh>
-
-        {/* circuiti al neon sul torso */}
-        <mesh position={[0.062, 0.86, 0.078]}>
-          <boxGeometry args={[0.012, 0.16, 0.012]} />
-          <meshStandardMaterial color={violet} emissive={violet} emissiveIntensity={1.8} toneMapped={false} />
-        </mesh>
-        <mesh position={[-0.062, 0.8, 0.078]}>
-          <boxGeometry args={[0.012, 0.1, 0.012]} />
-          <meshStandardMaterial color={cyan} emissive={cyan} emissiveIntensity={1.6} toneMapped={false} />
-        </mesh>
-
-        {/* spalla olografica */}
-        <mesh position={[-0.155, 0.93, 0]} rotation={[0, 0, 0.35]}>
-          <boxGeometry args={[0.12, 0.05, 0.16]} />
-          <meshStandardMaterial
-            color={violet}
-            emissive={violet}
-            emissiveIntensity={0.9}
-            transparent
-            opacity={0.55}
-            roughness={0.2}
-          />
-        </mesh>
-
-        {/* braccia */}
-        <group ref={armL} position={[-0.2, 0.92, 0]}>
-          <mesh position={[0, -0.16, 0]}>
-            <capsuleGeometry args={[0.04, 0.22, 4, 8]} />
-            <meshStandardMaterial color={dark} roughness={0.5} metalness={0.4} />
-          </mesh>
-          <mesh position={[0, -0.31, 0]}>
-            <sphereGeometry args={[0.042, 8, 6]} />
-            <meshStandardMaterial color="#22222c" roughness={0.45} metalness={0.45} />
-          </mesh>
-        </group>
-        <group ref={armR} position={[0.2, 0.92, 0]}>
-          <mesh position={[0, -0.16, 0]}>
-            <capsuleGeometry args={[0.04, 0.22, 4, 8]} />
-            <meshStandardMaterial color={dark} roughness={0.5} metalness={0.4} />
-          </mesh>
-          <mesh position={[0, -0.31, 0]}>
-            <sphereGeometry args={[0.042, 8, 6]} />
-            <meshStandardMaterial color="#22222c" roughness={0.45} metalness={0.45} />
-          </mesh>
-        </group>
-
-        {/* capa svolazzante */}
-        <group ref={cape} position={[0, 1.02, -0.09]}>
-          <mesh position={[0, -0.3, -0.03]} rotation={[0.1, 0, 0]}>
-            <coneGeometry args={[0.21, 0.62, 10, 1, true]} />
-            <meshStandardMaterial
-              color={darkCloth}
-              roughness={0.85}
-              side={THREE.DoubleSide}
-            />
-          </mesh>
-          {/* bordo della capa acceso */}
-          <mesh position={[0, -0.6, -0.05]}>
-            <torusGeometry args={[0.13, 0.008, 6, 18]} />
-            <meshStandardMaterial color={violet} emissive={violet} emissiveIntensity={1.6} toneMapped={false} />
-          </mesh>
-        </group>
-
-        {/* collarino neurale (al posto del collo) */}
-        <mesh position={[0, 1.08, 0]}>
-          <torusGeometry args={[0.095, 0.022, 8, 20]} />
-          <meshStandardMaterial color="#2c2740" metalness={0.7} roughness={0.35} emissive={violet} emissiveIntensity={0.8} toneMapped={false} />
-        </mesh>
-
-        {/* NIENTE TESTA: fiamma olografica */}
-        <mesh ref={flameCore} position={[0, 1.32, 0]}>
-          <icosahedronGeometry args={[0.095, 1]} />
-          <meshStandardMaterial color={cyan} emissive={cyan} emissiveIntensity={2.6} roughness={0.3} toneMapped={false} />
-        </mesh>
-        <mesh ref={flameHalo} position={[0, 1.32, 0]}>
-          <icosahedronGeometry args={[0.15, 1]} />
-          <meshStandardMaterial
-            color={violet}
-            emissive={violet}
-            emissiveIntensity={1.6}
-            transparent
-            opacity={0.5}
-            depthWrite={false}
-            toneMapped={false}
-          />
-        </mesh>
-        <mesh ref={flameSpark} position={[0, 1.62, 0]}>
-          <tetrahedronGeometry args={[0.028, 0]} />
-          <meshStandardMaterial color="#c8f4ff" emissive={cyan} emissiveIntensity={2.8} toneMapped={false} />
-        </mesh>
-
-        {/* pallini del pensiero */}
-        <group ref={dots} position={[0, 1.78, 0]} visible={false}>
-          {[0, 1, 2].map(i => {
-            const a = (i / 3) * Math.PI * 2
-            return (
-              <mesh key={i} position={[Math.cos(a) * 0.16, 0, Math.sin(a) * 0.16]}>
-                <sphereGeometry args={[0.026, 8, 6]} />
-                <meshStandardMaterial color="#dff4ff" emissive={cyan} emissiveIntensity={2.2} toneMapped={false} />
-              </mesh>
-            )
-          })}
-        </group>
-      </group>
-    </group>
+    <canvas
+      ref={canvasRef}
+      className={className}
+      style={{ width: size, height: size, borderRadius: size * 0.22, lineHeight: 0 }}
+    />
   )
 }
