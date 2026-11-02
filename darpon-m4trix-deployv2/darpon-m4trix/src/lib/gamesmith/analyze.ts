@@ -22,6 +22,12 @@ export type ScriptAnalysis = {
   dialogues: string[]
   found: string[] // etichette rilevate, per la UI
   raw: string
+  // ---- v9: domande del wizard ----
+  layout: 'auto' | 'stanze' | 'citta' | 'caverne' | 'isola' // solo 2D
+  dimension: '2d' | '3d'
+  camera: 'terza' | 'prima'
+  worldProjectId: string | null
+  worldProjectName: string | null
 }
 
 // ---------- utilità fuzzy ----------
@@ -232,5 +238,11 @@ export function analyzeScript(raw: string): ScriptAnalysis {
     dialogues,
     found,
     raw,
+    // v9: valori di default, poi il wizard li chiede all'utente
+    layout: 'auto',
+    dimension: '2d',
+    camera: 'terza',
+    worldProjectId: null,
+    worldProjectName: null,
   }
 }

@@ -225,7 +225,7 @@ export default function ProfileDialog({
                   onClick={() => setAccent(t.id)}
                   className={`group relative flex aspect-square items-center justify-center rounded-full ring-2 ring-offset-2 ring-offset-white transition-transform hover:scale-110 ${
                     accent === t.id
-                      ? 'ring-stone-700'
+                      ? 'ring-[var(--neon)]'
                       : 'ring-transparent'
                   }`}
                   style={{ backgroundColor: t.primary }}
@@ -236,7 +236,7 @@ export default function ProfileDialog({
                 </button>
               ))}
             </div>
-            <p className="mt-3 text-center text-xs font-medium text-stone-500">
+            <p className="mt-3 text-center text-xs font-medium text-[var(--tx-dim)]">
               Tema attivo:{' '}
               <b className="text-[var(--primary-strong)]">
                 {THEMES.find(t => t.id === accent)?.name ?? 'Bosco'}

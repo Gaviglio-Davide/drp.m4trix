@@ -89,12 +89,12 @@ export default function WorldGen() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      <div className="rounded-3xl bg-white/85 p-5 shadow-xl ring-1 ring-black/5 backdrop-blur">
+      <div className="rounded-3xl bg-[var(--panel)] p-5 shadow-xl ring-1 ring-[var(--line)] backdrop-blur">
         <div className="flex items-center gap-2">
           <Wand2 className="h-5 w-5 text-[var(--primary)]" />
           <h2 className="text-lg font-semibold">{section.title === 'Genera' ? 'Generatore di mondi' : section.title}</h2>
         </div>
-        <p className="mt-1 text-sm text-stone-500">
+        <p className="mt-1 text-sm text-[var(--tx-dim)]">
           {section.subtitle ||
             <>Un intero mondo in un click: strade, case, mura e paesaggi generati
             con l&apos;algoritmo interno. Tutto resta modificabile con
@@ -110,12 +110,12 @@ export default function WorldGen() {
               className={`rounded-2xl border p-3 text-left transition-all ${
                 kind === g.id
                   ? 'bg-[var(--primary-soft)] ring-2 ring-[var(--primary)]'
-                  : 'hover:bg-stone-50'
+                  : 'hover:bg-[var(--panel-hover)]'
               }`}
             >
               <div className="text-2xl">{g.icon}</div>
               <div className="mt-1 text-sm font-semibold">{g.label}</div>
-              <div className="mt-0.5 text-[11px] leading-tight text-stone-500">
+              <div className="mt-0.5 text-[11px] leading-tight text-[var(--tx-dim)]">
                 {g.desc}
               </div>
             </button>
@@ -124,7 +124,7 @@ export default function WorldGen() {
 
         {/* dimensione */}
         <div className="mt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
             Dimensione
           </p>
           <div className="mt-2 flex gap-2">
@@ -135,11 +135,11 @@ export default function WorldGen() {
                 className={`flex-1 rounded-xl border px-3 py-2 text-center transition-all ${
                   size === s.id
                     ? 'bg-[var(--primary-soft)] ring-2 ring-[var(--primary)]'
-                    : 'hover:bg-stone-50'
+                    : 'hover:bg-[var(--panel-hover)]'
                 }`}
               >
                 <div className="text-sm font-semibold">{s.label}</div>
-                <div className="text-[10px] text-stone-500">{s.hint}</div>
+                <div className="text-[10px] text-[var(--tx-dim)]">{s.hint}</div>
               </button>
             ))}
           </div>
@@ -148,10 +148,10 @@ export default function WorldGen() {
         {/* densità */}
         <div className="mt-4">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
               Quanti edifici
             </p>
-            <span className="text-xs font-medium text-stone-500">
+            <span className="text-xs font-medium text-[var(--tx-dim)]">
               {Math.round(density * 100)}%
             </span>
           </div>
@@ -168,10 +168,10 @@ export default function WorldGen() {
 
         {/* seed */}
         <div className="mt-4 flex items-center gap-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
             Variante
           </p>
-          <code className="rounded-lg bg-stone-100 px-2 py-1 text-xs font-semibold">
+          <code className="rounded-lg bg-[var(--panel-soft)] px-2 py-1 text-xs font-semibold">
             #{seed}
           </code>
           <Button
@@ -184,12 +184,12 @@ export default function WorldGen() {
         </div>
 
         {/* anteprima statistiche */}
-        <div className="mt-4 grid grid-cols-4 gap-2 rounded-2xl bg-stone-50 p-3 text-center">
+        <div className="mt-4 grid grid-cols-4 gap-2 rounded-2xl bg-[var(--panel-soft)] p-3 text-center">
           <div>
             <div className="text-lg font-bold text-[var(--primary)]">
               {preview.stats.case}
             </div>
-            <div className="text-[10px] uppercase tracking-wide text-stone-400">
+            <div className="text-[10px] uppercase tracking-wide text-[var(--tx-faint)]">
               edifici
             </div>
           </div>
@@ -197,7 +197,7 @@ export default function WorldGen() {
             <div className="text-lg font-bold text-[var(--primary)]">
               {preview.stats.strade}
             </div>
-            <div className="text-[10px] uppercase tracking-wide text-stone-400">
+            <div className="text-[10px] uppercase tracking-wide text-[var(--tx-faint)]">
               strade
             </div>
           </div>
@@ -205,7 +205,7 @@ export default function WorldGen() {
             <div className="text-lg font-bold text-[var(--primary)]">
               {preview.stats.alberi}
             </div>
-            <div className="text-[10px] uppercase tracking-wide text-stone-400">
+            <div className="text-[10px] uppercase tracking-wide text-[var(--tx-faint)]">
               alberi
             </div>
           </div>
@@ -213,14 +213,14 @@ export default function WorldGen() {
             <div className="text-lg font-bold text-[var(--primary)]">
               {preview.stats.mura}
             </div>
-            <div className="text-[10px] uppercase tracking-wide text-stone-400">
+            <div className="text-[10px] uppercase tracking-wide text-[var(--tx-faint)]">
               mura
             </div>
           </div>
         </div>
 
         {preview.terrain && (
-          <p className="mt-3 flex items-center gap-1 text-[11px] text-stone-500">
+          <p className="mt-3 flex items-center gap-1 text-[11px] text-[var(--tx-dim)]">
             <Mountain className="h-3.5 w-3.5" /> Questo mondo ha anche colline e
             dislivelli scolpiti nel terreno.
           </p>

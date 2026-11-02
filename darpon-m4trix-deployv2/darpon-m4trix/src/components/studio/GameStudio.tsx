@@ -36,9 +36,10 @@ import {
   listGames,
   type GameMeta,
 } from '@/lib/game2d/persist'
-import { newGameProject } from '@/lib/game2d/types'
+import { newGameProject, gameDimension } from '@/lib/game2d/types'
 import GameEditor from '@/components/studio/GameEditor'
 import GamePlayer from '@/components/studio/GamePlayer'
+import GamePlayer3D from '@/components/studio/GamePlayer3D'
 import { useUI } from '@/lib/ui-store'
 import { sectionOf } from '@/lib/ui-store'
 
@@ -135,7 +136,14 @@ export default function GameStudio() {
     )
   }
   if (mode.kind === 'play') {
-    return (
+    return gameDimension(mode.meta.game) === '3d' ? (
+      <GamePlayer3D
+        key={'play3d' + mode.meta.id + mode.meta.game.updatedAt}
+        project={mode.meta.game}
+        onEdit={() => setMode({ kind: 'edit', meta: mode.meta })}
+        onExit={() => { setMode({ kind: 'list' }); void refresh() }}
+      />
+    ) : (
       <GamePlayer
         key={'play' + mode.meta.id + mode.meta.game.updatedAt}
         project={mode.meta.game}
@@ -247,9 +255,14 @@ export default function GameStudio() {
                   <div className="mb-1 flex items-center gap-2">
                     <Gamepad2 className="h-4 w-4 text-[var(--neon)]" />
                     <span className="truncate font-semibold text-[var(--tx)]">{m.name}</span>
+                    {gameDimension(m.game) === '3d' && (
+                      <span className="cp-chip shrink-0 text-[10px]">🌍 3D</span>
+                    )}
                   </div>
                   <p className="text-[11px] text-[var(--tx-faint)]">
-                    {m.game.scenes.length} livello{m.game.scenes.length > 1 ? 'i' : ''} ·{' '}
+                    {gameDimension(m.game) === '3d'
+                      ? `mondo: ${m.game.settings.worldProjectName ?? '—'} · ${m.game.settings.camera === 'prima' ? 'prima persona' : 'terza persona'} · `
+                      : ''}
                     {m.game.scenes.reduce((n, s) => n + s.entities.filter(e => e.type === 'enemy').length, 0)} nemici ·{' '}
                     {m.game.settings.weapon === 'blaster' ? 'blaster' : 'spada'} ·{' '}
                     {PALETTE_NAME(m.game.settings.paletteId)}

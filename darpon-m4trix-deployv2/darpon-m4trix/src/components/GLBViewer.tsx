@@ -139,7 +139,7 @@ function LoadShield({ children }: { children: ReactNode }) {
     <Suspense
       fallback={
         <div className="flex h-full items-center justify-center">
-          <div className="flex flex-col items-center gap-3 text-stone-500">
+          <div className="flex flex-col items-center gap-3 text-[var(--tx-dim)]">
             <Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]" />
             <p className="text-sm">Carico il modello 3D…</p>
           </div>
@@ -300,7 +300,7 @@ export default function GLBViewer({ url, name, onClose }: GLBViewerProps) {
               <Box className="mr-1 h-3.5 w-3.5" /> Wireframe
             </Button>
             {stats && (
-              <span className="ml-1 hidden text-xs text-stone-400 md:inline">
+              <span className="ml-1 hidden text-xs text-[var(--tx-faint)] md:inline">
                 {stats.meshes} mesh · {stats.materials} materiali
               </span>
             )}
@@ -325,7 +325,7 @@ export default function GLBViewer({ url, name, onClose }: GLBViewerProps) {
 
 function Chip({ icon, label }: { icon: string; label: string }) {
   return (
-    <span className="flex items-center gap-1 rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-600">
+    <span className="flex items-center gap-1 rounded-full bg-[var(--panel-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--tx-dim)]">
       {icon} {label}
     </span>
   )

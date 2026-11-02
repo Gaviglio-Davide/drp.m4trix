@@ -27,9 +27,12 @@ import {
 } from '@/lib/game2d/types'
 import { TILES, TILE_SWATCH } from '@/lib/game2d/tiles'
 import { drawKind } from '@/lib/game2d/sprites'
-import { exportGameFile, saveGame, type GameMeta } from '@/lib/game2d/persist'
+import { exportGameFile, isGameProjectState, saveGame, type GameMeta } from '@/lib/game2d/persist'
+import { fetchAuth } from '@/lib/http'
 
 type Tool = 'tiles' | 'entita' | 'select'
+
+type WorldChoice = { id: string; name: string; updatedAt: string }
 
 const TILE_LIST = [0, 1, 2, 3, 4, 5, 6, 7, 8]
 
@@ -68,10 +71,13 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
   const [project, setProject] = useState<GameProject>(() =>
     JSON.parse(JSON.stringify(meta.game))
   )
+  const is3D = project.settings.dimension === '3d'
   const [sceneId, setSceneId] = useState<string>(
     () => meta.game.startScene ?? meta.game.scenes[0].id
   )
-  const [tool, setTool] = useState<Tool>('tiles')
+  const [tool, setTool] = useState<Tool>(
+    () => (meta.game.settings.dimension === '3d' ? 'entita' : 'tiles')
+  )
   const [tile, setTile] = useState(1)
   const [entIdx, setEntIdx] = useState(0)
   const [brush, setBrush] = useState(1)
@@ -372,14 +378,33 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
         })
         setSelectedId(null)
       }
-      if (e.code === 'Digit1') setTool('tiles')
+      if (e.code === 'Digit1' && !is3D) setTool('tiles')
       if (e.code === 'Digit2') setTool('entita')
       if (e.code === 'Digit3') setTool('select')
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, sceneId])
+  }, [selectedId, sceneId, is3D])
+
+  // lista mondi 3D per cambiare il mondo dei giochi 3D
+  const [worlds, setWorlds] = useState<WorldChoice[] | null>(null)
+  useEffect(() => {
+    if (!is3D || worlds) return
+    ;(async () => {
+      try {
+        const res = await fetchAuth('/api/projects')
+        const data = await res.json().catch(() => ({}))
+        const list: WorldChoice[] = (data.projects ?? [])
+          .filter((p: { state?: string }) => !isGameProjectState(p.state))
+          .map((p: { id: string; name: string; updatedAt: string }) => ({ id: p.id, name: p.name, updatedAt: p.updatedAt }))
+        list.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+        setWorlds(list)
+      } catch {
+        setWorlds([])
+      }
+    })()
+  }, [is3D, worlds])
 
   // ---------- scene ----------
   const addScene = () => {
@@ -438,17 +463,37 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
         />
         <span className="cp-chip">{saveState === 'ok' ? '● salvato' : '◌ salvo...'}</span>
 
-        <div className="mx-2 h-6 w-px bg-[var(--line)]" />
+        {is3D && (
+          <select
+            value={project.settings.worldProjectId ?? ''}
+            onChange={e => {
+              const w = (worlds ?? []).find(x => x.id === e.target.value)
+              if (w) mutate(p => { p.settings.worldProjectId = w.id; p.settings.worldProjectName = w.name })
+            }}
+            className="h-8 max-w-44 bg-[var(--panel-soft)] px-2 text-xs text-[var(--tx)] ring-1 ring-[var(--line)]"
+            title="Mondo 3D usato dal gioco"
+          >
+            {!project.settings.worldProjectId && <option value="">— nessun mondo —</option>}
+            {worlds === null && project.settings.worldProjectId && (
+              <option value={project.settings.worldProjectId}>{project.settings.worldProjectName ?? 'mondo'}</option>
+            )}
+            {(worlds ?? []).map(w => (
+              <option key={w.id} value={w.id}>🌍 {w.name}</option>
+            ))}
+          </select>
+        )}
 
-        <select
-          value={project.settings.paletteId}
-          onChange={e => mutate(p => { p.settings.paletteId = e.target.value as PaletteId })}
-          className="h-8 bg-[var(--panel-soft)] px-2 text-xs text-[var(--tx)] ring-1 ring-[var(--line)]"
-        >
-          {Object.values(PALETTES).map(p2 => (
-            <option key={p2.id} value={p2.id}>{p2.name}</option>
-          ))}
-        </select>
+        {!is3D && (
+          <select
+            value={project.settings.paletteId}
+            onChange={e => mutate(p => { p.settings.paletteId = e.target.value as PaletteId })}
+            className="h-8 bg-[var(--panel-soft)] px-2 text-xs text-[var(--tx)] ring-1 ring-[var(--line)]"
+          >
+            {Object.values(PALETTES).map(p2 => (
+              <option key={p2.id} value={p2.id}>{p2.name}</option>
+            ))}
+          </select>
+        )}
         <select
           value={project.settings.weapon}
           onChange={e => mutate(p => { p.settings.weapon = e.target.value as 'spada' | 'blaster' })}
@@ -546,7 +591,11 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
             <p><b className="text-[var(--neon)]">1/2/3</b> cambia strumento</p>
             <p><b className="text-[var(--neon)]">clic dx</b> cancella entità</p>
             <p><b className="text-[var(--neon)]">CANC</b> elimina selezionata</p>
-            <p className="mt-1">Scena: {scene.w}×{scene.h} tile</p>
+            {is3D ? (
+              <p className="mt-1">Mappa di missione: {scene.w}×{scene.h} → mondo 3D</p>
+            ) : (
+              <p className="mt-1">Scena: {scene.w}×{scene.h} tile</p>
+            )}
           </div>
         </div>
 
@@ -554,20 +603,27 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
         <div className="flex min-w-0 flex-col gap-2">
           {/* strumenti */}
           <div className="cp-panel flex flex-wrap items-center gap-1.5 p-2">
-            {([
-              ['tiles', '▦ Tile'],
-              ['entita', '◈ Entità'],
-              ['select', '⌖ Seleziona'],
-            ] as [Tool, string][]).map(([t, label]) => (
+            {!is3D && (
               <button
-                key={t}
-                onClick={() => setTool(t)}
-                className={`cp-chip ${tool === t ? 'cp-chip-active' : 'hover:text-[var(--neon)]'}`}
+                onClick={() => setTool('tiles')}
+                className={`cp-chip ${tool === 'tiles' ? 'cp-chip-active' : 'hover:text-[var(--neon)]'}`}
               >
-                {label}
+                ▦ Tile
               </button>
-            ))}
-            {tool === 'tiles' && (
+            )}
+            <button
+              onClick={() => setTool('entita')}
+              className={`cp-chip ${tool === 'entita' ? 'cp-chip-active' : 'hover:text-[var(--neon)]'}`}
+            >
+              ◈ Entità
+            </button>
+            <button
+              onClick={() => setTool('select')}
+              className={`cp-chip ${tool === 'select' ? 'cp-chip-active' : 'hover:text-[var(--neon)]'}`}
+            >
+              ⌖ Seleziona
+            </button>
+            {tool === 'tiles' && !is3D && (
               <>
                 <span className="mx-1 h-5 w-px bg-[var(--line)]" />
                 {[1, 2, 3].map(b => (
@@ -583,13 +639,19 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
               </>
             )}
             <span className="ml-auto text-[10px] text-[var(--tx-faint)]">
-              {tool === 'tiles' ? 'Dipingi il terreno' : tool === 'entita' ? 'Clicca per piazzare' : 'Clicca un\'entità per modificarla'}
+              {is3D
+                ? 'Piazza nemici e oggetti: compariranno nel mondo 3D'
+                : tool === 'tiles'
+                  ? 'Dipingi il terreno'
+                  : tool === 'entita'
+                    ? 'Clicca per piazzare'
+                    : "Clicca un'entità per modificarla"}
             </span>
           </div>
 
           {/* palette tile o entità */}
           <div className="cp-panel flex items-center gap-1.5 overflow-x-auto p-2">
-            {tool === 'tiles' ? (
+            {tool === 'tiles' && !is3D ? (
               TILE_LIST.map(t => (
                 <button
                   key={t}
@@ -623,6 +685,13 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
 
           {/* mappa */}
           <div className="cp-panel relative min-h-[320px] flex-1 overflow-hidden">
+            {is3D && (
+              <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+                <span className="cp-chip bg-[var(--panel)]">
+                  🌍 {project.settings.worldProjectName ?? 'nessun mondo'} · la mappa decide DOVE compaiono nemici e oggetti nel mondo 3D
+                </span>
+              </div>
+            )}
             <canvas
               ref={canvasRef}
               className="absolute inset-0 h-full w-full touch-none"

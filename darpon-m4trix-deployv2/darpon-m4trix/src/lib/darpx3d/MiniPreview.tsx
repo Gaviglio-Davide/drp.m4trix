@@ -125,7 +125,7 @@ export default function MiniPreview({ url, className }: { url: string; className
   return (
     <div
       ref={mountRef}
-      className={className ?? 'h-56 w-full overflow-hidden rounded-2xl bg-gradient-to-b from-stone-50 to-stone-100 ring-1 ring-stone-200'}
+      className={className ?? 'h-56 w-full overflow-hidden rounded-2xl bg-[var(--panel-soft)] ring-1 ring-[var(--line)]'}
       aria-label="Anteprima 3D del modello generato"
     />
   )

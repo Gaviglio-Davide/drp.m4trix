@@ -341,7 +341,7 @@ export default function Editor() {
   }
 
   const saveChip = (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/70 px-2.5 py-1 text-xs font-medium text-stone-600 ring-1 ring-black/5">
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--panel)] px-2.5 py-1 text-xs font-medium text-[var(--tx-dim)] ring-1 ring-[var(--line)]">
       {saveStatus === 'saving' && (
         <>
           <Loader2 className="h-3 w-3 animate-spin" /> Salvataggio...
@@ -381,7 +381,7 @@ export default function Editor() {
 
       {/* top bar */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-center gap-2 p-3">
-        <div className="pointer-events-auto flex items-center gap-2 rounded-2xl bg-white/80 p-2 shadow-lg ring-1 ring-black/5 backdrop-blur">
+        <div className="pointer-events-auto flex items-center gap-2 rounded-2xl bg-[var(--panel)] p-2 shadow-lg ring-1 ring-[var(--line)] backdrop-blur">
           <Button
             variant="ghost"
             size="sm"
@@ -405,7 +405,7 @@ export default function Editor() {
 
         <div className="pointer-events-auto">{saveChip}</div>
 
-        <div className="pointer-events-auto ml-auto flex items-center gap-1 rounded-2xl bg-white/80 p-1.5 shadow-lg ring-1 ring-black/5 backdrop-blur">
+        <div className="pointer-events-auto ml-auto flex items-center gap-1 rounded-2xl bg-[var(--panel)] p-1.5 shadow-lg ring-1 ring-[var(--line)] backdrop-blur">
           <Button
             variant={cameraMode ? 'default' : 'ghost'}
             size="sm"
@@ -454,8 +454,8 @@ export default function Editor() {
                 <span className="hidden lg:inline">Oggetti</span>
               </Button>
               {brush !== 'none' && (
-                <div className="ml-1 flex items-center gap-2 rounded-xl bg-stone-100/90 px-2 py-1">
-                  <label className="flex items-center gap-1 text-[11px] font-medium text-stone-600">
+                <div className="ml-1 flex items-center gap-2 rounded-xl bg-[var(--panel-soft)] px-2 py-1">
+                  <label className="flex items-center gap-1 text-[11px] font-medium text-[var(--tx-dim)]">
                     Ø
                     <input
                       type="range"
@@ -468,7 +468,7 @@ export default function Editor() {
                     />
                     <span className="w-6 tabular-nums">{brushSize.toFixed(1)}</span>
                   </label>
-                  <label className="flex items-center gap-1 text-[11px] font-medium text-stone-600">
+                  <label className="flex items-center gap-1 text-[11px] font-medium text-[var(--tx-dim)]">
                     ○
                     <input
                       type="range"
@@ -610,7 +610,7 @@ export default function Editor() {
               <DialogHeader>
                 <DialogTitle>Personaggio di gioco</DialogTitle>
               </DialogHeader>
-              <p className="text-sm text-stone-500">
+              <p className="text-sm text-[var(--tx-dim)]">
                 Chi interpreti in modalità Gioca. I tuoi modelli restano
                 visibili solo a te.
               </p>
@@ -624,13 +624,13 @@ export default function Editor() {
                   className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition-all ${
                     playerAsset === null
                       ? 'bg-[var(--primary-soft)] ring-2 ring-[var(--primary)]'
-                      : 'hover:bg-stone-50'
+                      : 'hover:bg-[var(--panel-hover)]'
                   }`}
                 >
                   <span className="text-2xl">🧍</span>
                   <div>
                     <p className="text-sm font-semibold">Eroe (di serie)</p>
-                    <p className="text-xs text-stone-500">
+                    <p className="text-xs text-[var(--tx-dim)]">
                       Avventuriero realistico di serie, sempre disponibile.
                     </p>
                   </div>
@@ -648,20 +648,20 @@ export default function Editor() {
                       className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition-all ${
                         playerAsset === a.id
                           ? 'bg-[var(--primary-soft)] ring-2 ring-[var(--primary)]'
-                          : 'hover:bg-stone-50'
+                          : 'hover:bg-[var(--panel-hover)]'
                       }`}
                     >
                       <span className="text-2xl">📦</span>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold">{a.name}</p>
-                        <p className="text-xs text-stone-500">
+                        <p className="text-xs text-[var(--tx-dim)]">
                           Il tuo modello 3D (se ha un&apos;animazione, cammina!)
                         </p>
                       </div>
                     </button>
                   ))}
                 {customAssets.filter(a => a.url).length === 0 && (
-                  <p className="text-xs text-stone-400">
+                  <p className="text-xs text-[var(--tx-faint)]">
                     Suggerimento: carica un modello GLB dalla barra in basso per
                     giocarci dentro.
                   </p>
@@ -682,17 +682,17 @@ export default function Editor() {
               </DialogHeader>
               <ScrollArea className="max-h-[55vh]">
                 <div className="flex flex-col gap-2 pr-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
                     Oggetti del gioco
                   </p>
                   {BUILTIN_ASSETS.map(a => (
                     <div
                       key={a.id}
-                      className="flex items-start gap-3 rounded-2xl border border-black/5 bg-white p-2.5"
+                      className="flex items-start gap-3 rounded-2xl border border-[var(--line)] bg-[var(--panel-soft)] p-2.5"
                     >
                       <span className="text-xl">{a.icon}</span>
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-stone-800">
+                        <p className="text-sm font-semibold text-[var(--tx)]">
                           {a.label}
                           {a.walkable && (
                             <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">
@@ -700,15 +700,15 @@ export default function Editor() {
                             </span>
                           )}
                         </p>
-                        <p className="text-xs text-stone-500">{a.desc}</p>
+                        <p className="text-xs text-[var(--tx-dim)]">{a.desc}</p>
                       </div>
                     </div>
                   ))}
-                  <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-stone-400">
+                  <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
                     Le tue creazioni (solo tue)
                   </p>
                   {customAssets.length === 0 && (
-                    <p className="text-xs text-stone-400">
+                    <p className="text-xs text-[var(--tx-faint)]">
                       Ancora nulla: carica un GLB dalla barra in basso oppure
                       premi 🔨 Progetta per costruire una struttura da zero.
                     </p>
@@ -716,16 +716,16 @@ export default function Editor() {
                   {customAssets.map(a => (
                     <div
                       key={a.id}
-                      className="flex items-start gap-3 rounded-2xl border border-black/5 bg-white p-2.5"
+                      className="flex items-start gap-3 rounded-2xl border border-[var(--line)] bg-[var(--panel-soft)] p-2.5"
                     >
                       <span className="text-xl">
                         {a.kind === 'structure' ? '🏗️' : '📦'}
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-stone-800">
+                        <p className="truncate text-sm font-semibold text-[var(--tx)]">
                           {a.name}
                         </p>
-                        <p className="text-xs text-stone-500">
+                        <p className="text-xs text-[var(--tx-dim)]">
                           {a.kind === 'structure'
                             ? `Struttura con ${a.pieces?.length ?? 0} pezzi, costruita da te.`
                             : 'Modello 3D caricato da te: visibile solo nel tuo account.'}
@@ -798,10 +798,10 @@ export default function Editor() {
                 : '🖱️ Tasto destro = ruota la visuale · click destro su un oggetto = elimina · rotella = zoom · R = ruota'}
             </div>
           )}
-          <div className="flex max-w-full flex-col gap-2 rounded-3xl bg-white/85 p-3 shadow-2xl ring-1 ring-black/5 backdrop-blur">
+          <div className="flex max-w-full flex-col gap-2 rounded-3xl bg-[var(--panel)] p-3 shadow-2xl ring-1 ring-[var(--line)] backdrop-blur">
             {/* color chips */}
             <div className="flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5">
-              <span className="mr-1 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+              <span className="mr-1 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
                 Colori
               </span>
               {PALETTE.map((c, i) => (
@@ -810,15 +810,15 @@ export default function Editor() {
                   onClick={() => setGhostColor(i)}
                   className={`h-6 w-6 shrink-0 rounded-full ring-2 transition-transform hover:scale-110 ${
                     ghostColor % PALETTE.length === i
-                      ? 'ring-stone-700'
+                      ? 'ring-[var(--neon)]'
                       : 'ring-transparent'
                   }`}
                   style={{ backgroundColor: c }}
                   aria-label={`Colore ${i + 1}`}
                 />
               ))}
-              <span className="mx-2 h-5 w-px shrink-0 bg-stone-200" />
-              <span className="mr-1 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+              <span className="mx-2 h-5 w-px shrink-0 bg-[var(--line-strong)]" />
+              <span className="mr-1 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
                 Ruota: R
               </span>
               <Button
@@ -831,8 +831,8 @@ export default function Editor() {
               </Button>
               {selectedDef?.isGlb && (
                 <>
-                  <span className="mx-2 h-5 w-px shrink-0 bg-stone-200" />
-                  <span className="mr-1 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+                  <span className="mx-2 h-5 w-px shrink-0 bg-[var(--line-strong)]" />
+                  <span className="mr-1 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
                     Dimensione
                   </span>
                   <input
@@ -845,7 +845,7 @@ export default function Editor() {
                     className="h-1.5 w-28 shrink-0 cursor-pointer accent-[var(--primary)]"
                     aria-label="Dimensione del modello"
                   />
-                  <span className="w-9 shrink-0 text-[11px] font-bold text-stone-600">
+                  <span className="w-9 shrink-0 text-[11px] font-bold text-[var(--tx-dim)]">
                     {ghostScale.toFixed(1)}x
                   </span>
                 </>
@@ -860,11 +860,11 @@ export default function Editor() {
                   className={`flex min-w-16 shrink-0 flex-col items-center gap-0.5 rounded-2xl px-2.5 py-2 transition-all ${
                     selectedAsset === a.id
                       ? 'bg-[var(--primary-soft)] ring-2 ring-[var(--primary)]'
-                      : 'bg-stone-50 ring-1 ring-stone-200 hover:bg-stone-100'
+                      : 'bg-[var(--panel-soft)] ring-1 ring-[var(--line)] hover:bg-[var(--panel-hover)]'
                   }`}
                 >
                   <span className="text-xl leading-none">{a.icon}</span>
-                  <span className="whitespace-nowrap text-[10px] font-medium text-stone-600">
+                  <span className="whitespace-nowrap text-[10px] font-medium text-[var(--tx-dim)]">
                     {a.label}
                   </span>
                 </button>
@@ -876,13 +876,13 @@ export default function Editor() {
                   className={`flex min-w-16 shrink-0 flex-col items-center gap-0.5 rounded-2xl px-2.5 py-2 transition-all ${
                     selectedAsset === a.id
                       ? 'bg-[var(--primary-soft)] ring-2 ring-[var(--primary)]'
-                      : 'bg-stone-50 ring-1 ring-stone-200 hover:bg-stone-100'
+                      : 'bg-[var(--panel-soft)] ring-1 ring-[var(--line)] hover:bg-[var(--panel-hover)]'
                   }`}
                 >
                   <span className="text-xl leading-none">
                     {a.kind === 'structure' ? '🏗️' : '📦'}
                   </span>
-                  <span className="max-w-20 truncate text-[10px] font-medium text-stone-600">
+                  <span className="max-w-20 truncate text-[10px] font-medium text-[var(--tx-dim)]">
                     {a.name}
                   </span>
                 </button>
@@ -900,10 +900,10 @@ export default function Editor() {
               />
               <button
                 onClick={() => fileRef.current?.click()}
-                className="flex min-w-16 shrink-0 flex-col items-center gap-0.5 rounded-2xl border border-dashed border-stone-300 px-2.5 py-2 transition-colors hover:bg-[var(--primary-soft)]"
+                className="flex min-w-16 shrink-0 flex-col items-center gap-0.5 rounded-2xl border border-dashed border-[var(--line-strong)] px-2.5 py-2 transition-colors hover:bg-[var(--primary-soft)]"
               >
-                <CloudUpload className="h-5 w-5 text-stone-500" />
-                <span className="whitespace-nowrap text-[10px] font-medium text-stone-500">
+                <CloudUpload className="h-5 w-5 text-[var(--tx-dim)]" />
+                <span className="whitespace-nowrap text-[10px] font-medium text-[var(--tx-dim)]">
                   Carica GLB
                 </span>
               </button>
@@ -915,7 +915,7 @@ export default function Editor() {
       {/* play mode hint */}
       {playMode && (
         <div className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2">
-          <div className="rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-stone-700 shadow-lg ring-1 ring-black/5 backdrop-blur">
+          <div className="rounded-full bg-[var(--panel)] px-4 py-2 text-sm font-medium text-[var(--tx)] shadow-lg ring-1 ring-[var(--line)] backdrop-blur">
             WASD per camminare · Shift per correre · trascina il mouse per
             guardarti attorno · ESC per uscire
           </div>

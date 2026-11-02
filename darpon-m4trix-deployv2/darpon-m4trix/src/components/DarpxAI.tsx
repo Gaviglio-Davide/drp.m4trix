@@ -722,7 +722,7 @@ export default function DarpxAI() {
   return (
     <div className="mx-auto max-w-3xl space-y-5">
       {/* ============ MOTORE INTERNO DARPX (🧬 senza chiavi) ============ */}
-      <div className="rounded-3xl bg-white/85 p-5 shadow-xl ring-1 ring-black/5 backdrop-blur">
+      <div className="rounded-3xl bg-[var(--panel)] p-5 shadow-xl ring-1 ring-[var(--line)] backdrop-blur">
         <div className="flex flex-wrap items-center gap-2">
           <Dna className="h-5 w-5 text-[var(--primary)]" />
           <h2 className="text-lg font-semibold">Darpx.ai · Motore interno</h2>
@@ -730,7 +730,7 @@ export default function DarpxAI() {
             <CheckCircle2 className="h-3 w-3" /> 100% nel tuo browser · senza chiavi · senza limiti
           </span>
         </div>
-        <p className="mt-1 text-sm text-stone-500">
+        <p className="mt-1 text-sm text-[var(--tx-dim)]">
           Descrivi cosa vuoi e <b>l'AI di Darpx lo costruisce pezzo per pezzo</b>: creature con
           anatomia, armi, edifici, alberi, oggetti magici… Capisce italiano, colori e materiali
           (oro, legno, ghiaccio, fuoco…). Il modello è un GLB vero da usare subito nei tuoi mondi.
@@ -742,7 +742,7 @@ export default function DarpxAI() {
           rows={2}
           maxLength={300}
           placeholder="Es: un drago rosso feroce con le corna…"
-          className="mt-4 w-full resize-none rounded-2xl border border-stone-200 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-[var(--primary)]"
+          className="mt-4 w-full resize-none rounded-2xl border border-[var(--line)] bg-[var(--panel-soft)] p-3 text-sm outline-none focus:ring-2 focus:ring-[var(--primary)]"
         />
 
         <div className="mt-2 flex flex-wrap gap-1.5">
@@ -778,37 +778,37 @@ export default function DarpxAI() {
         {iqOpen && !igen && (
           <div className="mt-3 rounded-2xl bg-[var(--primary-soft)]/60 p-4 ring-1 ring-[var(--primary)]/25">
             <div className="flex items-start justify-between gap-2">
-              <p className="text-sm font-bold text-stone-800">
+              <p className="text-sm font-bold text-[var(--tx)]">
                 🧬 Prima di costruire «{iqBase}», dimmi i dettagli
               </p>
               <button
                 onClick={() => setIqOpen(false)}
-                className="rounded-full p-1 text-stone-400 transition hover:bg-white/60 hover:text-stone-700"
+                className="rounded-full p-1 text-[var(--tx-faint)] transition hover:bg-[var(--panel)] hover:text-[var(--tx)]"
                 title="Chiudi (genera dopo)"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="mt-0.5 text-xs text-stone-500">
+            <p className="mt-0.5 text-xs text-[var(--tx-dim)]">
               Rispondi solo a quello che ti ispira: il resto lo scelgo io con gusto.
             </p>
 
             {iqMissing.colore && (
               <div className="mt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Colore</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">Colore</p>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {COLOR_CHOICES.map(c => (
                     <button
                       key={c.id}
                       onClick={() => setQColore(qColore === c.id ? '' : c.id)}
                       className={`h-7 w-7 rounded-full ring-2 transition-transform hover:scale-110 ${
-                        qColore === c.id ? 'ring-stone-800 scale-110' : 'ring-white/70'
+                        qColore === c.id ? 'ring-[var(--neon)] scale-110' : 'ring-[var(--line-strong)]'
                       }`}
                       style={{ backgroundColor: c.hex }}
                       title={c.id}
                     />
                   ))}
-                  <span className="ml-1 self-center text-[11px] text-stone-400">
+                  <span className="ml-1 self-center text-[11px] text-[var(--tx-faint)]">
                     {qColore || 'a sorpresa 🎲'}
                   </span>
                 </div>
@@ -817,7 +817,7 @@ export default function DarpxAI() {
 
             {iqMissing.taglia && (
               <div className="mt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Taglia</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">Taglia</p>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {SIZE_CHOICES.map(s => (
                     <button
@@ -826,7 +826,7 @@ export default function DarpxAI() {
                       className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
                         qTaglia === s
                           ? 'bg-[var(--primary)] text-white'
-                          : 'bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50'
+                          : 'bg-[var(--panel-soft)] text-[var(--tx-dim)] ring-1 ring-[var(--line)] hover:bg-[var(--panel-hover)]'
                       }`}
                     >
                       {s}
@@ -838,7 +838,7 @@ export default function DarpxAI() {
 
             {iqMissing.materiale && (
               <div className="mt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Materiale</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">Materiale</p>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {MATERIAL_CHOICES.map(m => (
                     <button
@@ -847,7 +847,7 @@ export default function DarpxAI() {
                       className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
                         qMateriale === m
                           ? 'bg-[var(--primary)] text-white'
-                          : 'bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50'
+                          : 'bg-[var(--panel-soft)] text-[var(--tx-dim)] ring-1 ring-[var(--line)] hover:bg-[var(--panel-hover)]'
                       }`}
                     >
                       {m}
@@ -859,7 +859,7 @@ export default function DarpxAI() {
 
             {iqMissing.dettagli && (
               <div className="mt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
                   Dettagli (più scelte possibili)
                 </p>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -874,7 +874,7 @@ export default function DarpxAI() {
                       className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
                         qDettagli.includes(d.id)
                           ? 'bg-[var(--primary)] text-white'
-                          : 'bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50'
+                          : 'bg-[var(--panel-soft)] text-[var(--tx-dim)] ring-1 ring-[var(--line)] hover:bg-[var(--panel-hover)]'
                       }`}
                     >
                       {d.label}
@@ -892,7 +892,7 @@ export default function DarpxAI() {
                 Salta e genera
               </Button>
             </div>
-            <label className="mt-2.5 flex cursor-pointer items-center gap-2 text-[11px] text-stone-500">
+            <label className="mt-2.5 flex cursor-pointer items-center gap-2 text-[11px] text-[var(--tx-dim)]">
               <input
                 type="checkbox"
                 checked={askDetails}
@@ -905,32 +905,32 @@ export default function DarpxAI() {
         )}
 
         {iresult && (
-          <div className="mt-4 rounded-2xl bg-stone-50 p-4 ring-1 ring-stone-200">
+          <div className="mt-4 rounded-2xl bg-[var(--panel-soft)] p-4 ring-1 ring-[var(--line)]">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-bold text-stone-800">🧬 {iresult.name}</p>
-              <span className="text-[11px] text-stone-400">
+              <p className="text-sm font-bold text-[var(--tx)]">🧬 {iresult.name}</p>
+              <span className="text-[11px] text-[var(--tx-faint)]">
                 {(iresult.file.size / 1024).toFixed(0)} KB · GLB pronto
               </span>
             </div>
             {/* anteprima 3D inline: ruota col mouse / col dito */}
             <div className="mt-3">
               <MiniPreview url={iresult.url} />
-              <p className="mt-1 text-center text-[10px] text-stone-400">
+              <p className="mt-1 text-center text-[10px] text-[var(--tx-faint)]">
                 trascina per ruotare · rotella per lo zoom · auto-rotazione attiva
               </p>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-stone-500 sm:grid-cols-4">
-              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
-                <b className="block text-stone-800">{iresult.stats.triangles.toLocaleString('it')}</b> triangoli
+            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-[var(--tx-dim)] sm:grid-cols-4">
+              <div className="rounded-xl bg-[var(--panel-soft)] px-2 py-1.5 text-center ring-1 ring-[var(--line)]">
+                <b className="block text-[var(--tx)]">{iresult.stats.triangles.toLocaleString('it')}</b> triangoli
               </div>
-              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
-                <b className="block text-stone-800">{iresult.stats.meshes}</b> mesh
+              <div className="rounded-xl bg-[var(--panel-soft)] px-2 py-1.5 text-center ring-1 ring-[var(--line)]">
+                <b className="block text-[var(--tx)]">{iresult.stats.meshes}</b> mesh
               </div>
-              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
-                <b className="block text-stone-800">{iresult.stats.materials}</b> materiali
+              <div className="rounded-xl bg-[var(--panel-soft)] px-2 py-1.5 text-center ring-1 ring-[var(--line)]">
+                <b className="block text-[var(--tx)]">{iresult.stats.materials}</b> materiali
               </div>
-              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
-                <b className="block text-stone-800">{iresult.stats.parts}</b> pezzi assemblati
+              <div className="rounded-xl bg-[var(--panel-soft)] px-2 py-1.5 text-center ring-1 ring-[var(--line)]">
+                <b className="block text-[var(--tx)]">{iresult.stats.parts}</b> pezzi assemblati
               </div>
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -961,7 +961,7 @@ export default function DarpxAI() {
               <a
                 href={iresult.url}
                 download={`${iresult.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.glb`}
-                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-50"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--panel-soft)] px-3 text-xs font-semibold text-[var(--tx)] transition hover:bg-[var(--panel-hover)]"
               >
                 <Download className="h-3.5 w-3.5" /> Scarica GLB
               </a>
@@ -971,7 +971,7 @@ export default function DarpxAI() {
       </div>
 
       {/* ============ LABORATORIO GLB (v7) ============ */}
-      <div className="rounded-3xl bg-white/85 p-5 shadow-xl ring-1 ring-black/5 backdrop-blur">
+      <div className="rounded-3xl bg-[var(--panel)] p-5 shadow-xl ring-1 ring-[var(--line)] backdrop-blur">
         <div className="flex flex-wrap items-center gap-2">
           <Wrench className="h-5 w-5 text-[var(--primary)]" />
           <h2 className="text-lg font-semibold">Darpx.ai · Laboratorio GLB</h2>
@@ -979,7 +979,7 @@ export default function DarpxAI() {
             <CheckCircle2 className="h-3 w-3" /> migliora i modelli che hai già
           </span>
         </div>
-        <p className="mt-1 text-sm text-stone-500">
+        <p className="mt-1 text-sm text-[var(--tx-dim)]">
           Riprendi un modello <b>che hai già creato o caricato</b> e fallo rinascere: tinta o
           veri materiali PBR (oro, ferro, legno, pietra…), ali, corna, basamento, aura luminosa
           e ridimensionamento. Tutto nel browser, senza servizi esterni.
@@ -1005,7 +1005,7 @@ export default function DarpxAI() {
               className={`max-w-full truncate rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
                 labSrc?.name === m.name
                   ? 'border-[var(--primary)] bg-[var(--primary-soft)] ring-1 ring-[var(--primary)]'
-                  : 'border-stone-200 bg-white hover:bg-stone-50'
+                  : 'border-[var(--line)] bg-[var(--panel-soft)] hover:bg-[var(--panel-hover)]'
               }`}
             >
               📦 {m.name}
@@ -1013,18 +1013,18 @@ export default function DarpxAI() {
           ))}
           <button
             onClick={() => labFileRef.current?.click()}
-            className="rounded-xl border border-dashed border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-500 transition hover:border-[var(--primary)] hover:bg-stone-50"
+            className="rounded-xl border border-dashed border-[var(--line-strong)] px-3 py-1.5 text-xs font-semibold text-[var(--tx-dim)] transition hover:border-[var(--primary)] hover:bg-[var(--panel-hover)]"
           >
             + file dal computer
           </button>
         </div>
         {labModels === null && (
-          <div className="mt-3 flex items-center gap-2 text-sm text-stone-400">
+          <div className="mt-3 flex items-center gap-2 text-sm text-[var(--tx-faint)]">
             <Loader2 className="h-4 w-4 animate-spin" /> Cerco i tuoi modelli…
           </div>
         )}
         {labModels !== null && labModels.length === 0 && (
-          <p className="mt-3 rounded-xl bg-stone-50 p-3 text-xs text-stone-500 ring-1 ring-stone-200">
+          <p className="mt-3 rounded-xl bg-[var(--panel-soft)] p-3 text-xs text-[var(--tx-dim)] ring-1 ring-[var(--line)]">
             Non hai ancora modelli nei Progetti importati: carica un GLB qui sopra (oppure
             generane uno col motore interno!) e poi torna a migliorarlo.
           </p>
@@ -1032,12 +1032,12 @@ export default function DarpxAI() {
 
         {labSrc && (
           <>
-            <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl bg-stone-50 px-3 py-2 text-xs ring-1 ring-stone-200">
-              <b className="text-stone-700">In lavorazione:</b>
-              <span className="truncate text-stone-600">{labSrc.name}</span>
+            <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl bg-[var(--panel-soft)] px-3 py-2 text-xs ring-1 ring-[var(--line)]">
+              <b className="text-[var(--tx)]">In lavorazione:</b>
+              <span className="truncate text-[var(--tx-dim)]">{labSrc.name}</span>
               <button
                 onClick={() => setLabSrc(null)}
-                className="ml-auto rounded-full p-1 text-stone-400 transition hover:bg-white hover:text-red-500"
+                className="ml-auto rounded-full p-1 text-[var(--tx-faint)] transition hover:bg-[var(--panel-hover)] hover:text-red-500"
                 title="Cambia modello"
               >
                 <X className="h-3.5 w-3.5" />
@@ -1046,7 +1046,7 @@ export default function DarpxAI() {
 
             {/* modalità */}
             <div className="mt-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Restyling</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">Restyling</p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {([
                   ['originale', 'Originale'],
@@ -1059,7 +1059,7 @@ export default function DarpxAI() {
                     className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
                       labMode === id
                         ? 'bg-[var(--primary)] text-white'
-                        : 'bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50'
+                        : 'bg-[var(--panel-soft)] text-[var(--tx-dim)] ring-1 ring-[var(--line)] hover:bg-[var(--panel-hover)]'
                     }`}
                   >
                     {label}
@@ -1070,7 +1070,7 @@ export default function DarpxAI() {
 
             {labMode !== 'originale' && (
               <div className="mt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
                   {labMode === 'tinta' ? 'Colore della tinta' : 'Materiale'}
                 </p>
                 {labMode === 'tinta' ? (
@@ -1080,7 +1080,7 @@ export default function DarpxAI() {
                         key={c}
                         onClick={() => setLabColor(c)}
                         className={`h-7 w-7 rounded-full ring-2 transition-transform hover:scale-110 ${
-                          labColor === c ? 'ring-stone-800 scale-110' : 'ring-white/70'
+                          labColor === c ? 'ring-[var(--neon)] scale-110' : 'ring-[var(--line-strong)]'
                         }`}
                         style={{ backgroundColor: c }}
                       />
@@ -1095,7 +1095,7 @@ export default function DarpxAI() {
                         className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
                           labStyle === m
                             ? 'bg-[var(--primary)] text-white'
-                            : 'bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50'
+                            : 'bg-[var(--panel-soft)] text-[var(--tx-dim)] ring-1 ring-[var(--line)] hover:bg-[var(--panel-hover)]'
                         }`}
                       >
                         {m}
@@ -1108,7 +1108,7 @@ export default function DarpxAI() {
 
             {/* aggiunte */}
             <div className="mt-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Aggiunte</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">Aggiunte</p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {([
                   ['wings', 'Ali 🪽'],
@@ -1122,7 +1122,7 @@ export default function DarpxAI() {
                     className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
                       labAdds[id]
                         ? 'bg-[var(--primary)] text-white'
-                        : 'bg-white text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50'
+                        : 'bg-[var(--panel-soft)] text-[var(--tx-dim)] ring-1 ring-[var(--line)] hover:bg-[var(--panel-hover)]'
                     }`}
                   >
                     {label}
@@ -1134,8 +1134,8 @@ export default function DarpxAI() {
             {/* altezza */}
             <div className="mt-3">
               <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Altezza finale</p>
-                <span className="text-[11px] font-medium text-stone-500">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">Altezza finale</p>
+                <span className="text-[11px] font-medium text-[var(--tx-dim)]">
                   {labHeight > 0 ? `${labHeight.toFixed(1)} unità` : 'come originale'}
                 </span>
               </div>
@@ -1165,31 +1165,31 @@ export default function DarpxAI() {
         )}
 
         {labResult && (
-          <div className="mt-4 rounded-2xl bg-stone-50 p-4 ring-1 ring-stone-200">
+          <div className="mt-4 rounded-2xl bg-[var(--panel-soft)] p-4 ring-1 ring-[var(--line)]">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-bold text-stone-800">🔧 {labResult.name}</p>
-              <span className="text-[11px] text-stone-400">
+              <p className="text-sm font-bold text-[var(--tx)]">🔧 {labResult.name}</p>
+              <span className="text-[11px] text-[var(--tx-faint)]">
                 {(labResult.file.size / 1024).toFixed(0)} KB · GLB pronto
               </span>
             </div>
             <div className="mt-3">
               <MiniPreview url={labResult.url} />
-              <p className="mt-1 text-center text-[10px] text-stone-400">
+              <p className="mt-1 text-center text-[10px] text-[var(--tx-faint)]">
                 trascina per ruotare · rotella per lo zoom · auto-rotazione attiva
               </p>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-stone-500 sm:grid-cols-4">
-              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
-                <b className="block text-stone-800">{labResult.stats.triangles.toLocaleString('it')}</b> triangoli
+            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-[var(--tx-dim)] sm:grid-cols-4">
+              <div className="rounded-xl bg-[var(--panel-soft)] px-2 py-1.5 text-center ring-1 ring-[var(--line)]">
+                <b className="block text-[var(--tx)]">{labResult.stats.triangles.toLocaleString('it')}</b> triangoli
               </div>
-              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
-                <b className="block text-stone-800">{labResult.stats.meshes}</b> mesh
+              <div className="rounded-xl bg-[var(--panel-soft)] px-2 py-1.5 text-center ring-1 ring-[var(--line)]">
+                <b className="block text-[var(--tx)]">{labResult.stats.meshes}</b> mesh
               </div>
-              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
-                <b className="block text-stone-800">{labResult.stats.materials}</b> materiali
+              <div className="rounded-xl bg-[var(--panel-soft)] px-2 py-1.5 text-center ring-1 ring-[var(--line)]">
+                <b className="block text-[var(--tx)]">{labResult.stats.materials}</b> materiali
               </div>
-              <div className="rounded-xl bg-white px-2 py-1.5 text-center ring-1 ring-stone-200">
-                <b className="block text-stone-800">{labResult.stats.parts}</b> pezzi
+              <div className="rounded-xl bg-[var(--panel-soft)] px-2 py-1.5 text-center ring-1 ring-[var(--line)]">
+                <b className="block text-[var(--tx)]">{labResult.stats.parts}</b> pezzi
               </div>
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -1206,7 +1206,7 @@ export default function DarpxAI() {
               <a
                 href={labResult.url}
                 download={`${labResult.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.glb`}
-                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-50 sm:col-span-2"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--panel-soft)] px-3 text-xs font-semibold text-[var(--tx)] transition hover:bg-[var(--panel-hover)] sm:col-span-2"
               >
                 <Download className="h-3.5 w-3.5" /> Scarica GLB migliorato
               </a>
@@ -1216,12 +1216,12 @@ export default function DarpxAI() {
       </div>
 
       {/* ============ IMMAGINE → MONDO ============ */}
-      <div className="rounded-3xl bg-white/85 p-5 shadow-xl ring-1 ring-black/5 backdrop-blur">
+      <div className="rounded-3xl bg-[var(--panel)] p-5 shadow-xl ring-1 ring-[var(--line)] backdrop-blur">
         <div className="flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-[var(--primary)]" />
           <h2 className="text-lg font-semibold">Darpx.ai · Immagine → Mondo</h2>
         </div>
-        <p className="mt-1 text-sm text-stone-500">
+        <p className="mt-1 text-sm text-[var(--tx-dim)]">
           Carica una qualsiasi immagine: Darpx la analizza (colori, luce,
           paesaggio) e costruisce un mondo 3D coerente, con colline, laghi e
           boschi. Se vuoi, l&apos;immagine diventa anche il cielo del mondo.
@@ -1242,18 +1242,18 @@ export default function DarpxAI() {
         {!skyDataUrl ? (
           <button
             onClick={() => fileRef.current?.click()}
-            className="mt-4 flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-stone-300 p-8 transition-colors hover:border-[var(--primary)] hover:bg-stone-50"
+            className="mt-4 flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-[var(--line-strong)] p-8 transition-colors hover:border-[var(--primary)] hover:bg-[var(--panel-hover)]"
           >
             {analyzing ? (
               <>
                 <Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]" />
-                <span className="text-sm text-stone-500">Analizzo l&apos;immagine…</span>
+                <span className="text-sm text-[var(--tx-dim)]">Analizzo l&apos;immagine…</span>
               </>
             ) : (
               <>
-                <ImageIcon className="h-8 w-8 text-stone-400" />
+                <ImageIcon className="h-8 w-8 text-[var(--tx-faint)]" />
                 <span className="text-sm font-medium">Trascina o clicca per scegliere un&apos;immagine</span>
-                <span className="text-xs text-stone-400">PNG · JPG · WEBP — resta sul tuo browser</span>
+                <span className="text-xs text-[var(--tx-faint)]">PNG · JPG · WEBP — resta sul tuo browser</span>
               </>
             )}
           </button>
@@ -1273,11 +1273,11 @@ export default function DarpxAI() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="rounded-2xl bg-stone-50 p-4 text-sm">
+            <div className="rounded-2xl bg-[var(--panel-soft)] p-4 text-sm">
               {analysis && (
                 <>
                   <div className="font-semibold">Cosa ha visto Darpx:</div>
-                  <ul className="mt-2 space-y-1 text-stone-600">
+                  <ul className="mt-2 space-y-1 text-[var(--tx-dim)]">
                     <li>🌍 Ambiente: <b>{analysis.label}</b></li>
                     <li>💡 Luce: {Math.round(analysis.brightness * 100)}%</li>
                     <li>🌿 Resa: <b>realistica</b></li>
@@ -1285,7 +1285,7 @@ export default function DarpxAI() {
                   </ul>
                 </>
               )}
-              <label className="mt-3 flex cursor-pointer items-center gap-2 text-stone-700">
+              <label className="mt-3 flex cursor-pointer items-center gap-2 text-[var(--tx)]">
                 <input
                   type="checkbox"
                   checked={asSky}
@@ -1302,10 +1302,10 @@ export default function DarpxAI() {
           <>
             <div className="mt-4">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
                   Densità della natura
                 </p>
-                <span className="text-xs font-medium text-stone-500">
+                <span className="text-xs font-medium text-[var(--tx-dim)]">
                   {Math.round(density * 100)}%
                 </span>
               </div>
@@ -1335,12 +1335,12 @@ export default function DarpxAI() {
       </div>
 
       {/* ============ MOTORI ESTERNI (opzionali) ============ */}
-      <div className="rounded-3xl bg-white/85 p-5 shadow-xl ring-1 ring-black/5 backdrop-blur">
+      <div className="rounded-3xl bg-[var(--panel)] p-5 shadow-xl ring-1 ring-[var(--line)] backdrop-blur">
         <div className="flex items-center gap-2">
           <Mountain className="h-5 w-5 text-[var(--primary)]" />
           <h2 className="text-lg font-semibold">Motori esterni · Testo o Immagine → 3D</h2>
         </div>
-        <p className="mt-1 text-sm text-stone-500">
+        <p className="mt-1 text-sm text-[var(--tx-dim)]">
           Vuoi il look <b>fotorealistico</b> dei motori cloud? Descrivi il modello e usa
           Tripo, fal.ai (Hunyuan 3D), Stable Fast 3D e Meshy: se uno si blocca, passa al
           successivo da solo. Serve una chiave API gratuita del motore che preferisci
@@ -1358,7 +1358,7 @@ export default function DarpxAI() {
                   ? 'bg-[var(--primary-soft)] ring-2 ring-[var(--primary)]'
                   : p.hasKey
                     ? 'bg-emerald-50/60 ring-emerald-200'
-                    : 'bg-stone-50 ring-stone-200'
+                    : 'bg-[var(--panel-soft)] ring-[var(--line)]'
               }`}
             >
               <div className="flex items-center justify-between gap-2">
@@ -1368,7 +1368,7 @@ export default function DarpxAI() {
                   title={chosen === p.id ? 'Torna a selezione automatica' : 'Usa solo questo motore'}
                 >
                   <span className="text-base">{p.icon}</span>
-                  <span className="truncate font-semibold text-stone-700">{p.label}</span>
+                  <span className="truncate font-semibold text-[var(--tx)]">{p.label}</span>
                 </button>
                 {p.hasKey ? (
                   <span className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
@@ -1376,12 +1376,12 @@ export default function DarpxAI() {
                     {SOURCE_LABEL[p.source ?? ''] ?? 'pronto'}
                   </span>
                 ) : (
-                  <span className="shrink-0 rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-bold text-stone-500">
+                  <span className="shrink-0 rounded-full bg-[var(--panel-hover)] px-2 py-0.5 text-[10px] font-bold text-[var(--tx-dim)]">
                     senza chiave
                   </span>
                 )}
               </div>
-              <p className="mt-1 text-[11px] leading-snug text-stone-500">{p.note}</p>
+              <p className="mt-1 text-[11px] leading-snug text-[var(--tx-dim)]">{p.note}</p>
               {p.hasKey && p.source === 'personal' && (
                 <button
                   onClick={() => void removeKey(p)}
@@ -1399,7 +1399,7 @@ export default function DarpxAI() {
                       setKeyInputs(prev => ({ ...prev, [p.id]: e.target.value }))
                     }
                     placeholder={p.keyHint}
-                    className="h-8 min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-2.5 text-xs outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                    className="h-8 min-w-0 flex-1 rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-2.5 text-xs outline-none focus:ring-2 focus:ring-[var(--primary)]"
                   />
                   <Button
                     size="sm"
@@ -1428,7 +1428,7 @@ export default function DarpxAI() {
             </div>
           ))}
           {providers === null && (
-            <div className="col-span-full flex items-center justify-center gap-2 rounded-2xl bg-stone-50 p-4 text-sm text-stone-400 ring-1 ring-stone-200">
+            <div className="col-span-full flex items-center justify-center gap-2 rounded-2xl bg-[var(--panel-soft)] p-4 text-sm text-[var(--tx-faint)] ring-1 ring-[var(--line)]">
               <Loader2 className="h-4 w-4 animate-spin" /> Controllo i motori disponibili…
             </div>
           )}
@@ -1483,7 +1483,7 @@ export default function DarpxAI() {
         ) : (
           <button
             onClick={() => img3dRef.current?.click()}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-stone-300 p-3 text-sm text-stone-500 transition-colors hover:border-[var(--primary)] hover:bg-stone-50"
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--line-strong)] p-3 text-sm text-[var(--tx-dim)] transition-colors hover:border-[var(--primary)] hover:bg-[var(--panel-hover)]"
           >
             <ImageIcon className="h-4 w-4" />
             <span className="font-medium">(opzionale) parti da un&apos;immagine</span>
@@ -1497,7 +1497,7 @@ export default function DarpxAI() {
           rows={3}
           maxLength={600}
           placeholder="Es: un cavaliere con armatura dorata e spada fiammeggiante, oppure: casa a graticcio con tetto di paglia e finestre di legno"
-          className="mt-4 w-full resize-none rounded-2xl border border-stone-200 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-[var(--primary)]"
+          className="mt-4 w-full resize-none rounded-2xl border border-[var(--line)] bg-[var(--panel-soft)] p-3 text-sm outline-none focus:ring-2 focus:ring-[var(--primary)]"
         />
 
         <div className="mt-3 flex flex-wrap gap-2">
@@ -1508,7 +1508,7 @@ export default function DarpxAI() {
               className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all ${
                 artStyle === s.id
                   ? 'bg-[var(--primary-soft)] ring-2 ring-[var(--primary)]'
-                  : 'hover:bg-stone-50'
+                  : 'hover:bg-[var(--panel-hover)]'
               }`}
             >
               {s.icon} {s.label}
@@ -1533,7 +1533,7 @@ export default function DarpxAI() {
           )}
         </Button>
         {providers !== null && !anyKey && (
-          <p className="mt-2 text-center text-xs text-stone-400">
+          <p className="mt-2 text-center text-xs text-[var(--tx-faint)]">
             Aggiungi una chiave sopra (o chiedi all&apos;admin di configurarne
             una globale) per attivare il bottone
           </p>

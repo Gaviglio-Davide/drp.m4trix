@@ -8,11 +8,20 @@ import {
   addBorderWalls,
   emptyScene,
   rngFromSeed,
+  SCHEMATIC_SIZE,
   type GameEntity,
   type GameProject,
   type GameScene,
 } from '@/lib/game2d/types'
 import type { ScriptAnalysis } from './analyze'
+
+/** payload del mondo 3D importato, serve a generare il gioco 3D */
+export type WorldImport = {
+  id: string
+  name: string
+  /** celle mondo "x,z" occupate da oggetti non calpestabili */
+  blocked: string[]
+}
 
 const SIZES = {
   piccolo: { w: 30, h: 20 },
@@ -41,12 +50,23 @@ const sid = (r: Rng, n: number) => 'e' + n.toString(36) + Math.floor(r() * 1e9).
 export function generateGame(a: ScriptAnalysis, seed: number): GameProject {
   const r = rngFromSeed(seed)
   const { w, h } = SIZES[a.size]
+  // layout scelto dal wizard, altrimenti derivato dall'ambientazione
+  const layout: 'stanze' | 'citta' | 'caverne' | 'isola' =
+    a.layout && a.layout !== 'auto'
+      ? a.layout
+      : a.paletteId === 'cyber'
+        ? 'citta'
+        : a.paletteId === 'spazio'
+          ? 'caverne'
+          : 'stanze'
   const sc =
-    a.paletteId === 'cyber'
+    layout === 'citta'
       ? genCity(w, h, r)
-      : a.paletteId === 'spazio'
+      : layout === 'caverne'
         ? genCaves(w, h, r)
-        : genRooms(w, h, r)
+        : layout === 'isola'
+          ? genIsland(w, h, r)
+          : genRooms(w, h, r)
 
   // ---------- posizioni chiave ----------
   const playerStart = sc._start
@@ -366,6 +386,54 @@ function genCity(w: number, h: number, r: Rng): GenResult {
   return { scene: sc, _start: start, _goal: goal, _open: open }
 }
 
+// ---------- layout: isola (erba, mare attorno, stagni e sentieri) ----------
+
+function genIsland(w: number, h: number, r: Rng): GenResult {
+  const sc = emptyScene('Isola', w, h)
+  sc.tiles.fill(4) // erba ovunque
+
+  // mare attorno (1-2 tile di profondità)
+  const depth = w > 36 ? 2 : 1
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const d = Math.min(x, y, w - 1 - x, h - 1 - y)
+      if (d < depth) sc.tiles[y * w + x] = 2
+    }
+
+  // stagni interni
+  for (let i = 0; i < Math.max(2, Math.floor((w * h) / 500)); i++) {
+    const px = ri(r, 4, w - 5)
+    const py = ri(r, 4, h - 5)
+    const rad = ri(r, 2, 3)
+    for (let yy = py - rad; yy <= py + rad; yy++)
+      for (let xx = px - rad; xx <= px + rad; xx++) {
+        if (yy <= 0 || xx <= 0 || yy >= h - 1 || xx >= w - 1) continue
+        if (Math.hypot(xx - px, yy - py) <= rad + r() * 0.6)
+          sc.tiles[yy * w + xx] = 2
+      }
+  }
+
+  // sentieri in terra (road) tra punti casuali
+  for (let i = 0; i < 3; i++) {
+    let x = ri(r, 3, w - 4)
+    let y = ri(r, 3, h - 4)
+    const steps = ri(r, 20, 40)
+    for (let s = 0; s < steps; s++) {
+      if (sc.tiles[y * w + x] === 4) sc.tiles[y * w + x] = 5
+      if (r() < 0.5) x += r() < 0.5 ? 1 : -1
+      else y += r() < 0.5 ? 1 : -1
+      x = Math.max(2, Math.min(w - 3, x))
+      y = Math.max(2, Math.min(h - 3, y))
+    }
+  }
+
+  keepLargestRegion(sc)
+  const open = openList(sc)
+  const start = nearestWalkable(sc, { x: Math.floor(w / 2), y: Math.floor(h / 2) })
+  const goal = farthest(sc, start)
+  return { scene: sc, _start: start, _goal: goal, _open: open }
+}
+
 // ---------- layout: caverne (automi cellulari) ----------
 
 function genCaves(w: number, h: number, r: Rng): GenResult {
@@ -527,4 +595,175 @@ function shuffle<T,>(r: Rng, arr: T[]): T[] {
     ;[arr[i], arr[j]] = [arr[j], arr[i]]
   }
   return arr
+}
+
+// ============================================================
+// GIOCO 3D — il gioco nasce DENTRO un mondo importato dal
+// reparto "Mondi 3D". La scena è una mappa schematica di
+// missione: le sue tile (x,y) si mappano sulle coordinate del
+// mondo; nemici, oggetti e portale compaiono lì nel 3D.
+// ============================================================
+
+export function generateGame3D(
+  a: ScriptAnalysis,
+  seed: number,
+  world: WorldImport
+): GameProject {
+  const r = rngFromSeed(seed)
+  const W = SCHEMATIC_SIZE
+  const sc = emptyScene('Missione', W, W) // tutto pavimento: il mondo c'è già
+
+  const blocked = new Set(world.blocked)
+  const worldFree = (x: number, y: number) => {
+    const [wx, wz] = [Math.round((x + 0.5) * (60 / W) - 30), Math.round((y + 0.5) * (60 / W) - 30)]
+    return !blocked.has(`${wx},${wz}`)
+  }
+
+  // celle libere ( schematiche + mondo )
+  const cells: { x: number; y: number }[] = []
+  for (let y = 1; y < W - 1; y++)
+    for (let x = 1; x < W - 1; x++) if (worldFree(x, y)) cells.push({ x, y })
+  shuffle(r, cells)
+
+  const start = cells.reduce((best, c) => {
+    const d = Math.hypot(c.x - W / 2, c.y - W / 2)
+    const bd = Math.hypot(best.x - W / 2, best.y - W / 2)
+    return d < bd ? c : best
+  }, cells[0] ?? { x: W >> 1, y: W >> 1 })
+
+  const far = cells.reduce((best, c) => {
+    const d = Math.hypot(c.x - start.x, c.y - start.y)
+    const bd = Math.hypot(best.x - start.x, best.y - start.y)
+    return d > bd ? c : best
+  }, start)
+
+  const open = cells.filter(c => Math.hypot(c.x - start.x, c.y - start.y) > 4)
+
+  const entities: GameEntity[] = []
+  entities.push({
+    id: sid(r, 1),
+    type: 'player',
+    x: start.x,
+    y: start.y,
+    props: { name: a.protagonist, color: '#00f0ff' },
+  })
+
+  // portale (obiettivo "portale"/"collezione": si apre dopo le chiavi)
+  if (a.objective !== 'boss') {
+    entities.push({ id: sid(r, 2), type: 'goal', x: far.x, y: far.y, props: {} })
+  }
+
+  // nemici sparsi nel mondo
+  const kinds = a.enemyKinds.length ? a.enemyKinds : ['soldato' as const]
+  const nEnemies = Math.min(a.enemyCount, Math.floor(open.length * 0.5))
+  for (let i = 0; i < nEnemies; i++) {
+    const c = open[i % open.length]
+    if (!c) break
+    const kind = kinds[i % kinds.length]
+    entities.push({
+      id: sid(r, 3),
+      type: 'enemy',
+      x: c.x,
+      y: c.y,
+      props: {
+        kind,
+        hp: kind === 'turret' ? 80 : 50 + ri(r, 0, 40),
+        dmg: 10 + ri(r, 0, 8),
+        speed: kind === 'drone' ? 3.4 : kind === 'ratto' ? 3 : 2.2,
+        color: ENEMY_COLORS[kind] ?? '#ff5a5a',
+      },
+    })
+  }
+
+  // BOSS lontano dal punto di partenza
+  if (a.boss) {
+    const c = far
+    entities.push({
+      id: sid(r, 4),
+      type: 'enemy',
+      x: Math.max(1, Math.min(W - 2, c.x + ri(r, -2, 2))),
+      y: Math.max(1, Math.min(W - 2, c.y + ri(r, -2, 2))),
+      props: { kind: 'boss', hp: 320, dmg: 26, speed: 2.6, color: '#ff2bd6' },
+    })
+  }
+
+  // NPC alleato vicino allo start
+  const npcCell = open.find(c => {
+    const d = Math.hypot(c.x - start.x, c.y - start.y)
+    return d >= 2 && d <= 5
+  }) ?? open[0] ?? start
+  entities.push({
+    id: sid(r, 5),
+    type: 'npc',
+    x: npcCell.x,
+    y: npcCell.y,
+    props: { name: 'ALLEATO', color: '#fcee0a', pages: buildPages(a) },
+  })
+
+  // chiavi (obiettivo collezione)
+  if (a.objective === 'collezione') {
+    for (let i = 0; i < 3; i++) {
+      const c = open[(nEnemies + i * 3 + 2) % Math.max(1, open.length)]
+      if (!c) break
+      entities.push({ id: sid(r, 6), type: 'item', x: c.x, y: c.y, props: { kind: 'chiave' } })
+    }
+  }
+
+  // monete e pozioni sparse
+  for (let i = 0; i < Math.floor(nEnemies * 0.9) + 4; i++) {
+    const c = open[ri(r, 0, Math.max(0, open.length - 1))]
+    if (!c) break
+    entities.push({
+      id: sid(r, 7),
+      type: 'item',
+      x: c.x,
+      y: c.y,
+      props: { kind: r() < 0.72 ? 'moneta' : 'pozione', amount: r() < 0.72 ? ri(r, 1, 3) : 25 },
+    })
+  }
+
+  // casse in zone lontane
+  for (let i = 0; i < 3; i++) {
+    const c = open[ri(r, Math.floor(open.length * 0.5), Math.max(0, open.length - 1))]
+    if (!c) break
+    entities.push({ id: sid(r, 8), type: 'item', x: c.x, y: c.y, props: { kind: 'cassa', amount: ri(r, 4, 9) } })
+  }
+
+  sc.entities = entities
+  sc.id = 'sc3d' + (seed >>> 0).toString(36)
+
+  const intro = [
+    `${a.protagonist}, il mondo «${world.name}» è la tua arena.`,
+    a.objective === 'boss'
+      ? 'Trova e elimina il BOSS che infesta questo mondo.'
+      : a.objective === 'collezione'
+        ? `Recupera le 3 chiavi sparse nel mondo, poi raggiungi il portale.`
+        : 'Raggiungi il portale dorato in fondo al mondo.',
+    a.dialogues[0] ?? 'Muoviti con WASD. Attacca con SPAZIO.',
+  ].filter(Boolean)
+
+  return {
+    kind: 'game2d',
+    title: a.title,
+    seed,
+    settings: {
+      playerHp: a.difficulty === 3 ? 90 : a.difficulty === 1 ? 140 : 110,
+      playerDmg: a.difficulty === 3 ? 30 : a.difficulty === 1 ? 48 : 38,
+      weapon: a.weapon,
+      difficulty: a.difficulty,
+      objective: a.objective,
+      objectiveCount: a.objective === 'collezione' ? 3 : 1,
+      paletteId: a.paletteId,
+      intro,
+      controlsHint: 'WASD muovi · SPAZIO attacca · E interagisci · trascina il mouse per guardare',
+      dimension: '3d',
+      camera: a.camera,
+      worldProjectId: world.id,
+      worldProjectName: world.name,
+    },
+    scenes: [sc],
+    startScene: sc.id,
+    sourceScript: a.raw,
+    createdAt: new Date().toISOString(),
+  }
 }

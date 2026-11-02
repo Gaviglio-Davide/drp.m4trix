@@ -156,11 +156,11 @@ export default function StructuresLab() {
     >
       <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="flex items-center gap-2 text-xl font-black tracking-tight text-stone-800">
+          <h2 className="flex items-center gap-2 text-xl font-black tracking-tight text-[var(--tx)]">
             <Hammer className="h-5 w-5 text-[var(--primary)]" />
             {section.title}
           </h2>
-          <p className="text-sm text-stone-500">
+          <p className="text-sm text-[var(--tx-dim)]">
             {section.subtitle ||
               <>Progetta case, torri e fortificazioni <b>fuori</b> dai mondi. Le
               strutture salvate finiscono in libreria e le ritrovi pronte in
@@ -188,7 +188,7 @@ export default function StructuresLab() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* designer 3D */}
         <div className="lg:col-span-2">
-          <div className="relative h-[430px] overflow-hidden rounded-2xl bg-sky-100 ring-1 ring-black/5">
+          <div className="relative h-[430px] overflow-hidden rounded-2xl bg-sky-100 ring-1 ring-[var(--line)]">
             <DesignerScene
               pieces={pieces}
               hover={hover}
@@ -202,7 +202,7 @@ export default function StructuresLab() {
               onRemove={removeAt}
             />
             <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2">
-              <div className="rounded-full bg-white/85 px-3.5 py-1.5 text-xs font-medium text-stone-600 shadow ring-1 ring-black/5">
+              <div className="rounded-full bg-[var(--panel)] px-3.5 py-1.5 text-xs font-medium text-[var(--tx-dim)] shadow ring-1 ring-[var(--line)]">
                 Livello di costruzione: <b>{level}</b> · clic = piazza · clic
                 destro = demolisci · R = ruota · Ctrl+Z = annulla
               </div>
@@ -210,7 +210,7 @@ export default function StructuresLab() {
           </div>
 
           {/* controlli pezzi */}
-          <div className="mt-2 flex flex-col gap-2 rounded-2xl bg-stone-50 p-3 ring-1 ring-black/5">
+          <div className="mt-2 flex flex-col gap-2 rounded-2xl bg-[var(--panel-soft)] p-3 ring-1 ring-[var(--line)]">
             <div className="flex items-center gap-1.5 overflow-x-auto">
               {PIECE_DEFS.map(p => (
                 <button
@@ -219,18 +219,18 @@ export default function StructuresLab() {
                   className={`flex min-w-16 shrink-0 flex-col items-center gap-0.5 rounded-2xl px-2.5 py-1.5 transition-all ${
                     piece === p.id
                       ? 'bg-[var(--primary-soft)] ring-2 ring-[var(--primary)]'
-                      : 'bg-white ring-1 ring-stone-200 hover:bg-stone-100'
+                      : 'bg-[var(--panel-soft)] ring-1 ring-[var(--line)] hover:bg-[var(--panel-hover)]'
                   }`}
                 >
                   <span className="text-lg leading-none">{p.icon}</span>
-                  <span className="whitespace-nowrap text-[10px] font-medium text-stone-600">
+                  <span className="whitespace-nowrap text-[10px] font-medium text-[var(--tx-dim)]">
                     {p.label}
                   </span>
                 </button>
               ))}
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+              <span className="mr-1 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
                 Livello
               </span>
               {Array.from({ length: MAX_LEVEL + 1 }, (_, i) => i).map(i => (
@@ -240,14 +240,14 @@ export default function StructuresLab() {
                   className={`h-6 w-6 shrink-0 rounded-full text-[11px] font-bold transition-all ${
                     level === i
                       ? 'bg-[var(--primary)] text-white'
-                      : 'bg-white text-stone-500 ring-1 ring-stone-200 hover:bg-stone-100'
+                      : 'bg-[var(--panel-soft)] text-[var(--tx-dim)] ring-1 ring-[var(--line)] hover:bg-[var(--panel-hover)]'
                   }`}
                 >
                   {i}
                 </button>
               ))}
-              <span className="mx-2 h-5 w-px shrink-0 bg-stone-200" />
-              <span className="mr-1 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+              <span className="mx-2 h-5 w-px shrink-0 bg-[var(--line-strong)]" />
+              <span className="mr-1 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
                 Colori
               </span>
               {PALETTE.map((c, i) => (
@@ -255,13 +255,13 @@ export default function StructuresLab() {
                   key={c}
                   onClick={() => setColor(i)}
                   className={`h-6 w-6 shrink-0 rounded-full ring-2 transition-transform hover:scale-110 ${
-                    color === i ? 'ring-stone-700' : 'ring-transparent'
+                    color === i ? 'ring-[var(--neon)]' : 'ring-transparent'
                   }`}
                   style={{ backgroundColor: c }}
                   aria-label={`Colore ${i + 1}`}
                 />
               ))}
-              <span className="mx-2 h-5 w-px shrink-0 bg-stone-200" />
+              <span className="mx-2 h-5 w-px shrink-0 bg-[var(--line-strong)]" />
               <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={() => setRot(r => (r + 1) % 4)}>
                 <RotateCcw className="mr-1 h-3.5 w-3.5" /> Ruota
               </Button>
@@ -275,7 +275,7 @@ export default function StructuresLab() {
                 <Undo2 className="mr-1 h-3.5 w-3.5" /> Annulla
               </Button>
             </div>
-            <p className="text-[11px] text-stone-400">
+            <p className="text-[11px] text-[var(--tx-faint)]">
               Consigli: pavimento al livello 0, poi muri, porte e finestre SUL
               BORDO delle celle (ruota con R per scegliere il lato); il tetto
               sta bene a qualsiasi livello. Con i livelli alti costruisci torri
@@ -286,22 +286,22 @@ export default function StructuresLab() {
         </div>
 
         {/* libreria strutture */}
-        <div className="rounded-2xl border border-black/5 bg-white/70 p-3">
-          <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-stone-700">
+        <div className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-3">
+          <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-[var(--tx)]">
             <Library className="h-4 w-4 text-[var(--primary)]" />
             Libreria ({structures.length})
           </h3>
           {!loaded ? (
-            <div className="flex items-center justify-center gap-2 py-10 text-sm text-stone-400">
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-[var(--tx-faint)]">
               <Loader2 className="h-4 w-4 animate-spin" /> Carico...
             </div>
           ) : structures.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-stone-300 px-3 py-8 text-center">
+            <div className="rounded-xl border border-dashed border-[var(--line-strong)] px-3 py-8 text-center">
               <p className="text-3xl">🏗️</p>
-              <p className="mt-2 text-sm font-medium text-stone-500">
+              <p className="mt-2 text-sm font-medium text-[var(--tx-dim)]">
                 Nessuna struttura ancora
               </p>
-              <p className="mt-1 text-xs text-stone-400">
+              <p className="mt-1 text-xs text-[var(--tx-faint)]">
                 Costruisci qualcosa a sinistra e premi «Salva in libreria».
               </p>
             </div>
@@ -310,7 +310,7 @@ export default function StructuresLab() {
               {structures.map(s => (
                 <li
                   key={s.id}
-                  className="rounded-xl border border-black/5 bg-white px-3 py-2"
+                  className="rounded-xl border border-[var(--line)] bg-[var(--panel-soft)] px-3 py-2"
                 >
                   {renameId === s.id ? (
                     <div className="flex items-center gap-1.5">
@@ -343,10 +343,10 @@ export default function StructuresLab() {
                     <div className="flex items-center gap-2">
                       <span className="text-lg">🏗️</span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-stone-800">
+                        <p className="truncate text-sm font-semibold text-[var(--tx)]">
                           {s.name}
                         </p>
-                        <p className="text-xs text-stone-400">
+                        <p className="text-xs text-[var(--tx-faint)]">
                           {s.pieces.length} pezzi ·{' '}
                           {new Date(s.createdAt).toLocaleDateString('it-IT', {
                             day: 'numeric',
@@ -357,7 +357,7 @@ export default function StructuresLab() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-8 w-8 p-0 text-stone-400 hover:text-stone-700"
+                        className="h-8 w-8 p-0 text-[var(--tx-faint)] hover:text-[var(--tx)]"
                         title="Rinomina"
                         onClick={() => {
                           setRenameId(s.id)
@@ -369,7 +369,7 @@ export default function StructuresLab() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-8 w-8 p-0 text-stone-400 hover:text-stone-700"
+                        className="h-8 w-8 p-0 text-[var(--tx-faint)] hover:text-[var(--tx)]"
                         title="Duplica"
                         onClick={() => {
                           duplicateStructure(s.id)
@@ -383,7 +383,7 @@ export default function StructuresLab() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 w-8 p-0 text-stone-400 hover:text-red-600"
+                            className="h-8 w-8 p-0 text-[var(--tx-faint)] hover:text-red-600"
                             title="Elimina"
                           >
                             <Trash2 className="h-4 w-4" />

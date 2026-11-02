@@ -48,6 +48,7 @@ import {
   Wand2,
 } from 'lucide-react'
 import { useWorld, type ProjectMeta } from '@/lib/world-store'
+import { isGameProjectState } from '@/lib/game2d/persist'
 import { fetchAuth } from '@/lib/http'
 import ImportedModels from '@/components/ImportedModels'
 import StructuresLab from '@/components/StructuresLab'
@@ -180,6 +181,10 @@ export default function Dashboard() {
     useWorld.getState().setUser(null)
     useWorld.getState().setView('landing')
   }
+
+  // I giochi del Game Studio sono progetti nel DB con marker kind:'game2d':
+  // NON devono comparire nel reparto Mondi 3D (reparti separati).
+  const worldProjects = projects.filter(p => !isGameProjectState(p.state))
 
   const openWithSave = async (p: ProjectMeta) => {
     try {
@@ -324,7 +329,7 @@ export default function Dashboard() {
           </Dialog>
         </div>
 
-        {projects.length === 0 ? (
+        {worldProjects.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -369,7 +374,7 @@ export default function Dashboard() {
               </motion.span>
               <span className="text-sm font-semibold">Nuovo progetto</span>
             </motion.button>
-            {projects.map((p, i) => (
+            {worldProjects.map((p, i) => (
               <motion.div
                 key={p.id}
                 custom={i + 1}
@@ -450,6 +455,14 @@ export default function Dashboard() {
             ))}
           </div>
         )}
+          {projects.length > worldProjects.length && (
+            <p className="mt-4 text-xs text-[var(--tx-faint)]">
+              🕹 {projects.length - worldProjects.length} giochi del Game Studio non sono in questa lista: li trovi nel reparto{' '}
+              <button className="neon-text underline" onClick={() => setTab('gamestudio')}>
+                Game Studio
+              </button>.
+            </p>
+          )}
           </>
         )}
 

@@ -27,12 +27,12 @@ export function webglSupported(): boolean {
 export function NoGLCard() {
   return (
     <div className="flex h-full w-full items-center justify-center bg-[var(--site-bg)] p-6">
-      <div className="max-w-sm rounded-3xl bg-white/90 p-8 text-center shadow-2xl ring-1 ring-black/5">
+      <div className="max-w-sm rounded-3xl bg-[var(--panel)] p-8 text-center shadow-2xl ring-1 ring-[var(--line)]">
         <span className="text-5xl">🧊</span>
-        <h2 className="mt-4 text-lg font-black text-stone-800">
+        <h2 className="mt-4 text-lg font-black text-[var(--tx)]">
           Il 3D non è attivo su questo dispositivo
         </h2>
-        <p className="mt-2 text-sm leading-relaxed text-stone-600">
+        <p className="mt-2 text-sm leading-relaxed text-[var(--tx-dim)]">
           Il tuo browser non riesce ad avviare WebGL (la tecnologia che disegna
           il mondo 3D). Prova a <b>aggiornare il browser</b>, ad attivare
           l&apos;accelerazione hardware nelle impostazioni oppure apri il sito

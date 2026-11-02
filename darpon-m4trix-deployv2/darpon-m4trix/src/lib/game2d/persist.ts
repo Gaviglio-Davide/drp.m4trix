@@ -30,6 +30,17 @@ function parseGame(state: unknown): GameProject | null {
   return null
 }
 
+/** true se lo stato JSON del progetto è un GIOCO del Game Studio
+ *  (e quindi NON deve comparire tra i Mondi 3D della home) */
+export function isGameProjectState(state: string | undefined | null): boolean {
+  if (!state) return false
+  try {
+    return JSON.parse(state)?.kind === 'game2d'
+  } catch {
+    return false
+  }
+}
+
 export async function listGames(): Promise<GameMeta[]> {
   const res = await fetch('/api/projects')
   if (!res.ok) throw new Error('Non autenticato')

@@ -179,11 +179,11 @@ export default function ImportedModels() {
     >
       <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="flex items-center gap-2 text-xl font-black tracking-tight text-stone-800">
+          <h2 className="flex items-center gap-2 text-xl font-black tracking-tight text-[var(--tx)]">
             <Package className="h-5 w-5 text-[var(--primary)]" />
             {section.title}
           </h2>
-          <p className="text-sm text-stone-500">
+          <p className="text-sm text-[var(--tx-dim)]">
             {section.subtitle ||
               'Carica qui tutti i modelli 3D che vuoi (.glb / .gltf): restano in ordine, scegli la loro dimensione e li trovi pronti nell\'editor di ogni tuo progetto.'}
           </p>
@@ -217,23 +217,23 @@ export default function ImportedModels() {
         </Button>
       </div>
 
-      <Card className="border-black/5 bg-white/70">
+      <Card className="border-[var(--line)] bg-[var(--panel)]">
         <CardContent className="p-3">
           {loading ? (
-            <div className="flex items-center justify-center gap-2 py-10 text-sm text-stone-400">
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-[var(--tx-faint)]">
               <Loader2 className="h-4 w-4 animate-spin" /> Carico i tuoi
               modelli...
             </div>
           ) : models.length === 0 ? (
             <button
               onClick={() => fileRef.current?.click()}
-              className="flex w-full flex-col items-center gap-2 rounded-2xl border border-dashed border-stone-300 py-10 transition-colors hover:bg-[var(--primary-soft)]"
+              className="flex w-full flex-col items-center gap-2 rounded-2xl border border-dashed border-[var(--line-strong)] py-10 transition-colors hover:bg-[var(--primary-soft)]"
             >
-              <CloudUpload className="h-8 w-8 text-stone-400" />
-              <p className="text-sm font-medium text-stone-500">
+              <CloudUpload className="h-8 w-8 text-[var(--tx-faint)]" />
+              <p className="text-sm font-medium text-[var(--tx-dim)]">
                 Nessun modello ancora: clicca qui o su «Importa modelli»
               </p>
-              <p className="text-xs text-stone-400">
+              <p className="text-xs text-[var(--tx-faint)]">
                 Puoi selezionare più file insieme — es. i modelli esportati da
                 Meshy
               </p>
@@ -243,17 +243,17 @@ export default function ImportedModels() {
               {models.map((m, i) => (
                 <li
                   key={m.id}
-                  className="flex items-center gap-3 rounded-xl border border-black/5 bg-white px-3 py-2"
+                  className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--panel-soft)] px-3 py-2"
                 >
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--primary-soft)] text-[11px] font-bold text-[var(--primary-strong)]">
                     {i + 1}
                   </span>
                   <span className="shrink-0 text-lg">📦</span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-stone-800">
+                    <p className="truncate text-sm font-semibold text-[var(--tx)]">
                       {m.name}
                     </p>
-                    <p className="text-xs text-stone-400">
+                    <p className="text-xs text-[var(--tx-faint)]">
                       {[
                         fmtSize(m.size),
                         new Date(m.createdAt).toLocaleDateString('it-IT', {
@@ -269,7 +269,7 @@ export default function ImportedModels() {
                   </div>
                   {/* dimensione predefinita del modello */}
                   <div
-                    className="flex shrink-0 items-center gap-0.5 rounded-full bg-stone-100 p-0.5"
+                    className="flex shrink-0 items-center gap-0.5 rounded-full bg-[var(--panel-hover)] p-0.5"
                     title="Dimensione con cui il modello viene piazzato nei mondi"
                   >
                     {SIZES.map(s => (
@@ -279,7 +279,7 @@ export default function ImportedModels() {
                         className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold transition-all ${
                           Math.abs((m.scale ?? 1) - s) < 0.01
                             ? 'bg-[var(--primary)] text-white shadow-sm'
-                            : 'text-stone-500 hover:bg-white'
+                            : 'text-[var(--tx-dim)] hover:bg-[var(--panel-hover)]'
                         }`}
                       >
                         {fmtScale(s)}
@@ -289,7 +289,7 @@ export default function ImportedModels() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="text-stone-500"
+                    className="text-[var(--tx-dim)]"
                     title="Anteprima 3D: ruota, wireframe, statistiche"
                     onClick={() => setPreview(m)}
                   >
@@ -298,7 +298,7 @@ export default function ImportedModels() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-stone-400 hover:text-red-600"
+                    className="text-[var(--tx-faint)] hover:text-red-600"
                     title="Rimuovi"
                     onClick={() => void removeModel(m)}
                   >

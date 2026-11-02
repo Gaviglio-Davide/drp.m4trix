@@ -83,6 +83,11 @@ export type GameSettings = {
   paletteId: PaletteId
   intro?: string[] // pagine mostrate all'avvio
   controlsHint?: string
+  // ---- v9: dimensione del gioco ----
+  dimension?: '2d' | '3d' // default '2d' (retrocompatibile)
+  camera?: 'terza' | 'prima' // visuale dei giochi 3D
+  worldProjectId?: string | null // mondo 3D importato dal reparto Mondi 3D
+  worldProjectName?: string | null
 }
 
 export type GameProject = {
@@ -311,9 +316,30 @@ export function newGameProject(title: string): GameProject {
       objectiveCount: 1,
       paletteId: 'cyber',
       intro: [],
+      dimension: '2d',
     },
     scenes: [sc],
     startScene: sc.id,
     createdAt: new Date().toISOString(),
   }
+}
+
+/** dimensione effettiva del gioco ('2d' per i vecchi progetti) */
+export function gameDimension(g: GameProject): '2d' | '3d' {
+  return g.settings.dimension ?? '2d'
+}
+
+/** mappa schematica di missione per i giochi 3D:
+ *  le coordinate tile (x,y) si mappano in linea retta sulle
+ *  coordinate del mondo 3D [-GRID_HALF..GRID_HALF] */
+export const SCHEMATIC_SIZE = 32
+
+/** cella schematica → coordinate mondo (metri) */
+export function schematicToWorld(
+  x: number,
+  y: number,
+  w = SCHEMATIC_SIZE,
+  h = SCHEMATIC_SIZE
+): [number, number] {
+  return [(x + 0.5) * (60 / w) - 30, (y + 0.5) * (60 / h) - 30]
 }

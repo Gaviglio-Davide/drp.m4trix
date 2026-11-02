@@ -284,7 +284,7 @@ export default function DarpxAgent() {
                 className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
                 style={{ background: 'var(--primary-strong)' }}
               />
-              <span className="relative inline-flex h-4 w-4 rounded-full bg-white ring-2" style={{ ['--tw-ring-color' as never]: 'var(--primary)' }} />
+              <span className="relative inline-flex h-4 w-4 rounded-full bg-[var(--panel-soft)] ring-2" style={{ ['--tw-ring-color' as never]: 'var(--primary)' }} />
             </span>
           )}
         </motion.button>
@@ -307,7 +307,7 @@ export default function DarpxAgent() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 24, scale: 0.96 }}
             transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-            className="fixed bottom-[100px] right-5 z-50 flex h-[min(68vh,560px)] w-[min(92vw,400px)] flex-col overflow-hidden rounded-3xl bg-white/95 shadow-2xl ring-1 ring-black/10 backdrop-blur"
+            className="fixed bottom-[100px] right-5 z-50 flex h-[min(68vh,560px)] w-[min(92vw,400px)] flex-col overflow-hidden rounded-3xl bg-[var(--panel)] shadow-2xl ring-1 ring-black/10 backdrop-blur"
           >
             {/* header con avatar */}
             <div
@@ -330,7 +330,7 @@ export default function DarpxAgent() {
             {/* messaggi */}
             <div
               ref={listRef}
-              className="flex-1 space-y-2.5 overflow-y-auto bg-stone-50/70 px-3.5 py-3"
+              className="flex-1 space-y-2.5 overflow-y-auto bg-[var(--panel-soft)] px-3.5 py-3"
             >
               {msgs.map((m, i) => (
                 <div
@@ -341,7 +341,7 @@ export default function DarpxAgent() {
                     className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed shadow-sm ${
                       m.role === 'user'
                         ? 'rounded-br-md text-white'
-                        : 'rounded-bl-md bg-white text-stone-700 ring-1 ring-black/5'
+                        : 'rounded-bl-md bg-[var(--panel-soft)] text-[var(--tx)] ring-1 ring-[var(--line)]'
                     }`}
                     style={
                       m.role === 'user'
@@ -355,9 +355,9 @@ export default function DarpxAgent() {
               ))}
               {thinking && (
                 <div className="flex justify-start">
-                  <div className="flex items-center gap-2 rounded-2xl rounded-bl-md bg-white px-3.5 py-2.5 ring-1 ring-black/5">
+                  <div className="flex items-center gap-2 rounded-2xl rounded-bl-md bg-[var(--panel-soft)] px-3.5 py-2.5 ring-1 ring-[var(--line)]">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: 'var(--primary)' }} />
-                    <span className="text-xs text-stone-400">
+                    <span className="text-xs text-[var(--tx-faint)]">
                       {thinkLabel || 'Sto pensando…'}
                     </span>
                   </div>
@@ -366,7 +366,7 @@ export default function DarpxAgent() {
             </div>
 
             {/* suggerimenti */}
-            <div className="flex gap-1.5 overflow-x-auto border-t border-black/5 bg-white px-3 py-2">
+            <div className="flex gap-1.5 overflow-x-auto border-t border-[var(--line)] bg-[var(--panel-soft)] px-3 py-2">
               {suggestions.map(s => (
                 <button
                   key={s}
@@ -380,13 +380,13 @@ export default function DarpxAgent() {
             </div>
 
             {/* input */}
-            <div className="flex items-center gap-2 border-t border-black/5 bg-white p-2.5">
+            <div className="flex items-center gap-2 border-t border-[var(--line)] bg-[var(--panel-soft)] p-2.5">
               <input
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && void send()}
                 placeholder="Chiedi o comando qualcosa…"
-                className="h-10 flex-1 rounded-xl bg-stone-100 px-3.5 text-sm outline-none ring-[var(--primary)] transition focus:ring-2"
+                className="h-10 flex-1 rounded-xl bg-[var(--panel-soft)] px-3.5 text-sm outline-none ring-[var(--primary)] transition focus:ring-2"
                 maxLength={500}
               />
               <button
