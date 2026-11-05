@@ -88,6 +88,14 @@ export type GameSettings = {
   camera?: 'terza' | 'prima' // visuale dei giochi 3D
   worldProjectId?: string | null // mondo 3D importato dal reparto Mondi 3D
   worldProjectName?: string | null
+  // ---- v12: personaggio principale + opzioni extra ----
+  playerModelUrl?: string | null // GLB scelto tra i Progetti importati
+  playerModelName?: string | null
+  playerSpeed?: number // moltiplicatore velocità eroe (default 1)
+  enemySpeed?: number // moltiplicatore velocità nemici (default 1)
+  minimapOn?: boolean // minimappa durante il gioco (default: off)
+  fogOn?: boolean // vignetta atmosfera (default: on)
+  showEnemyHp?: boolean // barre HP sopra i nemici (default: on)
 }
 
 export type GameProject = {

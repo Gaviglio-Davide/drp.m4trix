@@ -304,7 +304,15 @@ export class GameRuntime {
       hp,
       maxHp: hp,
       dmg: (e.props.dmg ?? (isBoss ? 26 : 12)) * (isBoss ? 1 : d.enemyDmg),
-      speed: e.props.speed ?? (e.props.kind === 'drone' ? 3.2 : e.props.kind === 'ratto' ? 3.6 : e.props.kind === 'guardiano' || e.props.kind === 'golem' ? 1.4 : 2.2),
+      speed:
+        (e.props.speed ??
+          (e.props.kind === 'drone'
+            ? 3.2
+            : e.props.kind === 'ratto'
+              ? 3.6
+              : e.props.kind === 'guardiano' || e.props.kind === 'golem'
+                ? 1.4
+                : 2.2)) * (this.project.settings.enemySpeed ?? 1),
       aggro: (e.props.aggro ?? 5.5) * (isBoss ? 1.4 : d.aggro / 5.5),
       cd: 0,
       kbx: 0,
@@ -464,7 +472,7 @@ export class GameRuntime {
         sfx.step()
       }
     }
-    const spd = PLAYER_BASE.speed
+    const spd = PLAYER_BASE.speed * (this.project.settings.playerSpeed ?? 1)
     const nx = this.player.x + mx * spd * dt
     const ny = this.player.y + my * spd * dt
     if (!this.boxBlocked(nx, this.player.y, PLAYER_BASE.radius) && !this.decoBlocked(nx, this.player.y))
@@ -1027,8 +1035,8 @@ export class GameRuntime {
             angle: en.angle,
           })
           ctx.restore()
-          // barra vita
-          if (en.hp < en.maxHp) {
+          // barra vita (attivabile/disattivabile dalle impostazioni)
+          if (en.hp < en.maxHp && this.project.settings.showEnemyHp !== false) {
             const bw = T * (en.boss ? 1.1 : 0.7)
             const bx = en.x * T - bw / 2
             const by = en.y * T - T * (en.boss ? 0.75 : 0.5)
@@ -1056,6 +1064,14 @@ export class GameRuntime {
         ctx.rotate(0)
         drawKind(ctx, 'player', T * 0.85, color, this.time, { facing: Math.cos(ang) >= 0 ? 1 : -1 })
         ctx.restore()
+        // nome del personaggio principale scelto (v12)
+        const nm = this.project.settings.playerModelName
+        if (nm) {
+          ctx.fillStyle = 'rgba(255,255,255,0.88)'
+          ctx.font = `bold ${Math.max(9, Math.round(T * 0.3))}px sans-serif`
+          ctx.textAlign = 'center'
+          ctx.fillText(nm, 0, -T * 0.78)
+        }
         // indicatore arma per blaster
         if (this.project.settings.weapon === 'blaster') {
           ctx.rotate(ang)
@@ -1098,12 +1114,52 @@ export class GameRuntime {
 
     ctx.restore()
 
-    // ---- vignetta atmosfera ----
-    const grad = ctx.createRadialGradient(vw / 2, vh / 2, vh * 0.35, vw / 2, vh / 2, vh * 0.85)
-    grad.addColorStop(0, 'rgba(0,0,0,0)')
-    grad.addColorStop(1, this.pal.fog)
-    ctx.fillStyle = grad
-    ctx.fillRect(0, 0, vw, vh)
+    // ---- vignetta atmosfera (attivabile dalle impostazioni) ----
+    if (this.project.settings.fogOn !== false) {
+      const grad = ctx.createRadialGradient(vw / 2, vh / 2, vh * 0.35, vw / 2, vh / 2, vh * 0.85)
+      grad.addColorStop(0, 'rgba(0,0,0,0)')
+      grad.addColorStop(1, this.pal.fog)
+      ctx.fillStyle = grad
+      ctx.fillRect(0, 0, vw, vh)
+    }
+
+    // ---- minimappa (se attivata dalle impostazioni) ----
+    if (this.project.settings.minimapOn) {
+      const s = Math.min(150 / sc.w, 100 / sc.h)
+      const mx = vw - sc.w * s - 12
+      const my = 12
+      ctx.globalAlpha = 0.85
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'
+      ctx.fillRect(mx - 3, my - 3, sc.w * s + 6, sc.h * s + 6)
+      for (let y = 0; y < sc.h; y++) {
+        for (let x = 0; x < sc.w; x++) {
+          const t = sc.tiles[y * sc.w + x]
+          if (t === 1) ctx.fillStyle = this.pal.wallTop
+          else if (t === 2) ctx.fillStyle = this.pal.waterGlow
+          else if (t === 3) ctx.fillStyle = this.pal.lavaGlow
+          else if (t === 8) ctx.fillStyle = '#000'
+          else continue
+          ctx.fillRect(mx + x * s, my + y * s, Math.ceil(s), Math.ceil(s))
+        }
+      }
+      if (this.goal) {
+        ctx.fillStyle = '#fcee0a'
+        ctx.fillRect(mx + this.goal.x * s - 1, my + this.goal.y * s - 1, Math.max(3, s), Math.max(3, s))
+      }
+      for (const en of this.enemies) {
+        if (en.hp <= 0) continue
+        ctx.fillStyle = en.boss ? '#ff2bd6' : '#ff5a5a'
+        ctx.fillRect(mx + en.x * s - 1, my + en.y * s - 1, Math.max(2.5, s * 0.8), Math.max(2.5, s * 0.8))
+      }
+      ctx.fillStyle = '#00f0ff'
+      ctx.fillRect(
+        mx + this.player.x * s - 1.5,
+        my + this.player.y * s - 1.5,
+        Math.max(3.5, s),
+        Math.max(3.5, s)
+      )
+      ctx.globalAlpha = 1
+    }
 
     // ---- dissolvenza transizione ----
     if (this.fadeT > 0) {
