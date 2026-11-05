@@ -238,6 +238,12 @@ export default function GameStudio() {
               oppure genera un gioco completo da uno script con il reparto{' '}
               <b className="text-[var(--neon)]">Crea da Script</b> e poi perfezionalo qui.
             </p>
+            <Button
+              className="cp-btn mt-1 bg-[var(--neon)] font-bold text-[#04060d]"
+              onClick={() => setCreateOpen(true)}
+            >
+              <Plus className="mr-1 h-4 w-4" /> Crea il primo gioco
+            </Button>
           </div>
         </motion.div>
       ) : (
@@ -304,6 +310,27 @@ export default function GameStudio() {
               </div>
             </motion.div>
           ))}
+
+          {/* rettangolo con il + : crea un nuovo gioco (come in Dashboard) */}
+          <motion.button
+            type="button"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: metas.length * 0.05 }}
+            whileHover={{ y: -4 }}
+            onClick={() => setCreateOpen(true)}
+            className="cp-panel flex min-h-[150px] w-full flex-col items-center justify-center gap-2 border border-dashed border-[var(--line-strong)] p-5 text-center transition-colors hover:border-[var(--neon)]"
+            title="Crea un nuovo videogioco"
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--primary-soft)]">
+              <Plus className="h-6 w-6 text-[var(--neon)]" />
+            </span>
+            <span className="font-bold text-[var(--tx)]">Crea un nuovo gioco</span>
+            <span className="max-w-xs text-xs text-[var(--tx-dim)]">
+              Costruisci il mondo, piazza nemici e boss, scegli il personaggio
+              tra i tuoi modelli GLB e trasforma tutto in un videogioco giocabile.
+            </span>
+          </motion.button>
         </div>
       )}
 

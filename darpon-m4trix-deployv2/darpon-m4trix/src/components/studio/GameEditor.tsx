@@ -406,6 +406,20 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
     })()
   }, [is3D, worlds])
 
+  // elenco Progetti importati (per scegliere il personaggio principale)
+  const [models, setModels] = useState<{ id: string; name: string; url: string }[]>([])
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const res = await fetchAuth('/api/models')
+        const data = await res.json().catch(() => ({}))
+        setModels(data.models ?? [])
+      } catch {
+        setModels([])
+      }
+    })()
+  }, [])
+
   // ---------- scene ----------
   const addScene = () => {
     mutate(p => {
@@ -904,6 +918,37 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
               Impostazioni gioco
             </span>
             <div className="mt-2 flex flex-col gap-2 text-xs">
+              <Field label="Personaggio principale">
+                <select
+                  className="h-7 w-full bg-[var(--panel-soft)] px-1 ring-1 ring-[var(--line)]"
+                  value={project.settings.playerModelUrl ?? ''}
+                  onChange={e => {
+                    const m = models.find(x => x.url === e.target.value)
+                    mutate(p => {
+                      p.settings.playerModelUrl = m?.url ?? null
+                      p.settings.playerModelName = m?.name ?? null
+                    })
+                  }}
+                >
+                  <option value="">Eroe classico (quadratino neon)</option>
+                  {models.map(m => (
+                    <option key={m.id} value={m.url}>
+                      🧊 {m.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              {models.length === 0 && (
+                <p className="text-[10px] leading-relaxed text-[var(--tx-faint)]">
+                  Carica un modello nella sezione «Progetti importati» (o
+                  prendilo dal Catalogo 3D) e lo scegli qui come eroe.
+                </p>
+              )}
+              <p className="text-[10px] leading-relaxed text-[var(--tx-faint)]">
+                Nei giochi <b>3D</b> il modello GLB scelto diventa davvero il
+                tuo personaggio in campo; nei giochi <b>2D</b> vedi il suo nome
+                sopra l&apos;eroe.
+              </p>
               <Field label={`HP eroe: ${project.settings.playerHp}`}>
                 <input
                   type="range" min={30} max={300} step={10}
@@ -945,6 +990,49 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
                   className="accent-[var(--neon)]"
                 />
                 Arma da fuoco (blaster)
+              </label>
+              <Field label={`Velocità eroe: ${(project.settings.playerSpeed ?? 1).toFixed(1)}×`}>
+                <input
+                  type="range" min={0.5} max={2} step={0.1}
+                  value={project.settings.playerSpeed ?? 1}
+                  onChange={e => mutate(p => { p.settings.playerSpeed = Number(e.target.value) })}
+                  className="w-full accent-[var(--neon)]"
+                />
+              </Field>
+              <Field label={`Velocità nemici: ${(project.settings.enemySpeed ?? 1).toFixed(1)}×`}>
+                <input
+                  type="range" min={0.5} max={2} step={0.1}
+                  value={project.settings.enemySpeed ?? 1}
+                  onChange={e => mutate(p => { p.settings.enemySpeed = Number(e.target.value) })}
+                  className="w-full accent-[var(--neon)]"
+                />
+              </Field>
+              <label className="flex items-center gap-2 text-[var(--tx-dim)]">
+                <input
+                  type="checkbox"
+                  checked={!!project.settings.minimapOn}
+                  onChange={e => mutate(p => { p.settings.minimapOn = e.target.checked })}
+                  className="accent-[var(--neon)]"
+                />
+                Minimappa durante il gioco 🗺
+              </label>
+              <label className="flex items-center gap-2 text-[var(--tx-dim)]">
+                <input
+                  type="checkbox"
+                  checked={project.settings.fogOn !== false}
+                  onChange={e => mutate(p => { p.settings.fogOn = e.target.checked })}
+                  className="accent-[var(--neon)]"
+                />
+                Nebbia atmosfera ai bordi
+              </label>
+              <label className="flex items-center gap-2 text-[var(--tx-dim)]">
+                <input
+                  type="checkbox"
+                  checked={project.settings.showEnemyHp !== false}
+                  onChange={e => mutate(p => { p.settings.showEnemyHp = e.target.checked })}
+                  className="accent-[var(--neon)]"
+                />
+                Barre HP sopra i nemici
               </label>
             </div>
           </div>

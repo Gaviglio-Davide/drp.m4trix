@@ -1861,7 +1861,14 @@ function SceneContent({
     () => blockedCells(useWorld.getState().objects, customAssets),
     [customAssets]
   )
-  const playerCustom = playerAsset ? customAssets.find(a => a.id === playerAsset && a.url) : null
+  // v12: il personaggio principale scelto nel Game Studio ha la
+  // priorità; altrimenti si usa quello scelto nell'editor dei mondi
+  const settingsUrl = project.settings.playerModelUrl ?? null
+  const playerCustom = settingsUrl
+    ? { url: settingsUrl, name: project.settings.playerModelName ?? 'personaggio' }
+    : playerAsset
+      ? customAssets.find(a => a.id === playerAsset && a.url) ?? null
+      : null
   const R = rt
 
   return (
