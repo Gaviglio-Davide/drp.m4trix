@@ -84,9 +84,29 @@ async function tryZai(history: ChatMessage[]): Promise<string | null> {
 
 // ---- provider 2: endpoint OpenAI-compatibile ----
 
-async function tryOpenAI(cfg: AIConfig, history: ChatMessage[]): Promise<string | null> {
+// v12: riconosce Google Gemini e usa il suo indirizzo OpenAI-compatibile
+// (l'admin può lasciare Base URL vuoto e scrivere solo il modello gemini-…)
+function providerBaseOf(cfg: AIConfig): string {
+  const base = (cfg.baseUrl ?? '').trim()
+  const model = (cfg.model ?? '').toLowerCase()
+  if (base.includes('generativelanguage')) {
+    return 'https://generativelanguage.googleapis.com/v1beta/openai'
+  }
+  if (model.startsWith('gemini') && !base) {
+    return 'https://generativelanguage.googleapis.com/v1beta/openai'
+  }
+  return base || 'https://api.openai.com/v1'
+}
+
+type OpenAIResult = {
+  text: string | null
+  status?: number
+  detail?: string
+}
+
+async function tryOpenAI(cfg: AIConfig, history: ChatMessage[]): Promise<OpenAIResult> {
   try {
-    const base = (cfg.baseUrl ?? 'https://api.openai.com/v1').replace(/\/+$/, '')
+    const base = providerBaseOf(cfg).replace(/\/+$/, '')
     const res = await fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -104,14 +124,26 @@ async function tryOpenAI(cfg: AIConfig, history: ChatMessage[]): Promise<string 
       }),
       signal: AbortSignal.timeout(20000),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      let detail = ''
+      try {
+        const j = (await res.json()) as { error?: { message?: string } }
+        detail = String(j?.error?.message ?? '').slice(0, 220)
+      } catch {
+        /* risposta non JSON */
+      }
+      return { text: null, status: res.status, detail }
+    }
     const data = (await res.json()) as {
       choices?: { message?: { content?: string } }[]
     }
     const text = data.choices?.[0]?.message?.content
-    return text && text.trim() ? text.trim() : null
-  } catch {
-    return null
+    return { text: text && text.trim() ? text.trim() : null }
+  } catch (e) {
+    return {
+      text: null,
+      detail: e instanceof Error ? e.message.slice(0, 160) : 'connessione fallita',
+    }
   }
 }
 
@@ -166,20 +198,38 @@ export async function POST(req: NextRequest) {
   // 1) z-ai (ambiente configurato) 2) OpenAI-compatibile (admin)
   let answer = await tryZai(history.length ? [...history, { role: 'user', content: message }] : [{ role: 'user', content: message }])
   let engine: 'zai' | 'openai' | 'none' = 'zai'
+  let aiError: OpenAIResult | null = null
   if (!answer) {
     const cfg = await readAIConfig()
     if (cfg) {
-      answer = await tryOpenAI(cfg, [
+      const r = await tryOpenAI(cfg, [
         ...history,
         { role: 'user', content: message },
       ])
-      if (answer) engine = 'openai'
+      if (r.text) {
+        answer = r.text
+        engine = 'openai'
+      } else {
+        aiError = r
+      }
     }
   }
   if (!answer) engine = 'none'
 
   if (!answer) {
+    // se una chiave AI è configurata ma il servizio la rifiuta,
+    // spiegamo CHIARAMENTE cosa non va (v12)
+    const why = aiError
+      ? aiError.status === 401 || aiError.status === 403
+        ? `⚠️ La chiave AI impostata è stata RIFIUTATA dal servizio (HTTP ${aiError.status}). Controllala dal pannello admin → Agente AI → tasto «Prova chiave».${aiError.detail ? ` Dettaglio: ${aiError.detail}` : ''}`
+        : aiError.status === 404
+          ? '⚠️ Il servizio AI non ha trovato l\'indirizzo o il modello (HTTP 404). Per Google Gemini: lascia Base URL VUOTO e metti come modello gemini-2.5-flash.'
+          : aiError.status === 429
+            ? '⚠️ Quota o limiti del servizio AI superati (HTTP 429): riprova tra poco o cambia piano.'
+            : `⚠️ Il servizio AI non risponde correttamente${aiError.status ? ` (HTTP ${aiError.status})` : ''}${aiError.detail ? `: ${aiError.detail}` : ''}.`
+      : ''
     answer = [
+      ...(why ? [why, ''] : []),
       'Al momento il mio cervello "potenziato" non è attivo su questo sito, ma posso comunque aiutarti subito:',
       '• «crea un mondo medievale grande» → lo genero e lo apro',
       '• «genera un drago» → preparo il modello 3D',
