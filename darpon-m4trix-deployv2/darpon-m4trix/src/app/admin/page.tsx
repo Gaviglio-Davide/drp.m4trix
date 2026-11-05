@@ -262,6 +262,7 @@ function AdminPanel({
   const [ai, setAi] = useState<AIConfigState | null>(null)
   const [aiForm, setAiForm] = useState({ baseUrl: '', model: '', apiKey: '' })
   const [savingAi, setSavingAi] = useState(false)
+  const [testingAi, setTestingAi] = useState(false)
   const [zaiEnv, setZaiEnv] = useState(false)
 
   // anteprima modelli
@@ -493,6 +494,29 @@ function AdminPanel({
       toast.error(e instanceof Error ? e.message : 'Errore salvataggio')
     } finally {
       setSavingAi(false)
+    }
+  }
+
+  const testAI = async () => {
+    setTestingAi(true)
+    try {
+      const res = await fetch('/api/admin/ai/test', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (data.ok) {
+        toast.success(
+          `Chiave OK! Il modello ${data.model} ha risposto: "${data.sample || 'OK'}" 🎉`
+        )
+      } else {
+        toast.error(
+          `Chiave NON funzionante${data.status ? ` (HTTP ${data.status})` : ''}: ${
+            data.hint ?? data.detail ?? 'errore sconosciuto'
+          }${data.detail && data.hint ? ` — ${data.detail}` : ''}`
+        )
+      }
+    } catch {
+      toast.error('Test non riuscito: riprova')
+    } finally {
+      setTestingAi(false)
     }
   }
 
@@ -854,13 +878,21 @@ function AdminPanel({
                   linguistico. Senza chiave resta comunque attivo il cervello
                   locale. La chiave è salvata <b>cifrata</b>.
                 </p>
+                <p className="rounded-xl border border-[var(--line)] bg-[var(--panel-soft)] p-2.5 text-xs leading-relaxed text-[var(--tx-dim)]">
+                  <b className="text-[var(--tx)]">Per Google Gemini</b>:
+                  lascia <b>Base URL vuoto</b> e scrivi come Modello{' '}
+                  <code className="text-[var(--neon)]">gemini-2.5-flash</code> (o{' '}
+                  <code className="text-[var(--neon)]">gemini-2.5-pro</code>).
+                  Il sito usa da solo l&apos;indirizzo giusto di Google: non
+                  serve nient&apos;altro.
+                </p>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="ai-base">Base URL</Label>
                   <Input
                     id="ai-base"
                     value={aiForm.baseUrl}
                     onChange={e => setAiForm({ ...aiForm, baseUrl: e.target.value })}
-                    placeholder="https://api.openai.com/v1"
+                    placeholder="https://api.openai.com/v1 — per Gemini lascia VUOTO"
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -869,7 +901,7 @@ function AdminPanel({
                     id="ai-model"
                     value={aiForm.model}
                     onChange={e => setAiForm({ ...aiForm, model: e.target.value })}
-                    placeholder="gpt-4o-mini"
+                    placeholder="gpt-4o-mini — per Gemini: gemini-2.5-flash"
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -884,10 +916,21 @@ function AdminPanel({
                     placeholder="sk-…"
                   />
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button onClick={() => void saveAI()} disabled={savingAi}>
                     {savingAi && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Salva
                   </Button>
+                  {ai?.hasKey && (
+                    <Button
+                      variant="outline"
+                      onClick={() => void testAI()}
+                      disabled={testingAi}
+                      title="Prova davvero la chiave e ti dice cosa non va"
+                    >
+                      {testingAi && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+                      Prova chiave
+                    </Button>
+                  )}
                   {ai?.hasKey && (
                     <Button
                       variant="outline"
