@@ -16,12 +16,14 @@ import {
   Eye,
   Loader2,
   Package,
+  Store,
   Trash2,
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { upload } from '@vercel/blob/client'
 import { fetchAuth } from '@/lib/http'
 import GLBViewer from '@/components/GLBViewer'
+import GLBCatalog from '@/components/GLBCatalog'
 import { sectionOf, useUI } from '@/lib/ui-store'
 
 type ModelRow = {
@@ -54,6 +56,7 @@ export default function ImportedModels() {
   const site = useUI(s => s.site)
   const section = sectionOf(site.sections, 'importati')
   const [preview, setPreview] = useState<ModelRow | null>(null)
+  const [catalogOpen, setCatalogOpen] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -199,22 +202,32 @@ export default function ImportedModels() {
             e.target.value = ''
           }}
         />
-        <Button
-          className="shadow-md"
-          disabled={!!progress}
-          onClick={() => fileRef.current?.click()}
-        >
-          {progress ? (
-            <>
-              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-              Carico {progress.done + 1}/{progress.total}...
-            </>
-          ) : (
-            <>
-              <CloudUpload className="mr-1 h-4 w-4" /> Importa modelli
-            </>
-          )}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            className="shadow-md"
+            onClick={() => setCatalogOpen(true)}
+            title="Catalogo di modelli GLB gratuiti: mandali al tuo sito con un clic"
+          >
+            <Store className="mr-1 h-4 w-4" /> Catalogo 3D
+          </Button>
+          <Button
+            className="shadow-md"
+            disabled={!!progress}
+            onClick={() => fileRef.current?.click()}
+          >
+            {progress ? (
+              <>
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                Carico {progress.done + 1}/{progress.total}...
+              </>
+            ) : (
+              <>
+                <CloudUpload className="mr-1 h-4 w-4" /> Importa modelli
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       <Card className="border-[var(--line)] bg-[var(--panel)]">
@@ -316,6 +329,13 @@ export default function ImportedModels() {
         url={preview?.url ?? null}
         name={preview?.name}
         onClose={() => setPreview(null)}
+      />
+
+      {/* catalogo modelli GLB gratuiti (stile Meshy) */}
+      <GLBCatalog
+        open={catalogOpen}
+        onClose={() => setCatalogOpen(false)}
+        onImported={() => void refresh()}
       />
     </motion.section>
   )
