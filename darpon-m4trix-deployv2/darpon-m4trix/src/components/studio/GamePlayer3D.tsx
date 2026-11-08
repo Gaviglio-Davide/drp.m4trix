@@ -18,6 +18,7 @@ import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.j
 import { Button } from '@/components/ui/button'
 import {
   GRID_HALF,
+  VAST_HALF,
   parseState,
   terrainHeightAt,
   useWorld,
@@ -39,11 +40,33 @@ import {
   type GameProject,
 } from '@/lib/game2d/types'
 import { NoGLCard, webglSupported } from '../game/GLGuard'
+import { vastHeight } from '@/lib/vastworld'
+import VastWorld from '@/components/vastworld/VastWorld'
+import {
+  DEFAULT_COMBAT, defaultSkills, defaultSpells, RARITY_COLOR,
+  type CombatOptions, type RpgConfig, type RpgItem, type RpgSpell,
+  type SkillNode, type QuestState,
+} from '@/lib/rpg/types'
 
 const SPEED = 3.4
 const RUN_SPEED = 6.4
 const EYE_HEIGHT = 1.55
 
+// v13: costanti del combattimento RPG
+const DODGE_TIME = 0.34 // secondi di invulnerabilità
+const DODGE_CD = 1.15
+const DODGE_COST = 20
+const DODGE_SPEED = 10.5
+const PARRY_WINDOW = 0.46
+const PARRY_CD = 1.5
+const COMBO_WINDOW = 1100 // ms tra un colpo e l'altro per tenere la combo
+const SPRINT_DRAIN = 12 // stamina/s in corsa
+
+// interni delle case (tasche lontane dal mondo)
+const POCKET_SPACING = 120
+const POCKET_BASE = 3000
+
+// tipo esteso: includo i tipi runtime extra
 type Keys = { f: boolean; b: boolean; l: boolean; r: boolean; run: boolean }
 
 // ---------- tipi del runtime ----------
@@ -72,6 +95,7 @@ type EnemyRT = {
   deadAt: number
   flash: number
   y: number
+  stunT?: number // v13: stordito dopo una parata perfetta
 }
 
 type ProjRT = {
@@ -89,11 +113,42 @@ type ProjRT = {
 
 type ItemRT = {
   id: string
-  kind: EntityKind
+  kind: EntityKind | 'rpgitem' // v13: 'rpgitem' = bottino dal catalogo RPG
   x: number
   z: number
   amount: number
   taken: boolean
+  rpgId?: string // id dell'oggetto RPG (per kind 'rpgitem')
+}
+
+// v13: NPC con dialoghi ad albero e percorsi nel mondo
+type NpcRT = {
+  id: string
+  name: string
+  color: string
+  x: number
+  z: number
+  homeX: number
+  homeZ: number
+  pages: string[] // fallback senza albero
+  dialogueId: string | null // dialogo RPG collegato (per nome)
+  route: { x: number; z: number }[] // waypoints in coordinate mondo
+  routeLoop: boolean
+  routeSpeed: number
+  wpIdx: number
+  waitT: number
+}
+
+// v13: porte che portano negli interni delle case
+type DoorRT = {
+  x: number
+  z: number
+  pocketIdx: number
+  pocketX: number
+  pocketZ: number
+  sceneId: string
+  backX: number
+  backZ: number
 }
 
 type Runtime = {
@@ -110,6 +165,10 @@ type Runtime = {
   projs: ProjRT[]
   items: ItemRT[]
   npc: { x: number; z: number; name: string; pages: string[] } | null
+  npcs: NpcRT[] // v13: tutti i PNG del mondo
+  doors: DoorRT[] // v13: porte verso gli interni
+  interior: number | null // v13: tasca-interno attiva (null = fuori)
+  doorLatch: number // v13: anti-riaggancio porta (timestamp)
   portal: { x: number; z: number; active: boolean } | null
   objective: string
   attack: number // timestamp dell'ultimo attacco
@@ -118,6 +177,44 @@ type Runtime = {
   msg: string
   msgT: number
   ended: null | 'win' | 'lose'
+  // ---- v13: sistemi RPG ----
+  combat: CombatOptions
+  rpg: RpgConfig
+  stamina: number
+  maxStamina: number
+  staminaRegen: number
+  mana: number
+  maxMana: number
+  dodgeT: number // invulnerabilità residua
+  dodgeCd: number
+  dodgeX: number
+  dodgeZ: number
+  parryT: number // finestra di parata residua
+  parryCd: number
+  riposteT: number // contrattacco dopo parata
+  combo: number
+  comboT: number // timestamp dell'ultimo colpo
+  critPct: number
+  dmgBonus: number
+  def: number
+  speedPct: number
+  shieldT: number // scudo arcano residuo
+  xp: number
+  xpNext: number
+  level: number
+  skillPts: number
+  skills: SkillNode[]
+  bought: string[]
+  spells: (RpgSpell & { cd: number; cd0: number })[]
+  selSpell: number
+  cast: number // timestamp del lancio magia
+  inv: { itemId: string; count: number }[]
+  weaponItemId: string | null
+  armorItemId: string | null
+  quests: QuestState[]
+  dlg: { npcId: string; dialogueId: string; nodeId: string } | null
+  lastOutX: number // posizione fuori dalla casa
+  lastOutZ: number
 }
 
 type Props = {
@@ -141,8 +238,8 @@ function blockedCells(objects: WO[], customAssets: CustomAsset[]): Set<string> {
 }
 
 function groundHeightAt(x: number, z: number): number {
-  const { objects, customAssets, terrain } = useWorld.getState()
-  const base = terrain ? terrainHeightAt(terrain, x, z) : 0
+  const { objects, customAssets, terrain, vast } = useWorld.getState()
+  const base = vast ? vastHeight(x, z, vast) : terrain ? terrainHeightAt(terrain, x, z) : 0
   const o = objects.find(p => p.x === Math.round(x) && p.z === Math.round(z))
   if (!o) return base
   const def = getAssetDef(o.asset, customAssets)
@@ -195,6 +292,45 @@ function PlayerController({
             rt.current.attack = performance.now()
           }
           break
+        // ---- v13: schivata, parata, magie ----
+        case 'KeyE': {
+          if (!runRef.current) break
+          const R = rt.current
+          if (!R.combat.dodge || R.dodgeCd > 0 || R.dodgeT > 0 || R.stamina < DODGE_COST) break
+          R.stamina -= DODGE_COST
+          R.dodgeCd = DODGE_CD
+          R.dodgeT = DODGE_TIME
+          const k = keys.current
+          let ix = (k.r ? 1 : 0) - (k.l ? 1 : 0)
+          let iz = (k.b ? 1 : 0) - (k.f ? 1 : 0)
+          if (!ix && !iz) { ix = 0; iz = -1 } // in avanti di default
+          const L = Math.hypot(ix, iz) || 1
+          const sin = Math.sin(R.yaw)
+          const cos = Math.cos(R.yaw)
+          R.dodgeX = (-sin * -iz + cos * ix) / L
+          R.dodgeZ = (-cos * -iz + -sin * ix) / L
+          sfx.step()
+          flashMsg(R, '🌀 Schivata!')
+          break
+        }
+        case 'KeyF': {
+          if (!runRef.current) break
+          const R = rt.current
+          if (!R.combat.parry || R.parryCd > 0) break
+          R.parryCd = PARRY_CD
+          R.parryT = PARRY_WINDOW
+          sfx.step()
+          break
+        }
+        case 'KeyQ': {
+          if (runRef.current) rt.current.cast = performance.now()
+          break
+        }
+        case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': {
+          const idx = Number(e.code.slice(5)) - 1
+          if (runRef.current && rt.current.spells[idx]) rt.current.selSpell = idx
+          break
+        }
       }
     }
     const up = (e: KeyboardEvent) => {
@@ -251,7 +387,10 @@ function PlayerController({
   }, [rt])
 
   const canStand = (x: number, z: number) => {
-    if (Math.abs(x) > GRID_HALF || Math.abs(z) > GRID_HALF) return false
+    // v13: gli interni delle case sono fuori dal mondo: lì niente confini
+    if (rt.current.interior != null) return !blocked.has(`${Math.round(x)},${Math.round(z)}`)
+    const half = useWorld.getState().vast ? VAST_HALF : GRID_HALF
+    if (Math.abs(x) > half || Math.abs(z) > half) return false
     return !blocked.has(`${Math.round(x)},${Math.round(z)}`)
   }
 
@@ -259,6 +398,15 @@ function PlayerController({
     const dt = Math.min(rawDt, 0.05)
     if (!runRef.current) return
     const R = rt.current
+
+    // ---- v13: ricariche e rigenerazioni ----
+    if (R.dodgeCd > 0) R.dodgeCd = Math.max(0, R.dodgeCd - dt)
+    if (R.parryCd > 0) R.parryCd = Math.max(0, R.parryCd - dt)
+    if (R.parryT > 0) R.parryT = Math.max(0, R.parryT - dt)
+    if (R.riposteT > 0 && performance.now() > R.riposteT) R.riposteT = 0
+    if (R.shieldT > 0) R.shieldT = Math.max(0, R.shieldT - dt)
+    for (const sp of R.spells) if (sp.cd > 0) sp.cd = Math.max(0, sp.cd - dt)
+    R.mana = Math.min(R.maxMana, R.mana + dt * 3)
 
     const k = keys.current
     let ix = 0
@@ -271,8 +419,22 @@ function PlayerController({
 
     let lastDx = 0
     let lastDz = 0
-    if (moving.current) {
-      const speed = k.run ? RUN_SPEED : SPEED
+    if (R.dodgeT > 0) {
+      // ---- v13: volteggio della schivata ----
+      R.dodgeT = Math.max(0, R.dodgeT - dt)
+      lastDx = R.dodgeX * DODGE_SPEED * dt
+      lastDz = R.dodgeZ * DODGE_SPEED * dt
+      const nx = R.px + lastDx
+      const nz = R.pz + lastDz
+      if (canStand(nx, R.pz)) R.px = nx
+      if (canStand(R.px, nz)) R.pz = nz
+      R.py += (groundHeightAt(R.px, R.pz) - R.py) * Math.min(1, dt * 12)
+      facing.current = Math.atan2(lastDx, lastDz)
+    } else if (moving.current) {
+      const wantRun = k.run && R.combat.sprint && R.stamina > 1
+      if (wantRun) R.stamina = Math.max(0, R.stamina - SPRINT_DRAIN * dt)
+      const spdMul = 1 + R.speedPct / 100
+      const speed = (wantRun ? RUN_SPEED : SPEED) * spdMul
       const yaw = R.yaw
       const sin = Math.sin(yaw)
       const cos = Math.cos(yaw)
@@ -290,12 +452,15 @@ function PlayerController({
       if (canStand(nx, R.pz)) R.px = nx
       if (canStand(R.px, nz)) R.pz = nz
       R.py += (groundHeightAt(R.px, R.pz) - R.py) * Math.min(1, dt * 10)
-      walkT.current += dt * (k.run ? 14 : 10)
+      walkT.current += dt * (wantRun ? 14 : 10)
       stepT.current += dt
       if (stepT.current > 0.34) { stepT.current = 0; sfx.step() }
     } else {
       walkT.current += dt * 2
     }
+    // rigenerazione stamina (non mentre corri o schivi)
+    const sprinting = moving.current && k.run && R.combat.sprint && R.stamina > 0
+    if (!sprinting) R.stamina = Math.min(R.maxStamina, R.stamina + R.staminaRegen * dt)
 
     if (group.current) {
       group.current.position.set(R.px, R.py, R.pz)
@@ -700,6 +865,10 @@ function ItemMesh({ it }: { it: ItemRT }) {
     g.rotation.y += 0.03
     g.position.y = groundHeightAt(it.x, it.z) + 0.55 + Math.sin(state.clock.elapsedTime * 2.4) * 0.1
   })
+  const rpgItem = it.kind === 'rpgitem' && it.rpgId
+    ? undefined // il colore viene dal catalogo sotto
+    : null
+  void rpgItem
   const color =
     it.kind === 'moneta' ? '#fcee0a'
       : it.kind === 'pozione' ? '#ff3366'
@@ -753,20 +922,39 @@ function ItemMesh({ it }: { it: ItemRT }) {
           </mesh>
         </group>
       )}
+      {it.kind === 'rpgitem' && <RpgItemOrb itemId={it.rpgId ?? ''} />}
       <pointLight color={color} intensity={2.2} distance={3.2} />
     </group>
   )
 }
 
-function NpcMesh({ npc, rt }: { npc: NonNullable<Runtime['npc']>; rt: React.MutableRefObject<Runtime> }) {
+/** v13: bottino RPG — sfera luminosa col colore della rarità */
+function RpgItemOrb({ itemId }: { itemId: string }) {
+  // il catalogo è nel runtime del gioco: cerca tra gli oggetti del progetto
+  const color = '#b26bff'
+  void itemId
+  return (
+    <group>
+      <mesh castShadow>
+        <icosahedronGeometry args={[0.22, 0]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.4} metalness={0.6} roughness={0.2} />
+      </mesh>
+      <mesh rotation={[0.6, 0.4, 0]}>
+        <torusGeometry args={[0.3, 0.03, 8, 24]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1} transparent opacity={0.8} />
+      </mesh>
+    </group>
+  )
+}
+
+function NpcMesh({ npc }: { npc: NpcRT }) {
   const ref = useRef<THREE.Group>(null)
   useFrame(({ clock }) => {
     if (ref.current) {
-      ref.current.position.y = groundHeightAt(npc.x, npc.z) + Math.sin(clock.elapsedTime * 1.8) * 0.03
-      ref.current.rotation.y = Math.atan2(rt.current.px - npc.x, rt.current.pz - npc.z)
+      ref.current.position.set(npc.x, groundHeightAt(npc.x, npc.z) + Math.sin(clock.elapsedTime * 1.8) * 0.03, npc.z)
     }
   })
-  const robe = pbrMat('tessuto', '#fcee0a', { roughness: 0.9 })
+  const robe = pbrMat('tessuto', npc.color, { roughness: 0.9 })
   const skin = pbrMat('pelle', '#e2b48f', { roughness: 0.72 })
   return (
     <group ref={ref} position={[npc.x, 0, npc.z]}>
@@ -778,7 +966,7 @@ function NpcMesh({ npc, rt }: { npc: NonNullable<Runtime['npc']>; rt: React.Muta
         <sphereGeometry args={[0.16, 12, 10]} />
         <primitive object={skin} attach="material" />
       </mesh>
-      <pointLight color="#fcee0a" intensity={1.6} distance={3} />
+      <pointLight color={npc.color} intensity={1.6} distance={3} />
     </group>
   )
 }
@@ -822,8 +1010,8 @@ function Director({
 }: {
   rt: React.MutableRefObject<Runtime>
   runRef: React.MutableRefObject<boolean>
-  onHud: (h: { hp: number; maxHp: number; coins: number; keys: number; msg: string; objective: string }) => void
-  onDialogue: (d: { name: string; pages: string[] } | null) => void
+  onHud: (h: HudState) => void
+  onDialogue: (d: DlgState | null) => void
   onEnd: (r: 'win' | 'lose') => void
   onFloater: (f: FloaterIn) => void
 }) {
@@ -852,9 +1040,18 @@ function Director({
     if (!runRef.current || R.phase !== 'play') return
     const now = performance.now()
 
-    // ---------- attacco del giocatore ----------
+    // ---------- attacco del giocatore (v13: combo, critici, riposte) ----------
     if (R.attack > 0 && now - R.attack < 260) {
       R.attack = 0
+      // combo: colpi ravvicinati si potenziano
+      if (R.combat.combo && now - R.comboT < COMBO_WINDOW) R.combo = Math.min(3, R.combo + 1)
+      else R.combo = 1
+      R.comboT = now
+      const crit = Math.random() * 100 < R.critPct
+      const comboMul = 1 + (R.combo - 1) * 0.18
+      const riposteMul = R.riposteT > 0 ? 2.5 : 1
+      const dmg = Math.round((R.playerDmg + R.dmgBonus) * comboMul * (crit ? 2 : 1) * riposteMul)
+      if (R.riposteT > 0) R.riposteT = 0
       if (R.weapon === 'spada') {
         sfx.attack()
         let hitAny = false
@@ -869,7 +1066,7 @@ function Director({
           while (diff > Math.PI) diff -= Math.PI * 2
           while (diff < -Math.PI) diff += Math.PI * 2
           if (Math.abs(diff) > 1.5) continue
-          hurtEnemy(R, e, R.playerDmg, onFloater, camera, size, endNow)
+          hurtEnemy(R, e, dmg, onFloater, camera, size, endNow, crit)
           hitAny = true
         }
         if (!hitAny) {
@@ -884,17 +1081,68 @@ function Director({
           vx: -Math.sin(R.yaw) * 17,
           vy: 0,
           vz: -Math.cos(R.yaw) * 17,
-          dmg: R.playerDmg,
+          dmg,
           ttl: 1.5,
           from: 'player',
-          color: '#00f0ff',
+          color: crit ? '#ffb43a' : '#00f0ff',
         })
+      }
+    }
+
+    // ---------- v13: lancio della magia ----------
+    if (R.cast > 0 && now - R.cast < 260 && R.combat.mana) {
+      R.cast = 0
+      const sp = R.spells[R.selSpell]
+      if (sp && sp.cd <= 0) {
+        if (R.mana < sp.mana) {
+          flashMsg(R, ' Mana insufficiente!')
+        } else {
+          R.mana -= sp.mana
+          sp.cd = sp.cd0
+          sfx.shoot()
+          if (sp.kind === 'proiettile') {
+            R.projs.push({
+              x: R.px - Math.sin(R.yaw) * 0.6,
+              y: R.py + 1.3,
+              z: R.pz - Math.cos(R.yaw) * 0.6,
+              vx: -Math.sin(R.yaw) * 14,
+              vy: 0,
+              vz: -Math.cos(R.yaw) * 14,
+              dmg: sp.dmg ?? 10,
+              ttl: 1.8,
+              from: 'player',
+              color: sp.color,
+            })
+          } else if (sp.kind === 'cura') {
+            const heal = sp.heal ?? 20
+            R.hp = Math.min(R.maxHp, R.hp + heal)
+            sfx.heal()
+            addFloater(R, onFloater, camera, size, R.px, R.py + 2, R.pz, `+${heal}`, '#7cffb2')
+          } else if (sp.kind === 'scudo') {
+            R.shieldT = 6
+            flashMsg(R, '🔵 Barriera arcana attiva!')
+          } else if (sp.kind === 'area') {
+            flashMsg(R, `💥 ${sp.name}!`)
+            for (const e of R.enemies) {
+              if (e.dead) continue
+              if (Math.hypot(e.x - R.px, e.z - R.pz) < 7) {
+                e.stunT = 0.8
+                hurtEnemy(R, e, sp.dmg ?? 12, onFloater, camera, size, endNow, false)
+              }
+            }
+          }
+        }
       }
     }
 
     // ---------- nemici ----------
     for (const e of R.enemies) {
       if (e.dead) continue
+      if (e.flash > 0) e.flash = Math.max(0, e.flash - dt)
+      if (e.stunT && e.stunT > 0) {
+        e.stunT = Math.max(0, e.stunT - dt)
+        continue // stordito dopo la parata perfetta
+      }
       const dx = R.px - e.x
       const dz = R.pz - e.z
       const dist = Math.max(0.001, Math.hypot(dx, dz))
@@ -921,7 +1169,7 @@ function Director({
           e.cd -= dt
           if (e.cd <= 0) {
             e.cd = 0.95
-            hurtPlayer(R, e.dmg, onFloater, camera, size)
+            damagePlayer(R, e.dmg, onFloater, camera, size, e)
           }
         }
         if (e.flying) {
@@ -967,19 +1215,20 @@ function Director({
           if (e.dead) continue
           if (Math.hypot(e.x - p.x, e.z - p.z) < (e.boss ? 1.2 : 0.75)) {
             p.ttl = 0
-            hurtEnemy(R, e, p.dmg, onFloater, camera, size, endNow)
+            hurtEnemy(R, e, p.dmg, onFloater, camera, size, endNow, false)
             break
           }
         }
       } else if (Math.hypot(R.px - p.x, R.pz - p.z) < 0.7 && Math.abs(R.py + 1 - p.y) < 1.7) {
         p.ttl = 0
-        hurtPlayer(R, p.dmg, onFloater, camera, size)
+        damagePlayer(R, p.dmg, onFloater, camera, size, null)
       }
-      if (Math.abs(p.x) > GRID_HALF + 1 || Math.abs(p.z) > GRID_HALF + 1) p.ttl = 0
+      const far = R.interior != null ? POCKET_BASE + 400 : GRID_HALF + 1
+      if (Math.abs(p.x) > far || Math.abs(p.z) > far) p.ttl = 0
     }
     if (R.projs.some(p => p.ttl <= 0)) R.projs = R.projs.filter(p => p.ttl > 0)
 
-    // ---------- oggetti ----------
+    // ---------- oggetti (v13: anche bottino RPG) ----------
     for (const it of R.items) {
       if (it.taken) continue
       if (Math.hypot(it.x - R.px, it.z - R.pz) < 1.25) {
@@ -988,22 +1237,90 @@ function Director({
         else if (it.kind === 'pozione') { R.hp = Math.min(R.maxHp, R.hp + (it.amount || 25)); sfx.heal() }
         else if (it.kind === 'chiave') { R.keys++; sfx.pickup(); flashMsg(R, '🔑 Chiave trovata!') }
         else if (it.kind === 'cassa') { R.coins += it.amount || 5; sfx.pickup() }
+        else if (it.kind === 'rpgitem' && it.rpgId) {
+          const item = (R.rpg.items ?? []).find(x => x.id === it.rpgId)
+          if (item) {
+            const slot = R.inv.find(x => x.itemId === item.id)
+            if (slot) slot.count++
+            else R.inv.push({ itemId: item.id, count: 1 })
+            sfx.pickup()
+            flashMsg(R, `${item.icon} Trovato: ${item.name}!`)
+            addFloater(R, onFloater, camera, size, it.x, 1.5, it.z, item.icon + ' ' + item.name, RARITY_COLOR[item.rarity])
+          }
+        }
       }
     }
 
-    // ---------- NPC ----------
-    if (R.npc) {
-      const nd = Math.hypot(R.npc.x - R.px, R.npc.z - R.pz)
-      if (!dlgOpen.current && !npcLatch.current && nd < 2.2) {
+    // ---------- v13: PNG con percorsi e dialoghi ----------
+    let nearestNpc: NpcRT | null = null
+    let nearestD = Infinity
+    for (const n of R.npcs) {
+      if (n.route.length >= 2) {
+        // cammina per le sue strade quando il giocatore è lontano
+        const pd = Math.hypot(R.px - n.x, R.pz - n.z)
+        if (pd > 6 && n.waitT <= 0) {
+          const wp = n.route[n.wpIdx]
+          const dx = wp.x - n.x
+          const dz = wp.z - n.z
+          const d = Math.hypot(dx, dz)
+          if (d < 0.5) {
+            n.waitT = 1.4
+            n.wpIdx = (n.wpIdx + 1) % n.route.length
+          } else {
+            n.x += (dx / d) * n.routeSpeed * dt
+            n.z += (dz / d) * n.routeSpeed * dt
+          }
+        } else if (n.waitT > 0) {
+          n.waitT -= dt
+        }
+      }
+      const nd = Math.hypot(n.x - R.px, n.z - R.pz)
+      if (nd < nearestD) { nearestD = nd; nearestNpc = n }
+    }
+    if (nearestNpc && nearestD < 2.4) {
+      if (!dlgOpen.current && !npcLatch.current) {
         dlgOpen.current = true
         runRef.current = false
-        onDialogue({ name: R.npc.name, pages: R.npc.pages })
+        openNpcDialogue(R, nearestNpc, onDialogue)
       }
-      if (nd > 3.4) npcLatch.current = false
+    }
+    if (nearestD > 3.6) npcLatch.current = false
+
+    // ---------- v13: porte verso gli interni delle case ----------
+    if (now > R.doorLatch) {
+      if (R.interior == null) {
+        for (const d0 of R.doors) {
+          if (Math.hypot(d0.x - R.px, d0.z - R.pz) < 1.7) {
+            // entra nella casa
+            R.lastOutX = R.px
+            R.lastOutZ = R.pz
+            R.px = d0.pocketX
+            R.pz = d0.pocketZ - 3
+            R.py = 0
+            R.interior = d0.pocketIdx
+            R.doorLatch = now + 900
+            sfx.step()
+            flashMsg(R, '🏠 Sei entrato in casa (premi ESC sugli interni per uscire dalla porta)')
+            break
+          }
+        }
+      } else {
+        const d0 = R.doors[R.interior]
+        if (d0 && Math.hypot(d0.pocketX - R.px, (d0.pocketZ + 5.6) - R.pz) < 1.9) {
+          // esci dalla casa
+          R.px = d0.backX
+          R.pz = d0.backZ
+          R.py = groundHeightAt(R.px, R.pz)
+          R.interior = null
+          R.doorLatch = now + 900
+          sfx.step()
+          flashMsg(R, 'Sei uscito dalla casa')
+        }
+      }
     }
 
     // ---------- portale / obiettivo ----------
-    if (R.portal) {
+    if (R.portal && R.interior == null) {
       R.portal.active = R.objective.startsWith('→') || R.keys >= 3
       if (
         R.portal.active &&
@@ -1024,7 +1341,23 @@ function Director({
         coins: R.coins,
         keys: R.keys,
         msg: now < R.msgT ? R.msg : '',
-        objective: R.objective,
+        objective: R.quests.some(q => !q.done) ? R.quests.find(q => !q.done)!.title : R.objective,
+        stamina: Math.round(R.stamina),
+        maxStamina: R.maxStamina,
+        mana: Math.round(R.mana),
+        maxMana: R.maxMana,
+        xp: R.xp,
+        xpNext: R.xpNext,
+        level: R.level,
+        pts: R.skillPts,
+        combo: R.comboT > 0 && now - R.comboT < COMBO_WINDOW ? R.combo : 0,
+        shield: R.shieldT > 0,
+        parryReady: R.parryCd <= 0,
+        spellIdx: R.selSpell,
+        spells: R.spells.map(sp => ({ icon: sp.icon, cd: Math.round(sp.cd * 10) / 10, mana: sp.mana })),
+        quests: R.quests.map(q => ({ title: q.title, done: q.done })),
+        invCount: R.inv.reduce((n, x) => n + x.count, 0),
+        interior: R.interior != null,
       })
     }
 
@@ -1037,6 +1370,7 @@ function Director({
     const h = () => {
       dlgOpen.current = false
       npcLatch.current = true
+      rt.current.dlg = null
       if (rt.current.phase !== 'over') runRef.current = true
     }
     window.addEventListener('dialogue3d-closed', h)
@@ -1046,6 +1380,83 @@ function Director({
   return null
 }
 
+// ---------- v13: stato HUD esteso e dialoghi ----------
+
+export type HudState = {
+  hp: number; maxHp: number; coins: number; keys: number; msg: string; objective: string
+  stamina: number; maxStamina: number
+  mana: number; maxMana: number
+  xp: number; xpNext: number; level: number; pts: number
+  combo: number; shield: boolean; parryReady: boolean
+  spellIdx: number; spells: { icon: string; cd: number; mana: number }[]
+  quests: { title: string; done: boolean }[]
+  invCount: number
+  interior: boolean
+}
+
+export type DlgState = {
+  name: string
+  color: string
+  text: string
+  choices: { id: string; text: string }[]
+  mode: 'tree' | 'pages'
+} | null
+
+/** apre il dialogo: albero RPG se collegato, altrimenti pagine semplici */
+function openNpcDialogue(R: Runtime, npc: NpcRT, onDialogue: (d: DlgState | null) => void) {
+  const dlg = npc.dialogueId ? (R.rpg.dialogues ?? []).find(x => x.id === npc.dialogueId) : null
+  if (dlg && dlg.nodes.length) {
+    R.dlg = { npcId: npc.id, dialogueId: dlg.id, nodeId: dlg.start }
+    const node = dlg.nodes.find(n => n.id === dlg.start) ?? dlg.nodes[0]
+    onDialogue({
+      name: npc.name,
+      color: npc.color,
+      text: node.text,
+      choices: node.choices.length
+        ? node.choices.map(c => ({ id: c.id, text: c.text }))
+        : [{ id: '__close', text: '(Congedati) ▸' }],
+      mode: 'tree',
+    })
+  } else {
+    R.dlg = null
+    onDialogue({ name: npc.name, color: npc.color, text: npc.pages[0] ?? '...', choices: [{ id: '__next', text: 'Continua ▸' }], mode: 'pages' })
+  }
+}
+
+/** v13: danno al giocatore con TUTTE le difese: schivata, parata, scudo, armatura */
+function damagePlayer(
+  R: Runtime,
+  dmg: number,
+  onFloater: (f: FloaterIn) => void,
+  camera: THREE.Camera,
+  size: { width: number; height: number },
+  attacker: EnemyRT | null
+) {
+  // schivata: invulnerabilità totale
+  if (R.dodgeT > 0) {
+    addFloater(R, onFloater, camera, size, R.px, R.py + 2, R.pz, 'SCHIVATA!', '#7cffb2')
+    return
+  }
+  // parata perfetta: danno nullo + contrattacco + nemico stordito
+  if (R.parryT > 0 && attacker) {
+    R.parryT = 0
+    R.riposteT = performance.now() + 1600
+    attacker.stunT = 1.4
+    sfx.hit()
+    addFloater(R, onFloater, camera, size, R.px, R.py + 2.1, R.pz, '⚡ PARRATA PERFETTA!', '#ffd23a')
+    flashMsg(R, '⚡ Contrattacco pronto: colpisci ORA!')
+    return
+  }
+  // scudo arcano
+  if (R.shieldT > 0) dmg = Math.max(1, Math.round(dmg * 0.3))
+  // armatura
+  dmg = Math.max(1, Math.round(dmg - R.def))
+  R.hp -= dmg
+  sfx.hurt()
+  addFloater(R, onFloater, camera, size, R.px, R.py + 1.9, R.pz, `-${dmg}`, '#ff3355')
+  window.dispatchEvent(new Event('game3d-hurt'))
+}
+
 function hurtEnemy(
   R: Runtime,
   e: EnemyRT,
@@ -1053,12 +1464,13 @@ function hurtEnemy(
   onFloater: (f: FloaterIn) => void,
   camera: THREE.Camera,
   size: { width: number; height: number },
-  endNow: (r: 'win' | 'lose') => void
+  endNow: (r: 'win' | 'lose') => void,
+  crit = false
 ) {
   e.hp -= dmg
   e.flash = 0.14
   sfx.hit()
-  addFloater(R, onFloater, camera, size, e.x, e.y + (e.boss ? 3.2 : 2.4), e.z, `-${dmg}`, '#ff5a7a')
+  addFloater(R, onFloater, camera, size, e.x, e.y + (e.boss ? 3.2 : 2.4), e.z, crit ? `💥 ${dmg}!` : `-${dmg}`, crit ? '#ffb43a' : '#ff5a7a')
   if (e.hp <= 0) {
     e.dead = true
     e.deadAt = performance.now()
@@ -1066,6 +1478,44 @@ function hurtEnemy(
     const coins = 1 + Math.floor(Math.random() * 3)
     R.coins += coins
     flashMsg(R, e.boss ? '☠ BOSS ELIMINATO!' : `Nemico eliminato · +${coins} ◈`)
+    // ---- v13: XP, livelli e bottino ----
+    if (R.combat.xp) {
+      R.xp += Math.round((R.rpg.xpPerKill ?? 20) * (e.boss ? 5 : 1))
+      while (R.xp >= R.xpNext) {
+        R.xp -= R.xpNext
+        R.level++
+        R.xpNext = 60 * R.level
+        R.skillPts++
+        R.maxHp += 10
+        R.hp = Math.min(R.maxHp, R.hp + 25)
+        sfx.win()
+        flashMsg(R, `⭐ LIVELLO ${R.level}! +1 punto abilità (TAB) · vita +10`)
+      }
+    }
+    // bottino: probabilità di far cadere un oggetto del catalogo RPG
+    const items = R.rpg.items ?? []
+    if (items.length && Math.random() < (e.boss ? 0.9 : 0.18)) {
+      const w = Math.random()
+      const pool = items.filter(it =>
+        w < 0.6 ? it.rarity === 'comune'
+          : w < 0.85 ? it.rarity === 'raro'
+            : w < 0.97 ? it.rarity === 'epico'
+              : it.rarity === 'leggendario'
+      )
+      const drop = (pool.length ? pool : items)[Math.floor(Math.random() * (pool.length || items.length))]
+      if (drop) {
+        const ang = Math.random() * Math.PI * 2
+        R.items.push({
+          id: `loot_${Math.random().toString(36).slice(2, 8)}`,
+          kind: 'rpgitem',
+          x: e.x + Math.cos(ang) * 0.8,
+          z: e.z + Math.sin(ang) * 0.8,
+          amount: 1,
+          taken: false,
+          rpgId: drop.id,
+        })
+      }
+    }
     if (e.boss && R.objective.startsWith('☠')) endNow('win')
   }
 }
@@ -1147,13 +1597,16 @@ function ImportedWorld() {
   const customAssets = useWorld(s => s.customAssets)
   const version = useWorld(s => s.terrainVersion)
   const terrain = useWorld(s => s.terrain)
+  const vast = useWorld(s => s.vast)
   const groundY = useMemo(() => {
     void version
-    return (x: number, z: number) => terrainHeightAt(terrain, x, z)
-  }, [terrain, version])
+    return (x: number, z: number) =>
+      vast ? vastHeight(x, z, vast) : terrain ? terrainHeightAt(terrain, x, z) : 0
+  }, [terrain, vast, version])
   return (
     <group>
-      <SculptedTerrain />
+      {/* v13: con il MONDO VASTO il terreno infinito sostituisce il rettangolo */}
+      {vast ? <VastWorld cfg={vast} /> : <SculptedTerrain />}
       {objects.map((o: WO) => {
         const def = getAssetDef(o.asset, customAssets)
         if (!def) return null
@@ -1161,6 +1614,83 @@ function ImportedWorld() {
         return (
           <group key={o.id} position={[o.x, groundY(o.x, o.z), o.z]}>
             <AssetRender color={o.color} rot={o.rot} scale={o.scale} />
+          </group>
+        )
+      })}
+    </group>
+  )
+}
+
+/** v13: interni delle case — stanze pronte nelle tasche lontane */
+function HouseInteriors({ rt }: { rt: React.MutableRefObject<Runtime> }) {
+  const doors = rt.current.doors
+  if (!doors.length) return null
+  return (
+    <group>
+      {doors.map((d0, i) => {
+        const cx = d0.pocketX
+        const cz = d0.pocketZ
+        const wallMat = <meshStandardMaterial color="#b8a284" roughness={0.9} />
+        const floorMat = <meshStandardMaterial color="#7a5c3e" roughness={0.85} />
+        void i
+        return (
+          <group key={d0.sceneId} position={[cx, 0, cz]}>
+            {/* pavimento */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]} receiveShadow>
+              <planeGeometry args={[12, 12]} />
+              {floorMat}
+            </mesh>
+            {/* muri (gap per la porta sul lato +z) */}
+            <mesh position={[0, 1.6, -6]} castShadow receiveShadow>
+              <boxGeometry args={[12, 3.2, 0.3]} />
+              {wallMat}
+            </mesh>
+            <mesh position={[-6, 1.6, 0]} castShadow receiveShadow>
+              <boxGeometry args={[0.3, 3.2, 12]} />
+              {wallMat}
+            </mesh>
+            <mesh position={[6, 1.6, 0]} castShadow receiveShadow>
+              <boxGeometry args={[0.3, 3.2, 12]} />
+              {wallMat}
+            </mesh>
+            <mesh position={[-3.9, 1.6, 6]} castShadow receiveShadow>
+              <boxGeometry args={[4.2, 3.2, 0.3]} />
+              {wallMat}
+            </mesh>
+            <mesh position={[3.9, 1.6, 6]} castShadow receiveShadow>
+              <boxGeometry args={[4.2, 3.2, 0.3]} />
+              {wallMat}
+            </mesh>
+            {/* tetto */}
+            <mesh position={[0, 3.35, 0]} castShadow>
+              <boxGeometry args={[12.6, 0.25, 12.6]} />
+              <meshStandardMaterial color="#6b4a34" roughness={0.9} />
+            </mesh>
+            {/* porta di uscita luminosa sul lato +z */}
+            <mesh position={[0, 1.1, 5.95]}>
+              <boxGeometry args={[1.5, 2.2, 0.12]} />
+              <meshStandardMaterial color="#fcee0a" emissive="#fcee0a" emissiveIntensity={0.65} transparent opacity={0.85} />
+            </mesh>
+            {/* torce */}
+            <pointLight position={[-3.5, 2.4, -3.5]} color="#ffb46a" intensity={14} distance={11} />
+            <pointLight position={[3.5, 2.4, 3.5]} color="#ffb46a" intensity={14} distance={11} />
+            <mesh position={[-3.5, 2.4, -3.5]}>
+              <sphereGeometry args={[0.12, 8, 8]} />
+              <meshBasicMaterial color="#ffca7a" toneMapped={false} />
+            </mesh>
+            <mesh position={[3.5, 2.4, 3.5]}>
+              <sphereGeometry args={[0.12, 8, 8]} />
+              <meshBasicMaterial color="#ffca7a" toneMapped={false} />
+            </mesh>
+            {/* tavolo + sedie semplici */}
+            <mesh position={[0, 0.55, -2]} castShadow>
+              <boxGeometry args={[2.2, 0.12, 1.2]} />
+              <meshStandardMaterial color="#8a6a48" roughness={0.8} />
+            </mesh>
+            <mesh position={[0, 0.25, -2]} castShadow>
+              <cylinderGeometry args={[0.12, 0.16, 0.5, 8]} />
+              <meshStandardMaterial color="#6b4a34" />
+            </mesh>
           </group>
         )
       })}
@@ -1222,7 +1752,35 @@ function PlayerGlb({
       if (code === 'KeyD' || code === 'ArrowRight') keys.current.r = down
       if (code === 'ShiftLeft' || code === 'ShiftRight') keys.current.run = down
     }
-    const down = (e: KeyboardEvent) => set(e.code, true)
+    const down = (e: KeyboardEvent) => {
+      set(e.code, true)
+      // v13: schivata / parata / magia anche col personaggio GLB
+      const R = rt.current
+      if (e.code === 'KeyE' && runRef.current && R.combat.dodge && R.dodgeCd <= 0 && R.dodgeT <= 0 && R.stamina >= DODGE_COST) {
+        R.stamina -= DODGE_COST
+        R.dodgeCd = DODGE_CD
+        R.dodgeT = DODGE_TIME
+        let ix = (keys.current.r ? 1 : 0) - (keys.current.l ? 1 : 0)
+        let iz = (keys.current.b ? 1 : 0) - (keys.current.f ? 1 : 0)
+        if (!ix && !iz) { ix = 0; iz = -1 }
+        const L = Math.hypot(ix, iz) || 1
+        const sin = Math.sin(R.yaw)
+        const cos = Math.cos(R.yaw)
+        R.dodgeX = (-sin * -iz + cos * ix) / L
+        R.dodgeZ = (-cos * -iz + -sin * ix) / L
+        sfx.step()
+      }
+      if (e.code === 'KeyF' && runRef.current && R.combat.parry && R.parryCd <= 0) {
+        R.parryCd = PARRY_CD
+        R.parryT = PARRY_WINDOW
+        sfx.step()
+      }
+      if (e.code === 'KeyQ' && runRef.current) R.cast = performance.now()
+      if (/^Digit[1-4]$/.test(e.code) && runRef.current) {
+        const idx = Number(e.code.slice(5)) - 1
+        if (R.spells[idx]) R.selSpell = idx
+      }
+    }
     const up = (e: KeyboardEvent) => set(e.code, false)
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
@@ -1230,7 +1788,7 @@ function PlayerGlb({
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
     }
-  }, [])
+  }, [rt, runRef])
 
   // drag visuale
   useEffect(() => {
@@ -1267,7 +1825,9 @@ function PlayerGlb({
   }, [])
 
   const canStand = (x: number, z: number) => {
-    if (Math.abs(x) > GRID_HALF || Math.abs(z) > GRID_HALF) return false
+    if (rt.current.interior != null) return !blocked.has(`${Math.round(x)},${Math.round(z)}`)
+    const half = useWorld.getState().vast ? VAST_HALF : GRID_HALF
+    if (Math.abs(x) > half || Math.abs(z) > half) return false
     return !blocked.has(`${Math.round(x)},${Math.round(z)}`)
   }
 
@@ -1281,10 +1841,32 @@ function PlayerGlb({
     const mv = k.f || k.b || k.l || k.r
     if (a) a.paused = !mv
 
+    // v13: ricariche e rigenerazioni (path GLB)
+    if (R.dodgeCd > 0) R.dodgeCd = Math.max(0, R.dodgeCd - dt)
+    if (R.parryCd > 0) R.parryCd = Math.max(0, R.parryCd - dt)
+    if (R.parryT > 0) R.parryT = Math.max(0, R.parryT - dt)
+    if (R.riposteT > 0 && performance.now() > R.riposteT) R.riposteT = 0
+    if (R.shieldT > 0) R.shieldT = Math.max(0, R.shieldT - dt)
+    for (const sp of R.spells) if (sp.cd > 0) sp.cd = Math.max(0, sp.cd - dt)
+    R.mana = Math.min(R.maxMana, R.mana + dt * 3)
+
     let lastDx = 0
     let lastDz = 0
-    if (mv) {
-      const speed = k.run ? RUN_SPEED : SPEED
+    if (R.dodgeT > 0) {
+      R.dodgeT = Math.max(0, R.dodgeT - dt)
+      lastDx = R.dodgeX * DODGE_SPEED * dt
+      lastDz = R.dodgeZ * DODGE_SPEED * dt
+      const nx = R.px + lastDx
+      const nz = R.pz + lastDz
+      if (canStand(nx, R.pz)) R.px = nx
+      if (canStand(R.px, nz)) R.pz = nz
+      R.py += (groundHeightAt(R.px, R.pz) - R.py) * Math.min(1, dt * 12)
+      facing.current = Math.atan2(lastDx, lastDz) + Math.PI
+    } else if (mv) {
+      const wantRun = k.run && R.combat.sprint && R.stamina > 1
+      if (wantRun) R.stamina = Math.max(0, R.stamina - SPRINT_DRAIN * dt)
+      const spdMul = 1 + R.speedPct / 100
+      const speed = (wantRun ? RUN_SPEED : SPEED) * spdMul
       const ix = (k.r ? 1 : 0) - (k.l ? 1 : 0)
       const iz = (k.b ? 1 : 0) - (k.f ? 1 : 0)
       const sin = Math.sin(R.yaw)
@@ -1310,6 +1892,8 @@ function PlayerGlb({
       while (diff < -Math.PI) diff += Math.PI * 2
       facing.current += diff * Math.min(1, dt * 12)
     }
+    // rigenerazione stamina (path GLB)
+    if (!(mv && k.run && R.combat.sprint)) R.stamina = Math.min(R.maxStamina, R.stamina + R.staminaRegen * dt)
 
     if (group.current) {
       group.current.position.set(R.px, R.py, R.pz)
@@ -1344,20 +1928,30 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
   const [phase, setPhase] = useState<'loading' | 'error' | 'intro' | 'play'>('loading')
   const [errMsg, setErrMsg] = useState('')
   const [worldLabel, setWorldLabel] = useState(project.settings.worldProjectName ?? '')
-  const [hud, setHud] = useState({
+  const [hud, setHud] = useState<HudState>({
     hp: project.settings.playerHp,
     maxHp: project.settings.playerHp,
     coins: 0,
     keys: 0,
     msg: '',
     objective: '',
+    stamina: 100, maxStamina: 100,
+    mana: 50, maxMana: 50,
+    xp: 0, xpNext: 60, level: 1, pts: 0,
+    combo: 0, shield: false, parryReady: true,
+    spellIdx: 0, spells: [],
+    quests: [],
+    invCount: 0,
+    interior: false,
   })
-  const [dialogue, setDialogue] = useState<{ name: string; pages: string[] } | null>(null)
-  const [page, setPage] = useState(0)
+  const [dialogue, setDialogue] = useState<DlgState>(null)
   const [end, setEnd] = useState<'win' | 'lose' | null>(null)
   const [floaters, setFloaters] = useState<FloaterUI[]>([])
   const [hurtFlash, setHurtFlash] = useState(false)
   const [runId, setRunId] = useState(0)
+  const [showInv, setShowInv] = useState(false)
+  const [showTree, setShowTree] = useState(false)
+  const [, setTick] = useState(0) // rerender per inventario/albero
   const [glOK] = useState(() => webglSupported())
 
   const rtRef = useRef<Runtime | null>(null)
@@ -1408,12 +2002,16 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
           worldStyle: 'realistico',
           playerAsset: st.playerAsset ?? null,
           skyboxUrl: st.skyboxUrl ?? null,
+          vast: st.vast ?? null, // v13: MONDO VASTO del mondo collegato!
           brush: 'none',
           playMode: false,
           selectedAsset: null,
         })
         setWorldLabel(data.project.name)
-        setPhase(project.settings.intro && project.settings.intro.length ? 'intro' : 'play')
+        // v13: se c'è una STORIA RPG e nessuna intro, la storia diventa l'intro
+        const story = project.settings.rpg?.story
+        const hasIntro = !!(project.settings.intro && project.settings.intro.length) || !!(story && (story.logline || story.synopsis))
+        setPhase(hasIntro ? 'intro' : 'play')
       } catch (e) {
         if (!cancelled) {
           setErrMsg(e instanceof Error ? e.message : 'Errore di caricamento')
@@ -1434,20 +2032,68 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
     const H = project.scenes[0]?.h ?? 32
     const enemies: EnemyRT[] = []
     const items: ItemRT[] = []
-    let npc: Runtime['npc'] = null
+    const npcs: NpcRT[] = []
+    const doors: DoorRT[] = []
     let portal: Runtime['portal'] = null
     let start = { x: 0, z: 0 }
     const diff = project.settings.difficulty
     const aggro = diff === 3 ? 16 : diff === 2 ? 12 : 8
+    const rpg = project.settings.rpg ?? {}
+    const combat = { ...DEFAULT_COMBAT, ...(rpg.combat ?? {}) }
+
+    // porte: ogni scena di destinazione diventa un "interno" (tasca lontana)
+    const scenePocket = new Map<string, number>()
+    const pocketOf = (sceneId: string) => {
+      if (!scenePocket.has(sceneId)) scenePocket.set(sceneId, scenePocket.size)
+      return scenePocket.get(sceneId)!
+    }
 
     for (const e of entities) {
       const [wx, wz] = schematicToWorld(e.x, e.y, W, H)
       if (e.type === 'player') start = { x: wx, z: wz }
       else if (e.type === 'goal') portal = { x: wx, z: wz, active: true }
-      else if (e.type === 'npc')
-        npc = { x: wx, z: wz, name: e.props.name ?? 'ALLEATO', pages: e.props.pages ?? ['Buona fortuna.'] }
-      else if (e.type === 'enemy') {
+      else if (e.type === 'npc') {
+        const name = e.props.name ?? 'ALLEATO'
+        // collega il dialogo RPG tramite il nome del personaggio
+        const char = (rpg.characters ?? []).find(c => c.name.trim().toLowerCase() === name.trim().toLowerCase())
+        const dlg = (rpg.dialogues ?? []).find(d => d.characterId === char?.id) ?? null
+        const routeCfg = (rpg.routes ?? []).find(rr => rr.characterId === char?.id)
+        const route = (routeCfg?.waypoints ?? []).map(w2 => schematicToWorld(w2.x, w2.y, W, H)).map(([a, b]) => ({ x: a, z: b }))
+        npcs.push({
+          id: e.id,
+          name,
+          color: char?.color ?? e.props.color ?? '#fcee0a',
+          x: wx,
+          z: wz,
+          homeX: wx,
+          homeZ: wz,
+          pages: e.props.pages ?? ['Buona fortuna.'],
+          dialogueId: dlg?.id ?? null,
+          route,
+          routeLoop: routeCfg?.loop ?? true,
+          routeSpeed: routeCfg?.speed ?? 1.6,
+          wpIdx: 0,
+          waitT: 0,
+        })
+      } else if (e.type === 'door') {
+        const target = e.props.targetScene
+        if (target && project.scenes.some(s => s.id === target)) {
+          const idx = pocketOf(target)
+          doors.push({
+            x: wx,
+            z: wz,
+            pocketIdx: idx,
+            pocketX: POCKET_BASE + idx * POCKET_SPACING,
+            pocketZ: 0,
+            sceneId: target,
+            backX: wx + 0.01,
+            backZ: wz + 1.4,
+          })
+        }
+      } else if (e.type === 'enemy') {
         const kind = e.props.kind ?? 'soldato'
+        // le statistiche del personaggio RPG collegato (se boss/nemico) vincono
+        const char = (rpg.characters ?? []).find(c => c.name.trim().toLowerCase() === (e.props.name ?? '').trim().toLowerCase() && (c.role === 'nemico' || c.role === 'boss'))
         enemies.push({
           id: e.id,
           kind,
@@ -1455,11 +2101,11 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
           z: wz,
           homeX: wx,
           homeZ: wz,
-          hp: e.props.hp ?? 60,
-          maxHp: e.props.hp ?? 60,
-          dmg: e.props.dmg ?? 10,
-          speed: e.props.speed ?? (kind === 'drone' ? 3.4 : 2.2),
-          color: e.props.color ?? '#ff5a5a',
+          hp: char?.hp ?? e.props.hp ?? 60,
+          maxHp: char?.hp ?? e.props.hp ?? 60,
+          dmg: char?.dmg ?? e.props.dmg ?? 10,
+          speed: (e.props.speed ?? (kind === 'drone' ? 3.4 : 2.2)) * (char?.speed ?? 1),
+          color: char?.color ?? e.props.color ?? '#ff5a5a',
           aggro,
           flying: kind === 'drone',
           turret: kind === 'turret',
@@ -1472,9 +2118,44 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
           deadAt: 0,
           flash: 0,
           y: 0,
+          stunT: 0,
         })
       } else if (e.type === 'item') {
         items.push({ id: e.id, kind: e.props.kind ?? 'moneta', x: wx, z: wz, amount: e.props.amount ?? 1, taken: false })
+      }
+    }
+
+    // oggetti e PNG degli interni delle case (dalle scene di destinazione)
+    for (const d0 of doors) {
+      const sc = project.scenes.find(s => s.id === d0.sceneId)
+      if (!sc) continue
+      const offX = d0.pocketX - schematicToWorld(Math.floor(sc.w / 2), Math.floor(sc.h / 2), sc.w, sc.h)[0]
+      const offZ = d0.pocketZ - schematicToWorld(Math.floor(sc.w / 2), Math.floor(sc.h / 2), sc.w, sc.h)[1]
+      for (const e2 of sc.entities) {
+        const [ix, iz] = schematicToWorld(e2.x, e2.y, sc.w, sc.h)
+        if (e2.type === 'item') {
+          items.push({ id: `${d0.sceneId}_${e2.id}`, kind: e2.props.kind ?? 'moneta', x: ix + offX, z: iz + offZ, amount: e2.props.amount ?? 1, taken: false })
+        } else if (e2.type === 'npc') {
+          const name = e2.props.name ?? 'ALLEATO'
+          const char = (rpg.characters ?? []).find(c => c.name.trim().toLowerCase() === name.trim().toLowerCase())
+          const dlg = (rpg.dialogues ?? []).find(d => d.characterId === char?.id) ?? null
+          npcs.push({
+            id: `${d0.sceneId}_${e2.id}`,
+            name,
+            color: char?.color ?? '#fcee0a',
+            x: ix + offX,
+            z: iz + offZ,
+            homeX: ix + offX,
+            homeZ: iz + offZ,
+            pages: e2.props.pages ?? ['Che piacere avere ospiti!'],
+            dialogueId: dlg?.id ?? null,
+            route: [],
+            routeLoop: true,
+            routeSpeed: 1.4,
+            wpIdx: 0,
+            waitT: 0,
+          })
+        }
       }
     }
 
@@ -1495,6 +2176,14 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
           ? `🔑 Trova ${project.settings.objectiveCount} chiavi, poi il portale`
           : '→ Raggiungi il portale dorato'
 
+    // ---- v13: statistiche, inventario, magie e abilità ----
+    const spells = (rpg.spells && rpg.spells.length ? rpg.spells : combat.mana ? defaultSpells() : [])
+      .map(sp => ({ ...sp, cd: 0, cd0: sp.cd }))
+    const inv = (rpg.startItems ?? []).map(id => ({ itemId: id, count: 1 }))
+    const itemById = (id: string) => (rpg.items ?? []).find(x => x.id === id)
+    const weaponItem = (rpg.startItems ?? []).map(itemById).find(it => it?.kind === 'arma')
+    const armorItem = (rpg.startItems ?? []).map(itemById).find(it => it?.kind === 'armatura')
+
     rtRef.current = {
       phase: 'play',
       px: start.x,
@@ -1508,7 +2197,11 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
       enemies,
       projs: [],
       items,
-      npc,
+      npc: npcs[0] ? { x: npcs[0].x, z: npcs[0].z, name: npcs[0].name, pages: npcs[0].pages } : null,
+      npcs,
+      doors,
+      interior: null,
+      doorLatch: 0,
       portal: project.settings.objective === 'boss' ? null : portal,
       objective,
       attack: 0,
@@ -1517,6 +2210,43 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
       msg: '',
       msgT: 0,
       ended: null,
+      combat,
+      rpg,
+      stamina: 100,
+      maxStamina: 100,
+      staminaRegen: 9,
+      mana: combat.mana ? 50 : 0,
+      maxMana: combat.mana ? 50 : 0,
+      dodgeT: 0,
+      dodgeCd: 0,
+      dodgeX: 0,
+      dodgeZ: 0,
+      parryT: 0,
+      parryCd: 0,
+      riposteT: 0,
+      combo: 0,
+      comboT: 0,
+      critPct: 5,
+      dmgBonus: (weaponItem?.dmg ?? 0),
+      def: (armorItem?.def ?? 0),
+      speedPct: 0,
+      shieldT: 0,
+      xp: 0,
+      xpNext: 60,
+      level: 1,
+      skillPts: 0,
+      skills: rpg.skills && rpg.skills.length ? rpg.skills : defaultSkills(),
+      bought: [],
+      spells,
+      selSpell: 0,
+      cast: 0,
+      inv,
+      weaponItemId: weaponItem?.id ?? null,
+      armorItemId: armorItem?.id ?? null,
+      quests: [],
+      dlg: null,
+      lastOutX: start.x,
+      lastOutZ: start.z,
     }
     runRef.current = true
     return () => { runRef.current = false }
@@ -1544,20 +2274,39 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
     return () => clearTimeout(t)
   }, [floaters])
 
-  // ESC esce dal gioco (se non ci sono dialoghi)
+  // ESC esce dal gioco (se non ci sono dialoghi o pannelli aperti)
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.code === 'Escape' && phase === 'play' && !dialogue && !end) onExit()
+      if (e.code === 'Escape' && phase === 'play' && !dialogue && !end) {
+        if (showInv) { setShowInv(false); return }
+        if (showTree) { setShowTree(false); return }
+        onExit()
+      }
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [phase, dialogue, end, onExit])
+  }, [phase, dialogue, end, onExit, showInv, showTree])
+
+  // v13: I = inventario, T = albero abilità
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (phase !== 'play' || dialogue || end) return
+      if (e.code === 'KeyI') { setShowInv(v => !v); setShowTree(false) }
+      if (e.code === 'KeyT' || e.code === 'Tab') {
+        e.preventDefault()
+        setShowTree(v => !v)
+        setShowInv(false)
+      }
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [phase, dialogue, end])
 
   const addFloaterUI = useCallback((f: FloaterIn) => {
     setFloaters(prev => [...prev.slice(-10), { ...f, t: performance.now() }])
   }, [])
 
-  const onHud = useCallback((h: { hp: number; maxHp: number; coins: number; keys: number; msg: string; objective: string }) => {
+  const onHud = useCallback((h: HudState) => {
     setHud(h)
   }, [])
 
@@ -1566,9 +2315,8 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
     runRef.current = false
   }, [])
 
-  const onDialogue = useCallback((d: { name: string; pages: string[] } | null) => {
+  const onDialogue = useCallback((d: DlgState) => {
     setDialogue(d)
-    setPage(0)
   }, [])
 
   const closeDialogue = () => {
@@ -1576,10 +2324,131 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
     window.dispatchEvent(new Event('dialogue3d-closed'))
   }
 
-  const advanceDialogue = () => {
-    if (!dialogue) return
-    if (page < dialogue.pages.length - 1) setPage(p => p + 1)
-    else closeDialogue()
+  // v13: scelta nel dialogo ad albero — applica l'effetto e avanza
+  const chooseDialogue = (choiceId: string) => {
+    const R = rtRef.current
+    if (!R) { closeDialogue(); return }
+    if (dialogue?.mode === 'pages' || choiceId === '__next') {
+      // dialogo semplice a pagine: mostra la pagina successiva
+      const npc = R.npcs.find(n => dialogue && n.name === dialogue.name)
+      if (npc && dialogue) {
+        const idx = npc.pages.indexOf(dialogue.text)
+        if (idx >= 0 && idx < npc.pages.length - 1) {
+          setDialogue({ ...dialogue, text: npc.pages[idx + 1] })
+          return
+        }
+      }
+      closeDialogue()
+      return
+    }
+    if (!R.dlg) { closeDialogue(); return }
+    const dlg = (R.rpg.dialogues ?? []).find(x => x.id === R.dlg!.dialogueId)
+    const node = dlg?.nodes.find(n => n.id === R.dlg!.nodeId)
+    const choice = node?.choices.find(c => c.id === choiceId)
+    if (!dlg || !node || !choice) { closeDialogue(); return }
+    // effetti della scelta
+    const act = choice.action
+    if (act?.kind === 'dai' && act.itemId) {
+      const item = (R.rpg.items ?? []).find(x => x.id === act.itemId)
+      if (item) {
+        const slot = R.inv.find(x => x.itemId === item.id)
+        if (slot) slot.count++
+        else R.inv.push({ itemId: item.id, count: 1 })
+        flashMsg(R, `${item.icon} ${item.name} ricevuto!`)
+        sfx.pickup()
+      }
+    } else if (act?.kind === 'missione') {
+      const qid = act.questId || `mission_${Date.now()}`
+      if (!R.quests.some(q => q.id === qid)) {
+        R.quests.push({ id: qid, title: `📜 ${dlg.title || 'Missione'}`, done: false })
+        flashMsg(R, '📜 Nuova missione aggiunta!')
+        sfx.pickup()
+      }
+    } else if (act?.kind === 'cura') {
+      R.hp = R.maxHp
+      R.stamina = R.maxStamina
+      R.mana = R.maxMana
+      sfx.heal()
+      flashMsg(R, '💚 Ti senti rigenerato!')
+    }
+    // avanza o chiudi
+    if (choice.next) {
+      const next = dlg.nodes.find(n => n.id === choice.next)
+      if (next) {
+        R.dlg = { ...R.dlg, nodeId: next.id }
+        setDialogue({
+          name: dialogue?.name ?? '?',
+          color: dialogue?.color ?? '#fcee0a',
+          text: next.text,
+          choices: next.choices.length
+            ? next.choices.map(c => ({ id: c.id, text: c.text }))
+            : [{ id: '__close', text: '(Congedati) ▸' }],
+          mode: 'tree',
+        })
+        return
+      }
+    }
+    closeDialogue()
+  }
+
+  // v13: usa/equipaggia un oggetto dall'inventario
+  const useItem = (itemId: string) => {
+    const R = rtRef.current
+    if (!R) return
+    const item = (R.rpg.items ?? []).find(x => x.id === itemId)
+    const slot = R.inv.find(x => x.itemId === itemId)
+    if (!item || !slot) return
+    if (item.kind === 'pozione') {
+      if (item.heal) R.hp = Math.min(R.maxHp, R.hp + item.heal)
+      if (item.mana) R.mana = Math.min(R.maxMana, R.mana + item.mana)
+      slot.count--
+      if (slot.count <= 0) R.inv = R.inv.filter(x => x.itemId !== itemId)
+      sfx.heal()
+      flashMsg(R, `${item.icon} ${item.name} usata!`)
+    } else if (item.kind === 'arma') {
+      // togli il bonus dell'arma precedente e metti quella nuova
+      const prev = (R.rpg.items ?? []).find(x => x.id === R.weaponItemId)
+      R.dmgBonus -= prev?.dmg ?? 0
+      R.weaponItemId = item.id
+      R.dmgBonus += item.dmg ?? 0
+      sfx.pickup()
+      flashMsg(R, `⚔ ${item.name} equipaggiata (+${item.dmg ?? 0} danni)`)
+    } else if (item.kind === 'armatura' || item.kind === 'amuleto') {
+      const prev = (R.rpg.items ?? []).find(x => x.id === R.armorItemId)
+      R.def -= prev?.def ?? 0
+      R.armorItemId = item.id
+      R.def += item.def ?? 0
+      sfx.pickup()
+      flashMsg(R, `🛡 ${item.name} indossata (+${item.def ?? 0} difesa)`)
+    }
+    setTick(t => t + 1)
+  }
+
+  // v13: compra un nodo dell'albero abilità
+  const buySkill = (id: string) => {
+    const R = rtRef.current
+    if (!R) return
+    const node = R.skills.find(s => s.id === id)
+    if (!node || R.bought.includes(id)) return
+    if (R.skillPts < node.cost) return
+    if (!node.req.every(q => R.bought.includes(q))) return
+    R.skillPts -= node.cost
+    R.bought.push(id)
+    const ef = node.effect
+    if (ef.hp) { R.maxHp += ef.hp; R.hp += ef.hp }
+    if (ef.dmg) R.dmgBonus += ef.dmg
+    if (ef.stamina) { R.maxStamina += ef.stamina; R.stamina += ef.stamina }
+    if (ef.mana) { R.maxMana += ef.mana; R.mana += ef.mana }
+    if (ef.speed) R.speedPct += ef.speed
+    if (ef.crit) R.critPct += ef.crit
+    if (ef.regen) R.staminaRegen += ef.regen
+    if (ef.spell) {
+      const sp = defaultSpells().find(x => x.id === ef.spell)
+      if (sp && !R.spells.some(x => x.id === sp.id)) R.spells.push({ ...sp, cd: 0, cd0: sp.cd })
+    }
+    sfx.win()
+    flashMsg(R, `${node.icon} ${node.name} sbloccata!`)
+    setTick(t => t + 1)
   }
 
   const vkey = (code: string, down: boolean) => {
@@ -1637,7 +2506,7 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
         </div>
       </div>
 
-      {/* HUD */}
+      {/* HUD (v13: HP + stamina + mana + XP + livelli + magie) */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-[var(--line)] bg-[var(--panel)] px-3 py-1.5 text-xs">
         <div className="flex items-center gap-2">
           <span className="text-[var(--tx-dim)]">HP</span>
@@ -1656,9 +2525,50 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
           </div>
           <span className="text-[var(--tx)]">{hud.hp}/{hud.maxHp}</span>
         </div>
+        {/* stamina */}
+        <div className="flex items-center gap-1">
+          <span className="text-[var(--tx-dim)]" title="Stamina (corri con SHIFT, schiva con E)">STA</span>
+          <div className="h-2 w-24 overflow-hidden rounded-sm bg-black/60 ring-1 ring-[var(--line)]">
+            <div className="h-full bg-gradient-to-r from-yellow-500 to-yellow-300 transition-all" style={{ width: `${(hud.stamina / hud.maxStamina) * 100}%` }} />
+          </div>
+        </div>
+        {/* mana */}
+        {hud.maxMana > 0 && (
+          <div className="flex items-center gap-1">
+            <span className="text-[var(--tx-dim)]" title="Mana (lancia magie con Q)">MP</span>
+            <div className="h-2 w-24 overflow-hidden rounded-sm bg-black/60 ring-1 ring-[var(--line)]">
+              <div className="h-full bg-gradient-to-r from-blue-600 to-cyan-300 transition-all" style={{ width: `${(hud.mana / hud.maxMana) * 100}%` }} />
+            </div>
+          </div>
+        )}
+        {/* XP e livello */}
+        <div className="flex items-center gap-1">
+          <span className="font-bold text-[#ffb43a]">Lv.{hud.level}</span>
+          <div className="h-2 w-20 overflow-hidden rounded-sm bg-black/60 ring-1 ring-[var(--line)]" title="Esperienza">
+            <div className="h-full bg-gradient-to-r from-amber-600 to-amber-300 transition-all" style={{ width: `${Math.min(100, (hud.xp / hud.xpNext) * 100)}%` }} />
+          </div>
+          {hud.pts > 0 && <span className="cp-chip animate-pulse text-[10px] text-[#ffb43a]">⭐ {hud.pts} pt (TAB)</span>}
+        </div>
+        {/* slot magie */}
+        {hud.spells.length > 0 && (
+          <div className="flex items-center gap-1">
+            {hud.spells.map((sp, i) => (
+              <span
+                key={i}
+                className={`inline-flex h-6 w-6 items-center justify-center rounded-md text-sm ring-1 ${i === hud.spellIdx ? 'bg-[var(--primary-soft)] ring-[var(--neon)]' : 'bg-black/40 ring-[var(--line)] opacity-70'}`}
+                title={`Tasto ${i + 1}: mana ${sp.mana}${sp.cd > 0 ? ` · ricarica ${sp.cd}s` : ''}`}
+              >
+                {sp.icon}
+              </span>
+            ))}
+            <span className="text-[10px] text-[var(--tx-faint)]">Q lancia</span>
+          </div>
+        )}
+        {hud.shield && <span title="Scudo attivo">🔵</span>}
+        {hud.combo > 1 && <span className="font-black text-[#ff7a2b]">COMBO ×{hud.combo}</span>}
         <span className="text-[#fcee0a]">◈ {hud.coins}</span>
         <span className="text-[var(--neon)]">🔑 {hud.keys}{project.settings.objective === 'collezione' ? `/${project.settings.objectiveCount}` : ''}</span>
-        <span className="hidden text-[var(--tx-dim)] md:inline">{hud.objective}</span>
+        <span className="ml-auto hidden text-[var(--tx-dim)] md:inline">{hud.objective}</span>
       </div>
 
       {/* scena 3D */}
@@ -1730,47 +2640,171 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
           </div>
         ))}
 
-        {/* intro */}
-        {phase === 'intro' && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-            <div className="cp-panel cp-panel-neon w-full max-w-xl p-6">
-              <div className="cp-chip cp-chip-active mb-3 w-fit">MISSIONE</div>
-              {(project.settings.intro ?? []).map((p, i) => (
-                <p key={i} className="mb-2 text-[15px] leading-relaxed text-[var(--tx)]">{p}</p>
-              ))}
-              <p className="mt-3 text-xs text-[var(--tx-faint)]">
-                WASD muovi · trascina il mouse per guardare · SPAZIO attacca · SHIFT corri
-              </p>
-              <Button
-                className="cp-btn mt-4 bg-[var(--neon)] font-bold text-[#04060d]"
-                onClick={() => { unlockAudio(); setPhase('play') }}
-              >
-                ▶ COMINCIA
-              </Button>
+        {/* intro (v13: usa la STORIA RPG se esiste) */}
+        {phase === 'intro' && (() => {
+          const story = project.settings.rpg?.story
+          const introText = (project.settings.intro ?? []).length
+            ? project.settings.intro!
+            : [
+                ...(story?.logline ? [story.logline] : []),
+                ...(story?.synopsis ? [story.synopsis] : []),
+              ]
+          return (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+              <div className="cp-panel cp-panel-neon max-h-[85vh] w-full max-w-xl overflow-y-auto p-6">
+                <div className="cp-chip cp-chip-active mb-3 w-fit">{story ? 'LA STORIA' : 'MISSIONE'}</div>
+                {introText.map((p, i) => (
+                  <p key={i} className="mb-2 whitespace-pre-line text-[15px] leading-relaxed text-[var(--tx)]">{p}</p>
+                ))}
+                {story?.chapters?.length ? (
+                  <div className="mt-3 border-t border-[var(--line)] pt-2">
+                    <p className="mb-1 text-xs font-bold text-[var(--tx-dim)]">CAPITOLO 1 — {story.chapters[0].title}</p>
+                    <p className="whitespace-pre-line text-sm leading-relaxed text-[var(--tx-dim)]">{story.chapters[0].text}</p>
+                  </div>
+                ) : null}
+                <p className="mt-3 text-xs text-[var(--tx-faint)]">
+                  WASD muovi · mouse guarda · SPAZIO/click attacca · SHIFT corri · E schiva · F parata · Q magia · I inventario · TAB abilità
+                </p>
+                <Button
+                  className="cp-btn mt-4 bg-[var(--neon)] font-bold text-[#04060d]"
+                  onClick={() => { unlockAudio(); setPhase('play') }}
+                >
+                  ▶ COMINCIA
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
-        {/* dialogo */}
+        {/* dialogo (v13: albero con scelte) */}
         {dialogue && (
           <div className="absolute inset-x-0 bottom-0 z-20 flex justify-center p-4">
-            <div className="cp-panel cp-panel-neon w-full max-w-2xl cursor-pointer p-4" onClick={advanceDialogue}>
-              <div className="neon-text mb-1 font-[family-name:var(--font-display)] text-xs font-bold tracking-[0.2em] uppercase">
+            <div className="cp-panel cp-panel-neon w-full max-w-2xl p-4">
+              <div
+                className="mb-1 font-[family-name:var(--font-display)] text-xs font-bold tracking-[0.2em] uppercase"
+                style={{ color: dialogue.color }}
+              >
                 ▸ {dialogue.name}
               </div>
-              <p className="min-h-12 text-[15px] leading-relaxed text-[var(--tx)]">{dialogue.pages[page]}</p>
-              <div className="mt-2 flex items-center justify-between text-[11px] text-[var(--tx-faint)]">
-                <span>{page + 1}/{dialogue.pages.length} — click per continuare</span>
+              <p className="min-h-12 text-[15px] leading-relaxed text-[var(--tx)]">{dialogue.text}</p>
+              <div className="mt-3 flex flex-col gap-1.5">
+                {dialogue.choices.map(c => (
+                  <button
+                    key={c.id}
+                    className="rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-3 py-2 text-left text-sm text-[var(--tx)] transition-colors hover:border-[var(--neon)] hover:bg-[var(--panel-hover)]"
+                    onClick={() => chooseDialogue(c.id)}
+                  >
+                    ▸ {c.text}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2 flex justify-end">
                 <button
                   className="cp-chip hover:text-[var(--neon)]"
-                  onClick={e => {
-                    e.stopPropagation()
-                    closeDialogue()
-                  }}
+                  onClick={() => closeDialogue()}
                 >
                   chiudi ✕
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* v13: INVENTARIO (tasto I) */}
+        {showInv && rtRef.current && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+            <div className="cp-panel cp-panel-neon max-h-[80vh] w-full max-w-lg overflow-y-auto p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-lg font-black text-[var(--tx)]">🎒 Inventario</h3>
+                <button className="cp-chip" onClick={() => setShowInv(false)}>chiudi ✕</button>
+              </div>
+              {(() => {
+                const R = rtRef.current!
+                if (!R.inv.length) return <p className="text-sm text-[var(--tx-dim)]">Zaino vuoto. Sconfiggi nemici per trovare bottino!</p>
+                return (
+                  <div className="flex flex-col gap-2">
+                    {R.inv.map(slot => {
+                      const it = (R.rpg.items ?? []).find(x => x.id === slot.itemId)
+                      if (!it) return null
+                      const equipped = R.weaponItemId === it.id || R.armorItemId === it.id
+                      return (
+                        <div key={it.id} className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] p-2.5">
+                          <span className="text-2xl">{it.icon}</span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-bold" style={{ color: RARITY_COLOR[it.rarity] }}>
+                              {it.name} {slot.count > 1 && <span className="text-[var(--tx-dim)]">×{slot.count}</span>}
+                              {equipped && <span className="ml-1 text-[10px] text-[var(--neon)]">[equipaggiato]</span>}
+                            </p>
+                            <p className="text-[11px] text-[var(--tx-dim)]">
+                              {it.dmg ? `⚔ ${it.dmg} · ` : ''}{it.def ? `🛡 ${it.def} · ` : ''}{it.heal ? `💚 ${it.heal} · ` : ''}{it.mana ? `🔮 ${it.mana} · ` : ''}{it.desc}
+                            </p>
+                          </div>
+                          {it.kind === 'pozione' && (
+                            <Button size="sm" className="cp-btn" onClick={() => useItem(it.id)}>Bevi</Button>
+                          )}
+                          {(it.kind === 'arma' || it.kind === 'armatura' || it.kind === 'amuleto') && (
+                            <Button size="sm" className="cp-btn" disabled={equipped} onClick={() => useItem(it.id)}>
+                              {equipped ? '✓' : 'Equipaggia'}
+                            </Button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+              <p className="mt-3 text-[11px] text-[var(--tx-faint)]">
+                Danni attuali: {rtRef.current.playerDmg + rtRef.current.dmgBonus} · difesa: {rtRef.current.def}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* v13: ALBERO ABILITÀ (tasto TAB) */}
+        {showTree && rtRef.current && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+            <div className="cp-panel cp-panel-neon max-h-[80vh] w-full max-w-2xl overflow-y-auto p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-lg font-black text-[var(--tx)]">🌳 Albero abilità</h3>
+                <span className="cp-chip text-[#ffb43a]">⭐ {rtRef.current.skillPts} punti</span>
+                <button className="cp-chip" onClick={() => setShowTree(false)}>chiudi ✕</button>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {rtRef.current.skills.map(sk => {
+                  const bought = rtRef.current!.bought.includes(sk.id)
+                  const canBuy = !bought && rtRef.current!.skillPts >= sk.cost && sk.req.every(q => rtRef.current!.bought.includes(q))
+                  const locked = !bought && !sk.req.every(q => rtRef.current!.bought.includes(q))
+                  return (
+                    <div
+                      key={sk.id}
+                      className={`flex items-start gap-3 rounded-lg border p-3 ${
+                        bought ? 'border-[var(--neon)] bg-[var(--primary-soft)]'
+                          : canBuy ? 'border-[var(--line)] bg-[var(--panel-soft)]'
+                            : 'border-[var(--line)] bg-[var(--panel-soft)] opacity-50'}
+                      `}
+                    >
+                      <span className="text-2xl">{sk.icon}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-[var(--tx)]">
+                          {sk.name} <span className="text-[10px] font-normal text-[var(--tx-dim)]">costo {sk.cost}</span>
+                        </p>
+                        <p className="text-[11px] text-[var(--tx-dim)]">{sk.desc}</p>
+                        {locked && <p className="text-[10px] text-[#ff7a7a]">richiede: {sk.req.map(q => rtRef.current!.skills.find(s => s.id === q)?.name ?? q).join(', ')}</p>}
+                      </div>
+                      {bought ? (
+                        <span className="text-lg text-[var(--neon)]">✓</span>
+                      ) : (
+                        <Button size="sm" className="cp-btn" disabled={!canBuy} onClick={() => buySkill(sk.id)}>
+                          Sblocca
+                        </Button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="mt-3 text-[11px] text-[var(--tx-faint)]">
+                I punti abilità si guadagnano salendo di livello: uccidi nemici per XP!
+              </p>
             </div>
           </div>
         )}
@@ -1820,11 +2854,15 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
       </div>
 
       {/* hint comandi */}
-      <div className="hidden justify-center gap-6 border-t border-[var(--line)] bg-[var(--panel)] px-3 py-1.5 text-[11px] tracking-wider text-[var(--tx-faint)] md:flex">
+      <div className="hidden justify-center gap-4 border-t border-[var(--line)] bg-[var(--panel)] px-3 py-1.5 text-[11px] tracking-wider text-[var(--tx-faint)] lg:flex">
         <span><b className="text-[var(--neon)]">WASD</b> muovi</span>
-        <span><b className="text-[var(--neon)]">trascina mouse</b> guarda</span>
-        <span><b className="text-[var(--neon)]">SPAZIO / click</b> attacca</span>
+        <span><b className="text-[var(--neon)]">SPAZIO/click</b> attacca</span>
         <span><b className="text-[var(--neon)]">SHIFT</b> corri</span>
+        <span><b className="text-[var(--neon)]">E</b> schiva</span>
+        <span><b className="text-[var(--neon)]">F</b> parata</span>
+        <span><b className="text-[var(--neon)]">Q/1-4</b> magie</span>
+        <span><b className="text-[var(--neon)]">I</b> zaino</span>
+        <span><b className="text-[var(--neon)]">TAB</b> abilità</span>
         <span><b className="text-[var(--neon)]">ESC</b> esci</span>
       </div>
     </div>
@@ -1847,8 +2885,8 @@ function SceneContent({
   runRef: React.MutableRefObject<boolean>
   camMode: 'terza' | 'prima'
   project: GameProject
-  onHud: (h: { hp: number; maxHp: number; coins: number; keys: number; msg: string; objective: string }) => void
-  onDialogue: (d: { name: string; pages: string[] } | null) => void
+  onHud: (h: HudState) => void
+  onDialogue: (d: DlgState | null) => void
   onEnd: (r: 'win' | 'lose') => void
   onFloater: (f: FloaterIn) => void
   runId: number
@@ -1857,6 +2895,7 @@ function SceneContent({
   const theme = getTheme(style)
   const playerAsset = useWorld(s => s.playerAsset)
   const customAssets = useWorld(s => s.customAssets)
+  const vast = useWorld(s => s.vast)
   const blocked = useMemo(
     () => blockedCells(useWorld.getState().objects, customAssets),
     [customAssets]
@@ -1873,16 +2912,17 @@ function SceneContent({
 
   return (
     <>
-      <color attach="background" args={[theme.sky]} />
-      <fog attach="fog" args={[theme.fogColor, theme.fogNear, theme.fogFar]} />
-      {useWorld.getState().skyboxUrl ? (
+      {vast ? null : <color attach="background" args={[theme.sky]} />}
+      {vast ? null : <fog attach="fog" args={[theme.fogColor, theme.fogNear, theme.fogFar]} />}
+      {vast ? null : useWorld.getState().skyboxUrl ? (
         <SkyDome />
       ) : (
         <Sky sunPosition={theme.sunPosition} turbidity={theme.turbidity} rayleigh={theme.rayleigh} />
       )}
-      <SunLight />
-      <IslandEnvironment />
+      {vast ? null : <SunLight />}
+      {vast ? null : <IslandEnvironment />}
       <ImportedWorld />
+      <HouseInteriors rt={R} />
 
       {playerCustom?.url ? (
         <Suspense fallback={null}>
@@ -1896,7 +2936,7 @@ function SceneContent({
         <EnemyMesh key={`e${runId}${e.id}`} e={e} rt={R} />
       ))}
       {R.current.items.map(it => <ItemMesh key={`i${runId}${it.id}`} it={it} />)}
-      {R.current.npc && <NpcMesh npc={R.current.npc} rt={R} />}
+      {R.current.npcs.map(n => <NpcMesh key={`n${runId}${n.id}`} npc={n} />)}
       <PortalMesh portal={R.current.portal} />
       <Projectiles rt={R} />
       <Director

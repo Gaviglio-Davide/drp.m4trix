@@ -29,6 +29,10 @@ import { TILES, TILE_SWATCH } from '@/lib/game2d/tiles'
 import { drawKind } from '@/lib/game2d/sprites'
 import { exportGameFile, isGameProjectState, saveGame, type GameMeta } from '@/lib/game2d/persist'
 import { fetchAuth } from '@/lib/http'
+import dynamic from 'next/dynamic'
+
+// v13: HUB RPG (storia, personaggi, dialoghi, oggetti, abilità, magie...)
+const RpgEditors = dynamic(() => import('@/components/studio/RpgEditors'), { ssr: false })
 
 type Tool = 'tiles' | 'entita' | 'select'
 
@@ -84,6 +88,7 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
   const [saveState, setSaveState] = useState<'ok' | 'saving'>('ok')
+  const [showRpg, setShowRpg] = useState(false) // v13: hub RPG
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const painting = useRef(false)
@@ -536,6 +541,16 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
         </select>
 
         <div className="ml-auto flex items-center gap-2">
+          {/* v13: HUB RPG — storia, personaggi, dialoghi, oggetti, abilità, magie, case */}
+          <Button
+            size="sm"
+            variant={showRpg ? 'default' : 'outline'}
+            className={`cp-btn ${project.settings.rpg ? 'border-[var(--neon)] text-[var(--neon)]' : ''}`}
+            title="Apri l'hub RPG: storia, personaggi, dialoghi, percorsi PNG, oggetti, albero abilità, magie, case entrabili"
+            onClick={() => setShowRpg(true)}
+          >
+            📖 RPG {project.settings.rpg ? '●' : ''}
+          </Button>
           <Button size="sm" variant="outline" className="cp-btn" onClick={() => exportGameFile(project)}>
             ⇩ JSON
           </Button>
@@ -1038,6 +1053,15 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
           </div>
         </div>
       </div>
+
+      {/* v13: HUB RPG a schermo intero */}
+      {showRpg && (
+        <RpgEditors
+          project={project}
+          mutate={mutate}
+          onClose={() => setShowRpg(false)}
+        />
+      )}
     </div>
   )
 
