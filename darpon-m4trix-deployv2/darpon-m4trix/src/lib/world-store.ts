@@ -18,9 +18,11 @@ import {
   type Terrain,
   type BrushMode,
 } from './terrain'
+import { parseVastConfig, VAST_DEFAULT, type VastConfig } from './vastworld'
 
 export const GRID_HALF = 30 // playable grid: -GRID_HALF..GRID_HALF (mappa grande 61x61)
 export { T_GRID_HALF, T_SIZE, terrainHeightAt, type Terrain, type BrushMode } from './terrain'
+export { VAST_HALF } from './vastworld'
 
 export type WorldObject = {
   id: string
@@ -48,6 +50,7 @@ export type ProjectState = {
   worldStyle?: WorldStyle
   terrain?: string | null // heightmap base64 (opzionale, retrocompatibile)
   skyboxUrl?: string | null // panorama personalizzato (opzionale)
+  vast?: VastConfig | null // v13: MONDO VASTO infinito (solo natura)
 }
 
 export type SessionUser = {
@@ -108,6 +111,9 @@ type Store = {
   brushFlow: number
   skyboxUrl: string | null
 
+  // v13: mondo vasto infinito (natura procedurale)
+  vast: VastConfig | null
+
   // theme
   accent: string
 
@@ -139,6 +145,7 @@ type Store = {
   clearTerrain: () => void
   receiveTerrain: (t: Terrain | null) => void
   setSkybox: (url: string | null) => void
+  setVast: (v: VastConfig | null) => void
 
   addObject: (o: Omit<WorldObject, 'id'>) => void
   removeObject: (x: number, z: number) => void
@@ -182,6 +189,7 @@ export const useWorld = create<Store>((set, get) => ({
   brushSize: 2.5,
   brushFlow: 0.18,
   skyboxUrl: null,
+  vast: null,
 
   setView: v => set({ view: v }),
   setUser: u => set({ user: u }),
@@ -218,6 +226,7 @@ export const useWorld = create<Store>((set, get) => ({
       terrainVersion: 0,
       brush: 'none',
       skyboxUrl: state.skyboxUrl ?? null,
+      vast: state.vast ?? null,
       history: [],
       dying: [],
       playMode: false,
@@ -237,6 +246,7 @@ export const useWorld = create<Store>((set, get) => ({
       terrainVersion: 0,
       brush: 'none',
       skyboxUrl: null,
+      vast: null,
       playMode: false,
       view: 'dashboard',
       saveStatus: 'idle',
@@ -265,6 +275,7 @@ export const useWorld = create<Store>((set, get) => ({
   receiveTerrain: t =>
     set({ terrain: t, terrainVersion: get().terrainVersion + 1 }),
   setSkybox: url => set({ skyboxUrl: url }),
+  setVast: v => set({ vast: v, terrainVersion: get().terrainVersion + 1 }),
 
   selectAsset: id => set({ selectedAsset: id, playMode: false }),
   setGhostRot: r => set({ ghostRot: ((r % 4) + 4) % 4 }),
@@ -365,6 +376,7 @@ export function parseState(s: string | undefined | null): ProjectState {
           ? p.terrain
           : null,
       skyboxUrl: typeof p.skyboxUrl === 'string' ? p.skyboxUrl : null,
+      vast: parseVastConfig(p.vast),
     }
   } catch {
     return { objects: [], customAssets: [] }
@@ -372,7 +384,7 @@ export function parseState(s: string | undefined | null): ProjectState {
 }
 
 export function serializeState(): string {
-  const { objects, customAssets, playerAsset, worldStyle, terrain, skyboxUrl } =
+  const { objects, customAssets, playerAsset, worldStyle, terrain, skyboxUrl, vast } =
     useWorld.getState()
   return JSON.stringify({
     objects,
@@ -381,6 +393,9 @@ export function serializeState(): string {
     worldStyle,
     terrain: encodeTerrain(terrain),
     ...(skyboxUrl ? { skyboxUrl } : {}),
+    // v13: il mondo vasto pesa pochi byte (solo seed + opzioni):
+    // il terreno si rigenera dal seed, non serve salvarlo!
+    ...(vast ? { vast } : {}),
   })
 }
 

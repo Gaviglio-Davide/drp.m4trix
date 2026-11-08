@@ -5,6 +5,8 @@
 // con marker kind:'game2d' (nessuna migrazione necessaria).
 // ============================================================
 
+import type { RpgConfig } from '@/lib/rpg/types'
+
 export type EntityKind =
   | 'drone' // nemico volante, veloce
   | 'soldato' // nemico con spada
@@ -96,6 +98,9 @@ export type GameSettings = {
   minimapOn?: boolean // minimappa durante il gioco (default: off)
   fogOn?: boolean // vignetta atmosfera (default: on)
   showEnemyHp?: boolean // barre HP sopra i nemici (default: on)
+  // ---- v13: HUB RPG (storia, personaggi, dialoghi, oggetti,
+  //      albero abilità, magie, percorsi PNG, case) ----
+  rpg?: RpgConfig
 }
 
 export type GameProject = {
