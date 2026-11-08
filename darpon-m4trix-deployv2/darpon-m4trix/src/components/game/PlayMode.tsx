@@ -11,12 +11,14 @@ import * as THREE from 'three'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Sky, useGLTF } from '@react-three/drei'
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js'
-import { useWorld, GRID_HALF, terrainHeightAt, type WorldObject as WO } from '@/lib/world-store'
+import { useWorld, GRID_HALF, VAST_HALF, terrainHeightAt, type WorldObject as WO } from '@/lib/world-store'
 import { getAssetDef } from '@/lib/assets'
 import { getTheme } from '@/lib/scene-theme'
 import { pbrMat } from '@/lib/pbr'
 import { SkyDome, SculptedTerrain } from './EditorScene'
 import { IslandEnvironment, SunLight } from './EditorScene' // re-export parity
+import { vastHeight, vastAtmo } from '@/lib/vastworld'
+import VastWorld from '@/components/vastworld/VastWorld'
 
 const SPEED = 3.2
 const RUN_SPEED = 6.2
@@ -96,10 +98,11 @@ function blockedCells(): Set<string> {
   return s
 }
 
-/** Altezza del terreno alla cella: heightmap scolpita + asset calpestabili */
+/** Altezza del terreno alla cella: heightmap scolpita + asset calpestabili.
+ *  v13: con il MONDO VASTO attivo usa il terreno infinito dal seed. */
 function groundHeightAt(x: number, z: number): number {
-  const { objects, customAssets, terrain } = useWorld.getState()
-  const base = terrain ? terrainHeightAt(terrain, x, z) : 0
+  const { objects, customAssets, terrain, vast } = useWorld.getState()
+  const base = vast ? vastHeight(x, z, vast) : terrain ? terrainHeightAt(terrain, x, z) : 0
   const o = objects.find(p => p.x === Math.round(x) && p.z === Math.round(z))
   if (!o) return base
   const def = getAssetDef(o.asset, customAssets)
@@ -119,8 +122,34 @@ function usePlayerMotion(zFlip: number) {
   const blocked = useMemo(() => blockedCells(), [])
   const { camera } = useThree()
 
+  // v13: evento 'vast-spawn' → porta il giocatore sul punto di spawn del mondo vasto
+  useEffect(() => {
+    const h = (e: Event) => {
+      const d = (e as CustomEvent).detail as { x: number; z: number; y: number } | undefined
+      if (!d) return
+      pos.current.set(d.x, d.y, d.z)
+      groundY.current = d.y
+    }
+    window.addEventListener('vast-spawn', h)
+    return () => window.removeEventListener('vast-spawn', h)
+  }, [])
+
+  // v13: con il mondo vasto parte già su terreno asciutto vicino al centro
+  useEffect(() => {
+    const { vast } = useWorld.getState()
+    if (!vast) return
+    // spawn asincrono per non bloccare il primo frame
+    void import('@/lib/vastworld').then(({ vastSpawn }) => {
+      const sp = vastSpawn(vast)
+      pos.current.set(sp.x, sp.y, sp.z)
+      groundY.current = sp.y
+    })
+  }, [])
+
   const canStand = (x: number, z: number) => {
-    if (Math.abs(x) > GRID_HALF || Math.abs(z) > GRID_HALF) return false
+    // v13: mondo vasto = quasi nessun confine (cordone di sicurezza a 4 km)
+    const half = useWorld.getState().vast ? VAST_HALF : GRID_HALF
+    if (Math.abs(x) > half || Math.abs(z) > half) return false
     return !blocked.has(`${Math.round(x)},${Math.round(z)}`)
   }
 
@@ -387,14 +416,16 @@ function PlacedWorld() {
   const objects = useWorld(s => s.objects)
   const customAssets = useWorld(s => s.customAssets)
   const terrain = useWorld(s => s.terrain)
+  const vast = useWorld(s => s.vast)
   const version = useWorld(s => s.terrainVersion)
   const groundY = useMemo(() => {
     void version
-    return (x: number, z: number) => terrainHeightAt(terrain, x, z)
-  }, [terrain, version])
+    return (x: number, z: number) =>
+      vast ? vastHeight(x, z, vast) : terrain ? terrainHeightAt(terrain, x, z) : 0
+  }, [terrain, vast, version])
   return (
     <group>
-      <SculptedTerrain />
+      {vast ? <VastWorld cfg={vast} /> : <SculptedTerrain />}
       {objects.map((o: WO) => {
         const def = getAssetDef(o.asset, customAssets)
         if (!def) return null
@@ -415,6 +446,7 @@ function PlayScene() {
   const theme = getTheme(style)
   const playerAsset = useWorld(s => s.playerAsset)
   const customAssets = useWorld(s => s.customAssets)
+  const vast = useWorld(s => s.vast)
 
   useEffect(() => {
     const down = (e: PointerEvent) => {
@@ -451,10 +483,10 @@ function PlayScene() {
       camera={{ fov: 50, near: 0.1, far: 500, position: [0, CAM_HEIGHT, 7] }}
       onContextMenu={e => e.preventDefault()}
     >
-      <color attach="background" args={[theme.sky]} />
+      <color attach="background" args={[vast ? vastAtmo(vast.tod).sky : theme.sky]} />
       {/* nebbia lontana: il terreno non "svanisce" più sotto i piedi */}
-      <fog attach="fog" args={[theme.fogColor, theme.fogNear, theme.fogFar]} />
-      {useWorld.getState().skyboxUrl ? (
+      {!vast && <fog attach="fog" args={[theme.fogColor, theme.fogNear, theme.fogFar]} />}
+      {vast ? null : useWorld.getState().skyboxUrl ? (
         <SkyDome />
       ) : (
         <Sky
@@ -463,8 +495,8 @@ function PlayScene() {
           rayleigh={theme.rayleigh}
         />
       )}
-      <SunLight />
-      <IslandEnvironment />
+      {vast ? null : <SunLight />}
+      {vast ? null : <IslandEnvironment />}
       <PlacedWorld />
       <Suspense fallback={null}>
         {playerCustom?.url ? (

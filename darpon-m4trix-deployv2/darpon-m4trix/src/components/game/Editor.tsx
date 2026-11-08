@@ -84,6 +84,9 @@ const PlayMode = dynamic(() => import('./PlayMode'), {
   ),
 })
 
+// v13: pannello MONDO VASTO (natura infinita procedurale)
+const VastPanel = dynamic(() => import('@/components/vastworld/VastPanel'), { ssr: false })
+
 export default function Editor() {
   const project = useWorld(s => s.currentProject)
   const objects = useWorld(s => s.objects)
@@ -494,6 +497,9 @@ export default function Editor() {
                   </Button>
                 </div>
               )}
+              <div className="mx-0.5 h-6 w-px bg-black/10" />
+              {/* v13: generatore MONDO VASTO — natura infinita */}
+              <VastPanel />
               <div className="mx-0.5 h-6 w-px bg-black/10" />
             </>
           )}
