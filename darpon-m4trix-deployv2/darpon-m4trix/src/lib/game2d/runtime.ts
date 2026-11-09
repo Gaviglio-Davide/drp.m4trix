@@ -99,6 +99,11 @@ export class GameRuntime {
   private doors: GameEntity[] = []
   private goal: GameEntity | null = null
   private enemies: LiveEnemy[] = []
+  // v15: posizioni runtime dei PNG (reparto Animazioni & Interazioni)
+  private npcRT = new Map<
+    string,
+    { x: number; y: number; hx: number; hy: number; wx: number; wy: number; t: number }
+  >()
 
   private player = {
     x: 2,
@@ -255,6 +260,19 @@ export class GameRuntime {
       .map(e => this.makeEnemy(e))
     this.items = sc.entities.filter(e => e.type === 'item').map(e => ({ ...e }))
     this.doors = sc.entities.filter(e => e.type === 'door').map(e => ({ ...e }))
+    // v15: PNG pronti a camminare (reparto Animazioni & Interazioni)
+    this.npcRT = new Map()
+    for (const n of sc.entities.filter(e => e.type === 'npc')) {
+      this.npcRT.set(n.id, {
+        x: n.x + 0.5,
+        y: n.y + 0.5,
+        hx: n.x + 0.5,
+        hy: n.y + 0.5,
+        wx: 0,
+        wy: 0,
+        t: 0,
+      })
+    }
     this.goal = sc.entities.find(e => e.type === 'goal') ?? null
     const p = sc.entities.find(e => e.type === 'player')
     if (tx !== undefined && ty !== undefined) {
@@ -395,7 +413,12 @@ export class GameRuntime {
     let best: GameEntity | null = null
     let bd = 1.4
     for (const n of npcs) {
-      const d = Math.hypot(n.x + 0.5 - this.player.x, n.y + 0.5 - this.player.y)
+      // v15: usa la posizione runtime se il PNG cammina
+      const rt = this.npcRT.get(n.id)
+      const d = Math.hypot(
+        (rt ? rt.x : n.x + 0.5) - this.player.x,
+        (rt ? rt.y : n.y + 0.5) - this.player.y
+      )
       if (d < bd) {
         bd = d
         best = n
@@ -439,6 +462,8 @@ export class GameRuntime {
   private decoBlocked(x: number, y: number): boolean {
     for (const e of this.scene?.entities ?? []) {
       if (e.type !== 'deco' && e.type !== 'npc') continue
+      // v15: i PNG che camminano non bloccano più il passaggio
+      if (e.type === 'npc' && this.project.settings.npcWalk !== false) continue
       if (e.type === 'deco' && !e.props.solid) continue
       const d = Math.hypot(e.x + 0.5 - x, e.y + 0.5 - y)
       if (d < 0.55) return true
@@ -447,8 +472,9 @@ export class GameRuntime {
   }
 
   private update(dt: number) {
-    this.time += dt
     const s = this.project.settings
+    // v15: velocità delle animazioni regolabile (reparto Animazioni)
+    this.time += dt * (s.animSpeed ?? 1)
     const sc = this.scene
     if (!sc) return
 
@@ -505,6 +531,27 @@ export class GameRuntime {
     this.player.invT = Math.max(0, this.player.invT - dt)
 
     // ---- nemici ----
+    const mode = s.enemyMode ?? 'normale' // v15: IA dei nemici regolabile
+    // ---- v15: PNG che camminano per la mappa ----
+    if (s.npcWalk !== false && this.npcRT.size > 0) {
+      for (const n of this.npcRT.values()) {
+        n.t -= dt
+        if (n.t <= 0) {
+          n.t = 1.6 + Math.random() * 2.2
+          const a = Math.random() * Math.PI * 2
+          n.wx = Math.cos(a)
+          n.wy = Math.sin(a)
+          if (Math.random() < 0.4) {
+            n.wx = 0
+            n.wy = 0
+          }
+        }
+        const nx2 = n.x + n.wx * 1.1 * dt
+        const ny2 = n.y + n.wy * 1.1 * dt
+        if (Math.hypot(nx2 - n.hx, n.y - n.hy) < 2.4 && !this.boxBlocked(nx2, n.y, 0.25)) n.x = nx2
+        if (Math.hypot(n.x - n.hx, ny2 - n.hy) < 2.4 && !this.boxBlocked(n.x, ny2, 0.25)) n.y = ny2
+      }
+    }
     for (const en of this.enemies) {
       if (en.hp <= 0) continue
       en.hurtT = Math.max(0, en.hurtT - dt)
@@ -538,8 +585,8 @@ export class GameRuntime {
             })
           }
         }
-      } else if (dist < en.aggro) {
-        // inseguimento
+      } else if (mode !== 'fermi' && (mode === 'aggressivi' || dist < en.aggro)) {
+        // inseguimento (v15: modalità dal reparto Animazioni)
         if (dist > 0.75) {
           const step = (en.speed * dt) / (dist || 1)
           const ex = en.x + dx * step
@@ -552,6 +599,12 @@ export class GameRuntime {
           en.cd = 0.9
           this.damagePlayer(en.dmg)
           this.burst(this.player.x, this.player.y, '#ff5a5a', 6, 4)
+        }
+      } else if (mode === 'fermi') {
+        // v15: nemici pacati — si difendono solo se l'eroe li tocca
+        if (dist < 0.85 && en.cd <= 0) {
+          en.cd = 0.9
+          this.damagePlayer(en.dmg * 0.5)
         }
       } else {
         // pattuglia: vaga attorno alla casa
@@ -949,11 +1002,15 @@ export class GameRuntime {
     for (const e of sc.entities) {
       if (e.type === 'player') continue
       if (e.type === 'npc' || e.type === 'deco') {
+        // v15: posizione runtime per i PNG che camminano
+        const rt = e.type === 'npc' ? this.npcRT.get(e.id) : null
+        const ex = rt ? rt.x - 0.5 : e.x
+        const ey = rt ? rt.y - 0.5 : e.y
         list.push({
-          y: e.y,
+          y: ey,
           f: () => {
             ctx.save()
-            ctx.translate(e.x * T + T / 2, e.y * T + T / 2)
+            ctx.translate(ex * T + T / 2, ey * T + T / 2)
             drawKind(ctx, e.props.kind, T * 0.8, e.props.color ?? this.pal.neon, this.time)
             ctx.restore()
           },
@@ -965,7 +1022,12 @@ export class GameRuntime {
         y: it.y,
         f: () => {
           ctx.save()
-          ctx.translate(it.x * T + T / 2, it.y * T + T / 2)
+          // v15: oggetti che fluttuano (reparto Animazioni)
+          const lift =
+            this.project.settings.animBob && it.props.kind !== 'cassa'
+              ? -Math.abs(Math.sin(this.time * 2.2)) * T * 0.16
+              : 0
+          ctx.translate(it.x * T + T / 2, it.y * T + T / 2 + lift)
           drawKind(ctx, it.props.kind, T * 0.7, it.props.color ?? '#fcee0a', this.time)
           ctx.restore()
         },

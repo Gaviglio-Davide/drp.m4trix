@@ -106,6 +106,12 @@ export type GameSettings = {
   // Se presente, il gioco 3D genera il suo mondo vasto di natura
   // senza bisogno di importare un mondo dal reparto Mondi 3D.
   vast?: VastConfig | null
+  // ---- v15: ANIMAZIONI & INTERAZIONI (reparto del Game Studio) ----
+  animSpin?: boolean // monete e bottini ruotano su sé stessi (default: on)
+  animBob?: boolean // oggetti che fluttuano su e giù (default: off)
+  animSpeed?: number // moltiplicatore velocità animazioni 0.5–2 (default: 1)
+  enemyMode?: 'normale' | 'aggressivi' | 'fermi' // IA dei nemici (default: normale)
+  npcWalk?: boolean // i PNG camminano per il mondo (default: on)
 }
 
 export type GameProject = {
