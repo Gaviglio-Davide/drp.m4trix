@@ -215,6 +215,12 @@ type Runtime = {
   dlg: { npcId: string; dialogueId: string; nodeId: string } | null
   lastOutX: number // posizione fuori dalla casa
   lastOutZ: number
+  // ---- v15: Animazioni & Interazioni ----
+  animSpin: boolean // bottini ruotano
+  animBob: boolean // bottini fluttuano di più
+  animSpeed: number // moltiplicatore animazioni
+  enemyMode: 'normale' | 'aggressivi' | 'fermi'
+  npcWalk: boolean // i PNG camminano
 }
 
 type Props = {
@@ -856,14 +862,26 @@ function EnemyBody({ kind, color, boss }: { kind: EntityKind; color: string; bos
 // OGGETTI RACCOGLIBILI + NPC + PORTALE
 // ============================================================
 
-function ItemMesh({ it }: { it: ItemRT }) {
+function ItemMesh({
+  it,
+  spin = true,
+  speed = 1,
+  bob = false,
+}: {
+  it: ItemRT
+  spin?: boolean
+  speed?: number
+  bob?: boolean
+}) {
   const ref = useRef<THREE.Group>(null)
   useFrame(state => {
     const g = ref.current
     if (!g) return
     if (it.taken) { g.visible = false; return }
-    g.rotation.y += 0.03
-    g.position.y = groundHeightAt(it.x, it.z) + 0.55 + Math.sin(state.clock.elapsedTime * 2.4) * 0.1
+    // v15: rotazione e fluttuazione regolabili dal reparto Animazioni
+    if (spin) g.rotation.y += 0.03 * speed
+    const amp = bob ? 0.22 : 0.1
+    g.position.y = groundHeightAt(it.x, it.z) + 0.55 + Math.sin(state.clock.elapsedTime * 2.4 * speed) * amp
   })
   const rpgItem = it.kind === 'rpgitem' && it.rpgId
     ? undefined // il colore viene dal catalogo sotto
@@ -1146,6 +1164,7 @@ function Director({
       const dx = R.px - e.x
       const dz = R.pz - e.z
       const dist = Math.max(0.001, Math.hypot(dx, dz))
+      const eMode = R.enemyMode // v15: IA regolabile dal reparto Animazioni
 
       if (e.turret) {
         e.cd -= dt
@@ -1161,7 +1180,14 @@ function Director({
         continue
       }
 
-      if (dist < e.aggro) {
+      if (eMode === 'fermi') {
+        // v15: nemici pacati — si difendono solo se l'eroe li tocca
+        e.cd -= dt
+        if (dist < 1.7 && e.cd <= 0) {
+          e.cd = 0.95
+          damagePlayer(R, Math.round(e.dmg * 0.5), onFloater, camera, size, e)
+        }
+      } else if (eMode === 'aggressivi' || dist < e.aggro) {
         if (dist > (e.boss ? 2.3 : 1.6)) {
           e.x += (dx / dist) * e.speed * dt
           e.z += (dz / dist) * e.speed * dt
@@ -1255,7 +1281,7 @@ function Director({
     let nearestNpc: NpcRT | null = null
     let nearestD = Infinity
     for (const n of R.npcs) {
-      if (n.route.length >= 2) {
+      if (R.npcWalk !== false && n.route.length >= 2) {
         // cammina per le sue strade quando il giocatore è lontano
         const pd = Math.hypot(R.px - n.x, R.pz - n.z)
         if (pd > 6 && n.waitT <= 0) {
@@ -2259,6 +2285,12 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
       dlg: null,
       lastOutX: start.x,
       lastOutZ: start.z,
+      // ---- v15: Animazioni & Interazioni ----
+      animSpin: project.settings.animSpin !== false,
+      animBob: project.settings.animBob === true,
+      animSpeed: project.settings.animSpeed ?? 1,
+      enemyMode: project.settings.enemyMode ?? 'normale',
+      npcWalk: project.settings.npcWalk !== false,
     }
     runRef.current = true
     return () => { runRef.current = false }
@@ -2947,7 +2979,15 @@ function SceneContent({
       {R.current.enemies.map(e => (
         <EnemyMesh key={`e${runId}${e.id}`} e={e} rt={R} />
       ))}
-      {R.current.items.map(it => <ItemMesh key={`i${runId}${it.id}`} it={it} />)}
+      {R.current.items.map(it => (
+        <ItemMesh
+          key={`i${runId}${it.id}`}
+          it={it}
+          spin={R.current.animSpin !== false}
+          speed={R.current.animSpeed ?? 1}
+          bob={R.current.animBob === true}
+        />
+      ))}
       {R.current.npcs.map(n => <NpcMesh key={`n${runId}${n.id}`} npc={n} />)}
       <PortalMesh portal={R.current.portal} />
       <Projectiles rt={R} />

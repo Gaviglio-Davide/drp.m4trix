@@ -34,6 +34,8 @@ import dynamic from 'next/dynamic'
 
 // v13: HUB RPG (storia, personaggi, dialoghi, oggetti, abilità, magie...)
 const RpgEditors = dynamic(() => import('@/components/studio/RpgEditors'), { ssr: false })
+// v15: reparto Animazioni & Interazioni
+const AnimEditors = dynamic(() => import('@/components/studio/AnimEditors'), { ssr: false })
 
 type Tool = 'tiles' | 'entita' | 'select'
 
@@ -91,6 +93,7 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
   const [saveState, setSaveState] = useState<'ok' | 'saving'>('ok')
   const [showRpg, setShowRpg] = useState(false) // v13: hub RPG
   const [showWorld, setShowWorld] = useState(false) // v14: stile mondo vasto del gioco
+  const [showAnim, setShowAnim] = useState(false) // v15: animazioni & interazioni
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const painting = useRef(false)
@@ -564,6 +567,24 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
             onClick={() => setShowRpg(true)}
           >
             📖 RPG {project.settings.rpg ? '●' : ''}
+          </Button>
+          {/* v15: reparto ANIMAZIONI & INTERAZIONI */}
+          <Button
+            size="sm"
+            variant={showAnim ? 'default' : 'outline'}
+            className={`cp-btn ${
+              project.settings.animSpin === false ||
+              project.settings.animBob ||
+              project.settings.animSpeed ||
+              project.settings.enemyMode ||
+              project.settings.npcWalk === false
+                ? 'border-[var(--neon)] text-[var(--neon)]'
+                : ''
+            }`}
+            title="Apri il reparto Animazioni & Interazioni: rotazioni, fluttuazioni, IA dei nemici, PNG che camminano"
+            onClick={() => setShowAnim(true)}
+          >
+            🎬 Animazioni
           </Button>
           <Button size="sm" variant="outline" className="cp-btn" onClick={() => exportGameFile(project)}>
             ⇩ JSON
@@ -1083,6 +1104,15 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
           project={project}
           mutate={mutate}
           onClose={() => setShowWorld(false)}
+        />
+      )}
+
+      {/* v15: reparto Animazioni & Interazioni */}
+      {showAnim && (
+        <AnimEditors
+          project={project}
+          mutate={mutate}
+          onClose={() => setShowAnim(false)}
         />
       )}
     </div>
