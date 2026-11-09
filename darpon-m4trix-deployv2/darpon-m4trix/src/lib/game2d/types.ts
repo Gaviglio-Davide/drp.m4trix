@@ -6,6 +6,7 @@
 // ============================================================
 
 import type { RpgConfig } from '@/lib/rpg/types'
+import { VAST_DEFAULT, type VastConfig } from '@/lib/vastworld'
 
 export type EntityKind =
   | 'drone' // nemico volante, veloce
@@ -101,6 +102,10 @@ export type GameSettings = {
   // ---- v13: HUB RPG (storia, personaggi, dialoghi, oggetti,
   //      albero abilità, magie, percorsi PNG, case) ----
   rpg?: RpgConfig
+  // ---- v14: MONDO VASTO del gioco (stile terzapersona) ----
+  // Se presente, il gioco 3D genera il suo mondo vasto di natura
+  // senza bisogno di importare un mondo dal reparto Mondi 3D.
+  vast?: VastConfig | null
 }
 
 export type GameProject = {
@@ -305,8 +310,13 @@ export function addBorderWalls(sc: GameScene, tile = 1) {
   }
 }
 
-/** progetto di gioco vuoto, pronto per l'editor */
-export function newGameProject(title: string): GameProject {
+/** progetto di gioco vuoto, pronto per l'editor.
+ *  v14: opts.dimension = '2d' (classico) oppure '3d' (Mondo Vasto terzapersona) */
+export function newGameProject(
+  title: string,
+  opts?: { dimension?: '2d' | '3d' }
+): GameProject {
+  const dimension = opts?.dimension === '3d' ? '3d' : '2d'
   const sc = emptyScene('Livello 1', 36, 26)
   addBorderWalls(sc)
   sc.entities.push({
@@ -329,7 +339,14 @@ export function newGameProject(title: string): GameProject {
       objectiveCount: 1,
       paletteId: 'cyber',
       intro: [],
-      dimension: '2d',
+      dimension,
+      ...(dimension === '3d'
+        ? {
+            camera: 'terza' as const,
+            // v14: il gioco 3D porta con sé un MONDO VASTO di sola natura
+            vast: { ...VAST_DEFAULT, seed: Math.floor(Math.random() * 1e9) },
+          }
+        : {}),
     },
     scenes: [sc],
     startScene: sc.id,
