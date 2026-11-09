@@ -14,7 +14,9 @@ export const maxDuration = 30
 //   1. z-ai-web-dev-sdk (se configurato nell'ambiente)
 //   2. endpoint OpenAI-compatibile impostato dall'admin
 //      (SiteConfig "aiConfig": chiave + baseUrl + modello)
-//   3. risposta di cortesia senza LLM
+//   3. v15: chiave GEMINI_API_KEY (o GOOGLE_API_KEY) nelle
+//      variabili d'ambiente — Gemini diretto, cervello potenziato
+//   4. risposta di cortesia senza LLM
 // Nessuna chiave passa mai dal browser.
 // ============================================================
 
@@ -31,7 +33,10 @@ REGOLE:
 COSA SA FARE IL SITO:
 - I MIEI MONDI: progetti 3D; si creano con "Nuovo progetto"; ogni mondo si apre nell'editor.
 - EDITOR: si piazza ciò che si vuole con un clic. RESA REALISTICA v7: edifici con zoccoli in pietra, tetti in coppi, finestre con telaio, texture procedurali. Tasto DESTRO trascinato = ruota la visuale; rotella = zoom; click destro secco = elimina oggetto; Ctrl+Z o freccia = annulla; pennelli TERRENO: Montagna (alza), Pala (scava: sotto il livello dell'acqua compare un lago), Gomma (spiana), Mano (oggetti); bottone GIOCA = terza persona (WASD, corsa con Shift); cieli personalizzati; salvataggio automatico + snapshot; legenda oggetti; scelta del personaggio (eroe realistico o modelli GLB).
-- GENERA: città medievali, villaggi, fortezze, paesaggi con dimensione, densità e variante (dado) regolabili; piazze con fontana, panchine, aiuole e giardini con recinzioni e siepi.
+- GAME STUDIO: crea giochi 2D classici oppure 3D «MONDO VASTO» (terza persona, mondo infinito, stile dei giochi di Auriobello); editor stile Godot/Unity con tile, nemici, porte, portali; hub 📖 RPG (storia, personaggi, dialoghi ad albero, percorsi PNG, oggetti, albero abilità, magie, combattimento con parata/schivata/combo/XP e livelli, case entrabili); reparto 🎬 ANIMAZIONI & INTERAZIONI: rotazione e fluttuazione di monete e bottini, IA dei nemici (normale / sempre all'attacco / pacati), PNG che camminano per il mondo, velocità generale delle animazioni.
+- MONDI 3D: il laboratorio dei mondi (non più «prova»); con il tasto GENERA accanto a «Nuovo progetto» crea città medievali, villaggi, fortezze e paesaggi con dimensione, densità e variante (dado) regolabili; piazze con fontana, panchine, aiuole e giardini.
+- MONDO VASTO (3D): 4 stili di paesaggio a scelta (Alpino, Invernale, Autunnale, Mediterraneo), seed, montagne, colline, foreste, acqua e ora del giorno; si cambia dal bottone 🌍 Mondo dentro l'editor del gioco.
+- CATALOGO 3D (in Progetti importati): decine di modelli GLB gratuiti (Khronos, three.js, modelviewer.dev) con anteprima ANIMATA (i modelli animati si muovono davvero: robot che balla, cavallo al galoppo, volpe che corre) e tasto «Manda al mio sito».
 - PROGETTI IMPORTATI: caricamento file .glb/.gltf (i .meshy cifrati non vanno); dimensione predefinita 0,5x–3x; ANTEPRIMA 3D con occhio 👁️; i modelli finiscono nella barra oggetti di ogni mondo.
 - STRUTTURE: costruttore pezzo per pezzo con muri, porte e finestre SUL BORDO delle celle (simmetria perfetta); pezzi da ESTERNO stile HomeByMe: recinzione, siepe, vialetto, aiuola, panchina; libreria riutilizzabile in ogni mondo.
 - DARPX.AI: (a) MOTORE INTERNO testo→3D: genera modelli nel browser, senza chiavi e senza limiti; capisce italiano (specie, colori, materiali, taglia, dettagli); PRIMA DI GENERARE chiede i dettagli mancanti (colore, taglia, materiale, dettagli) con possibilità di saltare; ogni richiesta produce un modello DIVERSO; texture PBR realistiche. (b) LABORATORIO GLB: migliora i modelli che l'utente ha già: tinta, materiali PBR (oro, ferro, legno, pietra...), ali, corna, basamento, aura, ridimensionamento; (c) IMMAGINE → MONDO: analizza un'immagine e crea un mondo 3D coerente, con opzione "usa come cielo"; (d) MOTORI ESTERNI opzionali: Tripo, fal.ai, Stable Fast 3D, Meshy con chiave API salvata cifrata; (e) AGENTE DARPX: te stesso, con avatar animato che cammina e viaggia per il sito.
@@ -119,7 +124,7 @@ async function tryOpenAI(cfg: AIConfig, history: ChatMessage[]): Promise<OpenAIR
           { role: 'system', content: SYSTEM_PROMPT },
           ...history.slice(-10),
         ],
-        max_tokens: 700,
+        max_tokens: 900,
         temperature: 0.6,
       }),
       signal: AbortSignal.timeout(20000),
@@ -145,6 +150,25 @@ async function tryOpenAI(cfg: AIConfig, history: ChatMessage[]): Promise<OpenAIR
       detail: e instanceof Error ? e.message.slice(0, 160) : 'connessione fallita',
     }
   }
+}
+
+// ---- provider 3: chiave Gemini nelle variabili d'ambiente (v15) ----
+
+async function tryEnvGemini(history: ChatMessage[]): Promise<OpenAIResult | null> {
+  const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
+  if (!key) return null
+  // l'endpoint OpenAI-compatibile di Google: stesso formato, zero librerie
+  const base = 'https://generativelanguage.googleapis.com/v1beta/openai'
+  // se il primo modello non esiste per questa chiave, proviamo l'altro
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash']
+  let last: OpenAIResult = { text: null }
+  for (const model of models) {
+    const r = await tryOpenAI({ apiKey: key, baseUrl: base, model }, history)
+    if (r.text) return r
+    last = r
+    if (r.status && r.status !== 404 && r.status !== 400) break
+  }
+  return last
 }
 
 // ---- limite di utilizzo (in-memory) ----
@@ -195,9 +219,9 @@ export async function POST(req: NextRequest) {
         .map(m => ({ role: m.role, content: m.content.slice(0, 2000) }))
     : []
 
-  // 1) z-ai (ambiente configurato) 2) OpenAI-compatibile (admin)
+  // 1) z-ai (ambiente) 2) admin (SiteConfig) 3) Gemini da variabili d'ambiente (v15)
   let answer = await tryZai(history.length ? [...history, { role: 'user', content: message }] : [{ role: 'user', content: message }])
-  let engine: 'zai' | 'openai' | 'none' = 'zai'
+  let engine: 'zai' | 'openai' | 'gemini' | 'none' = 'zai'
   let aiError: OpenAIResult | null = null
   if (!answer) {
     const cfg = await readAIConfig()
@@ -212,6 +236,19 @@ export async function POST(req: NextRequest) {
       } else {
         aiError = r
       }
+    }
+  }
+  if (!answer) {
+    const r = await tryEnvGemini([
+      ...history,
+      { role: 'user', content: message },
+    ])
+    if (r?.text) {
+      answer = r.text
+      engine = 'gemini'
+      aiError = null
+    } else if (r && !aiError) {
+      aiError = r
     }
   }
   if (!answer) engine = 'none'
