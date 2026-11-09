@@ -40,7 +40,7 @@ import {
   type GameProject,
 } from '@/lib/game2d/types'
 import { NoGLCard, webglSupported } from '../game/GLGuard'
-import { vastHeight } from '@/lib/vastworld'
+import { parseVastConfig, vastHeight } from '@/lib/vastworld'
 import VastWorld from '@/components/vastworld/VastWorld'
 import {
   DEFAULT_COMBAT, defaultSkills, defaultSpells, RARITY_COLOR,
@@ -1966,11 +1966,23 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
     ;(async () => {
       try {
         const id = project.settings.worldProjectId
-        if (!id) throw new Error('Nessun mondo collegato a questo gioco 3D')
-        const res = await fetchAuth(`/api/projects/${id}`)
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok || !data.project) throw new Error('Mondo non trovato: forse è stato eliminato')
-        const st = parseState(data.project.state)
+        const selfVast = project.settings.vast ?? null // v14: mondo vasto del GIOCO
+        let st: ReturnType<typeof parseState>
+        let label: string
+        if (id) {
+          const res = await fetchAuth(`/api/projects/${id}`)
+          const data = await res.json().catch(() => ({}))
+          if (!res.ok || !data.project) throw new Error('Mondo non trovato: forse è stato eliminato')
+          st = parseState(data.project.state)
+          label = data.project.name as string
+        } else if (selfVast) {
+          // v14: il gioco ha il SUO Mondo Vasto (creato nel Game Studio):
+          // nessun mondo da scaricare, la natura infinita parte subito!
+          st = { ...parseState(null), vast: parseVastConfig(selfVast) }
+          label = 'Mondo Vasto del gioco'
+        } else {
+          throw new Error("Nessun mondo: apri l'editor e scegli un mondo o attiva il Mondo Vasto 🌍")
+        }
         // modelli globali (come fa l'editor dei mondi)
         try {
           const mres = await fetchAuth('/api/models')
@@ -2007,7 +2019,7 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
           playMode: false,
           selectedAsset: null,
         })
-        setWorldLabel(data.project.name)
+        setWorldLabel(label)
         // v13: se c'è una STORIA RPG e nessuna intro, la storia diventa l'intro
         const story = project.settings.rpg?.story
         const hasIntro = !!(project.settings.intro && project.settings.intro.length) || !!(story && (story.logline || story.synopsis))

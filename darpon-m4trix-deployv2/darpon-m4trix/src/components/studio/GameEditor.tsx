@@ -26,6 +26,7 @@ import {
   type PaletteId,
 } from '@/lib/game2d/types'
 import { TILES, TILE_SWATCH } from '@/lib/game2d/tiles'
+import { VAST_BIOMES, VAST_DEFAULT, VAST_TOD_LABEL, type VastConfig, type VastTod } from '@/lib/vastworld'
 import { drawKind } from '@/lib/game2d/sprites'
 import { exportGameFile, isGameProjectState, saveGame, type GameMeta } from '@/lib/game2d/persist'
 import { fetchAuth } from '@/lib/http'
@@ -89,6 +90,7 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
   const [dirty, setDirty] = useState(false)
   const [saveState, setSaveState] = useState<'ok' | 'saving'>('ok')
   const [showRpg, setShowRpg] = useState(false) // v13: hub RPG
+  const [showWorld, setShowWorld] = useState(false) // v14: stile mondo vasto del gioco
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const painting = useRef(false)
@@ -541,6 +543,18 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
         </select>
 
         <div className="ml-auto flex items-center gap-2">
+          {/* v14: stile del MONDO VASTO per i giochi 3D */}
+          {is3D && (
+            <Button
+              size="sm"
+              variant={showWorld ? 'default' : 'outline'}
+              className={`cp-btn ${project.settings.vast ? 'border-[var(--neon)] text-[var(--neon)]' : ''}`}
+              title="Stile e opzioni del MONDO VASTO di questo gioco"
+              onClick={() => setShowWorld(true)}
+            >
+              🌍 Mondo {project.settings.vast ? '●' : ''}
+            </Button>
+          )}
           {/* v13: HUB RPG — storia, personaggi, dialoghi, oggetti, abilità, magie, case */}
           <Button
             size="sm"
@@ -1062,6 +1076,15 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
           onClose={() => setShowRpg(false)}
         />
       )}
+
+      {/* v14: stile del MONDO VASTO del gioco */}
+      {showWorld && (
+        <WorldVastDialog
+          project={project}
+          mutate={mutate}
+          onClose={() => setShowWorld(false)}
+        />
+      )}
     </div>
   )
 
@@ -1107,4 +1130,162 @@ function defaultProps(
     default:
       return { color: neon }
   }
+}
+
+
+// ============================================================
+// v14: DIALOG MONDO VASTO del gioco 3D — lo stile del mondo si
+// sceglie QUI, dentro il Game Studio: stile del paesaggio, seed,
+// montagne, colline, foreste, acqua, ora del giorno.
+// ============================================================
+function WorldVastDialog({
+  project,
+  mutate,
+  onClose,
+}: {
+  project: GameProject
+  mutate: (fn: (p: GameProject) => void) => void
+  onClose: () => void
+}) {
+  const [cfg, setCfg] = useState<VastConfig>(
+    project.settings.vast ?? { ...VAST_DEFAULT, seed: Math.floor(Math.random() * 1e9) }
+  )
+  const apply = () => {
+    mutate(p => {
+      p.settings.vast = cfg
+      p.settings.dimension = '3d'
+      if (p.settings.camera !== 'prima') p.settings.camera = 'terza'
+    })
+    onClose()
+    toast.success('🌍 Mondo Vasto del gioco aggiornato: premi ▶ GIOCA per esplorarlo!')
+  }
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border border-[var(--line)] bg-[var(--panel)] p-5 shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-bold text-[var(--tx)]">🌍 Mondo Vasto del gioco</h2>
+        <p className="mt-1 text-xs text-[var(--tx-dim)]">
+          Il tuo gioco 3D nasce in un mondo <b>infinito di sola natura</b>: montagne, colline,
+          foreste, laghi. Scegli lo stile del paesaggio e regola le opzioni. Se hai collegato un
+          mondo dal menu in alto, quello ha la priorità.
+        </p>
+
+        <div className="mt-4 flex flex-col gap-3">
+          <div>
+            <span className="text-[10px] tracking-wider text-[var(--tx-dim)] uppercase">
+              Stile del paesaggio
+            </span>
+            <div className="mt-1 grid grid-cols-2 gap-1">
+              {VAST_BIOMES.map(b => (
+                <button
+                  key={b.id}
+                  className={`rounded-lg border p-2 text-left text-xs transition-colors ${
+                    (cfg.biome ?? 'alpino') === b.id
+                      ? 'border-[var(--neon)] bg-[var(--primary-soft)] text-[var(--tx)]'
+                      : 'border-[var(--line)] text-[var(--tx-dim)] hover:bg-[var(--panel-hover)]'
+                  }`}
+                  onClick={() => setCfg({ ...cfg, biome: b.id })}
+                >
+                  <span className="block font-bold">{b.label}</span>
+                  <span className="block text-[9px] leading-tight opacity-80">{b.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-end gap-2">
+            <label className="flex flex-1 flex-col gap-1">
+              <span className="text-[10px] tracking-wider text-[var(--tx-dim)] uppercase">
+                Seed del mondo
+              </span>
+              <input
+                type="number"
+                value={cfg.seed}
+                onChange={e =>
+                  setCfg({ ...cfg, seed: Math.abs(Math.floor(Number(e.target.value) || 0)) })
+                }
+                className="h-8 rounded-md border border-[var(--line)] bg-[var(--panel-soft)] px-2 text-sm text-[var(--tx)]"
+              />
+            </label>
+            <Button
+              variant="outline"
+              size="sm"
+              className="cp-btn h-8"
+              onClick={() => setCfg({ ...cfg, seed: Math.floor(Math.random() * 1e9) })}
+            >
+              🎲 Casuale
+            </Button>
+          </div>
+
+          {([
+            { key: 'mountains', label: '🏔 Montagne', min: 'pianure', max: 'Himalaya' },
+            { key: 'hills', label: '⛰ Colline', min: 'piatte', max: 'mosse' },
+            { key: 'trees', label: '🌲 Foreste', min: 'radure', max: 'giungla' },
+            { key: 'water', label: '💧 Acqua', min: 'arida', max: 'arcipelago' },
+          ] as const).map(s => (
+            <label key={s.key} className="flex flex-col gap-1">
+              <span className="flex justify-between text-[10px] tracking-wider text-[var(--tx-dim)] uppercase">
+                <span>{s.label}</span>
+                <span>{Math.round(cfg[s.key] * 100)}%</span>
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={cfg[s.key]}
+                onChange={e => setCfg({ ...cfg, [s.key]: Number(e.target.value) })}
+                className="accent-[var(--neon)]"
+              />
+              <span className="flex justify-between text-[9px] text-[var(--tx-faint)]">
+                <span>{s.min}</span>
+                <span>{s.max}</span>
+              </span>
+            </label>
+          ))}
+
+          <div>
+            <span className="text-[10px] tracking-wider text-[var(--tx-dim)] uppercase">
+              Ora del giorno
+            </span>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {(Object.keys(VAST_TOD_LABEL) as VastTod[]).map(t => (
+                <button
+                  key={t}
+                  className={`cp-chip ${cfg.tod === t ? 'cp-chip-active' : ''}`}
+                  onClick={() => setCfg({ ...cfg, tod: t })}
+                >
+                  {VAST_TOD_LABEL[t]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          {project.settings.vast && (
+            <Button
+              variant="outline"
+              className="cp-btn text-red-400"
+              onClick={() => {
+                mutate(p => { p.settings.vast = null })
+                onClose()
+                toast.info('Mondo vasto rimosso: collega un mondo dal menu in alto o riattivalo')
+              }}
+            >
+              ✕ Rimuovi
+            </Button>
+          )}
+          <Button className="cp-btn bg-[var(--neon)] font-bold text-[#04060d]" onClick={apply}>
+            🌍 Usa questo mondo
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
 }

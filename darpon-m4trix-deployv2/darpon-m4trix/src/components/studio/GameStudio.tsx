@@ -53,6 +53,7 @@ export default function GameStudio() {
   const [mode, setMode] = useState<Mode>({ kind: 'list' })
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
+  const [newStyle, setNewStyle] = useState<'2d' | '3d'>('3d') // v14: stile del gioco
   const [busy, setBusy] = useState(false)
 
   // un altro reparto (Crea da Script / World Forge) ha creato un
@@ -87,12 +88,16 @@ export default function GameStudio() {
     const name = newName.trim() || 'Il mio gioco'
     setBusy(true)
     try {
-      const game = newGameProject(name)
+      const game = newGameProject(name, { dimension: newStyle })
       const m = await createGame(name, game)
       setCreateOpen(false)
       setNewName('')
       setMode({ kind: 'edit', meta: m })
-      toast.success(`"${name}" creato: Benvenuto nel Game Studio! 🎮`)
+      toast.success(
+        newStyle === '3d'
+          ? `"${name}" creato in 3D: il tuo MONDO VASTO ti aspetta! 🌍`
+          : `"${name}" creato: Benvenuto nel Game Studio! 🎮`
+      )
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Errore')
     } finally {
@@ -193,22 +198,67 @@ export default function GameStudio() {
               <DialogHeader>
                 <DialogTitle className="text-[var(--tx)]">Nuovo videogioco</DialogTitle>
               </DialogHeader>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="game-name" className="text-[var(--tx-dim)]">
-                  Titolo del gioco
-                </Label>
-                <Input
-                  id="game-name"
-                  value={newName}
-                  onChange={e => setNewName(e.target.value)}
-                  placeholder="Es. Neon Drift: Settore 7"
-                  onKeyDown={e => e.key === 'Enter' && !busy && void createNew()}
-                  autoFocus
-                />
+              <div className="flex flex-col gap-3">
+                {/* v14: scelta dello STILE del gioco */}
+                <div>
+                  <Label className="text-[var(--tx-dim)]">Stile del gioco</Label>
+                  <div className="mt-1.5 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      className={`rounded-lg border p-3 text-left transition-colors ${
+                        newStyle === '2d'
+                          ? 'border-[var(--neon)] bg-[var(--primary-soft)]'
+                          : 'border-[var(--line)] hover:bg-[var(--panel-hover)]'
+                      }`}
+                      onClick={() => setNewStyle('2d')}
+                    >
+                      <span className="block text-lg">🕹️</span>
+                      <span className="block text-sm font-bold text-[var(--tx)]">2D Classico</span>
+                      <span className="block text-[11px] leading-tight text-[var(--tx-dim)]">
+                        Il gioco a scene come sempre: tile, nemici, porte, portali
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded-lg border p-3 text-left transition-colors ${
+                        newStyle === '3d'
+                          ? 'border-[var(--neon)] bg-[var(--primary-soft)]'
+                          : 'border-[var(--line)] hover:bg-[var(--panel-hover)]'
+                      }`}
+                      onClick={() => setNewStyle('3d')}
+                    >
+                      <span className="block text-lg">🌍</span>
+                      <span className="block text-sm font-bold text-[var(--tx)]">3D Mondo Vasto</span>
+                      <span className="block text-[11px] leading-tight text-[var(--tx-dim)]">
+                        Terza persona in un mondo infinito di montagne e foreste
+                      </span>
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="game-name" className="text-[var(--tx-dim)]">
+                    Titolo del gioco
+                  </Label>
+                  <Input
+                    id="game-name"
+                    value={newName}
+                    onChange={e => setNewName(e.target.value)}
+                    placeholder={newStyle === '3d' ? 'Es. Le Torri di Neve' : 'Es. Neon Drift: Settore 7'}
+                    onKeyDown={e => e.key === 'Enter' && !busy && void createNew()}
+                    autoFocus
+                  />
+                  {newStyle === '3d' && (
+                    <p className="text-[11px] text-[var(--tx-dim)]">
+                      🌍 Il gioco nasce con un <b>Mondo Vasto</b> di sola natura già pronto
+                      (montagne, colline, foreste). Dall'editor cambi stile del paesaggio
+                      e tutte le opzioni con il bottone 🌍 Mondo.
+                    </p>
+                  )}
+                </div>
               </div>
               <DialogFooter>
                 <Button onClick={createNew} disabled={busy} className="cp-btn">
-                  {busy ? 'Creo...' : 'Crea e apri editor'}
+                  {busy ? 'Creo...' : newStyle === '3d' ? '🌍 Crea gioco 3D' : 'Crea e apri editor'}
                 </Button>
               </DialogFooter>
             </DialogContent>
