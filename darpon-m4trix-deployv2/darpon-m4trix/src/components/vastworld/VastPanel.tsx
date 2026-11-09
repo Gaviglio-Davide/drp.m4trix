@@ -22,7 +22,7 @@ import { toast } from 'sonner'
 import { Globe2, Trash2 } from 'lucide-react'
 import { useWorld } from '@/lib/world-store'
 import {
-  VAST_DEFAULT, VAST_TOD_LABEL, vastSpawn,
+  VAST_BIOMES, VAST_DEFAULT, VAST_TOD_LABEL, vastSpawn,
   type VastConfig, type VastTod,
 } from '@/lib/vastworld'
 
@@ -84,6 +84,29 @@ export default function VastPanel() {
           </p>
 
           <div className="flex flex-col gap-3">
+            {/* v14: STILE del paesaggio */}
+            <div>
+              <span className="text-[10px] tracking-wider text-[var(--tx-dim)] uppercase">
+                Stile del paesaggio
+              </span>
+              <div className="mt-1 grid grid-cols-2 gap-1">
+                {VAST_BIOMES.map(b => (
+                  <button
+                    key={b.id}
+                    className={`rounded-lg border p-2 text-left text-xs transition-colors ${
+                      (cfg.biome ?? 'alpino') === b.id
+                        ? 'border-[var(--neon)] bg-[var(--primary-soft)] text-[var(--tx)]'
+                        : 'border-[var(--line)] text-[var(--tx-dim)] hover:bg-[var(--panel-hover)]'
+                    }`}
+                    onClick={() => setCfg({ ...cfg, biome: b.id })}
+                  >
+                    <span className="block font-bold">{b.label}</span>
+                    <span className="block text-[9px] leading-tight opacity-80">{b.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="flex items-end gap-2">
               <label className="flex flex-1 flex-col gap-1">
                 <span className="text-[10px] tracking-wider text-[var(--tx-dim)] uppercase">Seed del mondo</span>
