@@ -99,7 +99,7 @@ export const SECTION_DEFS: { key: string; defaultTitle: string; label: string }[
   { key: 'gamestudio', defaultTitle: 'Game Studio', label: 'Game Studio (editor di videogiochi)' },
   { key: 'creagame', defaultTitle: 'Crea da Script', label: 'Crea da Script (gioco da sceneggiatura)' },
   { key: 'worldforge', defaultTitle: 'World Forge', label: 'World Forge (mappe procedurali)' },
-  { key: 'mondi', defaultTitle: 'Mondi 3D (prova)', label: 'Mondi 3D (il vecchio laboratorio, per prova)' },
+  { key: 'mondi', defaultTitle: 'Mondi 3D', label: 'Mondi 3D (laboratorio mondi)' },
   { key: 'genera', defaultTitle: 'Genera', label: 'Genera (città e paesaggi)' },
   { key: 'importati', defaultTitle: 'Progetti importati', label: 'Progetti importati (modelli 3D)' },
   { key: 'strutture', defaultTitle: 'Strutture', label: 'Strutture (costruttore)' },
@@ -114,7 +114,7 @@ export const DEFAULT_SECTION_SUBTITLES: Record<string, string> = {
   worldforge:
     'Crea il tuo mondo da zero: mappa casuale poi personalizza tutto — città, villaggi, dungeon, caverne, acqua.',
   mondi:
-    'Il vecchio laboratorio di mondi 3D: case, strade e alberi con un clic. Ora come banco di prova.',
+    'Il laboratorio dei mondi 3D: crea mondi a mano o generali città e paesaggi in un click con il bottone Genera.',
   genera: 'Città medievali, villaggi, fortezze e paesaggi generati in un click.',
   importati:
     'Carica qui tutti i modelli 3D che vuoi (.glb / .gltf): restano in ordine, scegli la loro dimensione e li trovi pronti nell\'editor di ogni tuo progetto.',
