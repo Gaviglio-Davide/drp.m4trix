@@ -92,6 +92,7 @@ export default function Dashboard() {
   const [renameId, setRenameId] = useState<string | null>(null)
   const [renameName, setRenameName] = useState('')
   const [busy, setBusy] = useState(false)
+  const [showGenera, setShowGenera] = useState(false) // v15: genera dentro Mondi 3D
   const tab = useUI(s => s.tab)
   const setTab = useUI(s => s.setTab)
   const site = useUI(s => s.site)
@@ -269,7 +270,8 @@ export default function Dashboard() {
               }`}
             >
               {t.icon}
-              {t.label}
+              {/* v15: il vecchio suffisso «(prova)» non si mostra più */}
+              {t.label.replace(/ \(prova\)$/, '')}
             </button>
           ))}
         </div>
@@ -290,6 +292,14 @@ export default function Dashboard() {
               videogioco.
             </p>
           </motion.div>
+          {/* v15: tasto GENERA dentro Mondi 3D, accanto a Nuovo progetto */}
+          <Button
+            variant="outline"
+            className="shadow-md"
+            onClick={() => setShowGenera(g => !g)}
+          >
+            <Wand2 className="mr-1 h-4 w-4" /> Genera {showGenera ? '▲' : '▼'}
+          </Button>
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
               <Button className="shadow-md">
@@ -328,6 +338,13 @@ export default function Dashboard() {
             </DialogContent>
           </Dialog>
         </div>
+
+        {/* v15: generatore di città e paesaggi, dentro il reparto Mondi 3D */}
+        {tab === 'mondi' && showGenera && (
+          <div className="mb-6">
+            <WorldGen />
+          </div>
+        )}
 
         {worldProjects.length === 0 ? (
           <motion.div

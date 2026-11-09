@@ -237,6 +237,12 @@ export default function GLBCatalog({ open, onClose, onImported }: Props) {
                         <span className="absolute top-1.5 left-1.5 rounded-full bg-black/45 px-1.5 py-0.5 text-[9px] font-bold text-white/90">
                           {entry.license}
                         </span>
+                        {/* v15: badge per i modelli con animazioni */}
+                        {entry.animated && (
+                          <span className="absolute top-1.5 right-1.5 rounded-full bg-black/45 px-1.5 py-0.5 text-[9px] font-bold text-[#ffd23a]">
+                            🎬 Animato
+                          </span>
+                        )}
                         <button
                           onClick={() =>
                             setPreview({ url: entry.url, name: entry.name })

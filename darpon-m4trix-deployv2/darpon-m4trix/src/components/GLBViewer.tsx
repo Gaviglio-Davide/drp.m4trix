@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react'
 import * as THREE from 'three'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { ContactShadows, Grid, OrbitControls, useGLTF } from '@react-three/drei'
 import {
   Box,
@@ -78,13 +78,17 @@ function collectStats(object: THREE.Object3D): ModelStats {
 function PreviewModel({
   url,
   wireframe,
+  playing,
   onStats,
+  onAnims,
 }: {
   url: string
   wireframe: boolean
+  playing: boolean
   onStats: (s: ModelStats) => void
+  onAnims: (has: boolean) => void
 }) {
-  const { scene } = useGLTF(url)
+  const { scene, animations } = useGLTF(url)
   const { camera, controls } = useThree()
   const fitted = useRef(false)
 
@@ -98,6 +102,24 @@ function PreviewModel({
     c.position.y -= box.min.y
     return c
   }, [scene])
+
+  // v15: se il modello ha animazioni (robot che balla, cavallo al
+  // galoppo, volpe che corre...) le riproduciamo DA SOLE:
+  // niente più modelli statici nell'anteprima!
+  const mixer = useMemo(() => {
+    if (!animations || animations.length === 0) return null
+    const m = new THREE.AnimationMixer(prepared)
+    m.clipAction(animations[0]).play()
+    return m
+  }, [prepared, animations])
+
+  useFrame((_, dt) => {
+    if (mixer && playing) mixer.update(dt)
+  })
+
+  useEffect(() => {
+    onAnims(!!mixer && animations.length > 0)
+  }, [mixer, animations, onAnims])
 
   useEffect(() => {
     onStats(collectStats(prepared))
@@ -187,9 +209,13 @@ export default function GLBViewer({ url, name, onClose }: GLBViewerProps) {
   const [stats, setStats] = useState<ModelStats | null>(null)
   const [autoRotate, setAutoRotate] = useState(true)
   const [wireframe, setWireframe] = useState(false)
+  const [hasAnim, setHasAnim] = useState(false) // v15: il modello ha animazioni
+  const [playAnim, setPlayAnim] = useState(true) // v15: riproduzione ON/OFF
 
   useEffect(() => {
     setStats(null)
+    setHasAnim(false)
+    setPlayAnim(true)
   }, [url])
 
   const fmt = (n: number) =>
@@ -245,7 +271,9 @@ export default function GLBViewer({ url, name, onClose }: GLBViewerProps) {
                   <PreviewModel
                     url={url}
                     wireframe={wireframe}
+                    playing={playAnim}
                     onStats={setStats}
+                    onAnims={setHasAnim}
                   />
                   <ContactShadows
                     position={[0, 0, 0]}
@@ -292,6 +320,16 @@ export default function GLBViewer({ url, name, onClose }: GLBViewerProps) {
               <RotateCw className="mr-1 h-3.5 w-3.5" />
               {autoRotate ? 'Rotazione ON' : 'Rotazione OFF'}
             </Button>
+            {/* v15: tasto animazione (solo se il modello ne ha una) */}
+            {hasAnim && (
+              <Button
+                size="sm"
+                variant={playAnim ? 'default' : 'outline'}
+                onClick={() => setPlayAnim(a => !a)}
+              >
+                🎬 {playAnim ? 'Animazione ON' : 'Animazione OFF'}
+              </Button>
+            )}
             <Button
               size="sm"
               variant={wireframe ? 'default' : 'outline'}
