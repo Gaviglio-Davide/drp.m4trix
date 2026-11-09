@@ -16,6 +16,8 @@
 
 export type VastTod = 'alba' | 'giorno' | 'tramonto' | 'notte'
 
+export type VastBiome = 'alpino' | 'invernale' | 'autunnale' | 'mediterraneo'
+
 export type VastConfig = {
   seed: number
   mountains: number // 0..1 altezza/frequenza catene montuose
@@ -24,6 +26,19 @@ export type VastConfig = {
   water: number // 0..1 quantità di acqua (livello laghi/mare)
   tod: VastTod // ora del giorno (luce, cielo, nebbia)
   quality?: 'basso' | 'medio' | 'alto' // raggio streaming chunk
+  biome?: VastBiome // v14: STILE del paesaggio (alpino, invernale, autunnale, mediterraneo)
+}
+
+/** v14: gli STILI del paesaggio che l'utente può scegliere */
+export const VAST_BIOMES: { id: VastBiome; label: string; desc: string }[] = [
+  { id: 'alpino', label: '🏔 Alpino', desc: 'prati verdi, pini, neve sulle vette' },
+  { id: 'invernale', label: '❄️ Invernale', desc: 'neve ovunque, laghi ghiacciati' },
+  { id: 'autunnale', label: '🍂 Autunnale', desc: 'tonalità dorate e ramate' },
+  { id: 'mediterraneo', label: '🌊 Mediterraneo', desc: 'coste sabbiose, macchia secca' },
+]
+
+export function vastBiome(b: VastBiome | undefined): VastBiome {
+  return b ?? 'alpino'
 }
 
 export const VAST_DEFAULT: VastConfig = {
@@ -160,13 +175,42 @@ export function vastSlope(x: number, z: number, cfg: VastConfig): number {
 
 // ---------------- colori del paesaggio ----------------
 
-const C_SABBIA = [0.76, 0.68, 0.47]
-const C_PRATO = [0.38, 0.55, 0.25]
-const C_BOSCO = [0.22, 0.4, 0.18]
-const C_ROCCIA = [0.46, 0.44, 0.42]
-const C_ROCCIA_S = [0.35, 0.33, 0.32]
-const C_NEVE = [0.93, 0.95, 0.98]
-const C_FONDO = [0.3, 0.42, 0.35]
+const C_SABBIA: [number, number, number] = [0.76, 0.68, 0.47]
+const C_PRATO: [number, number, number] = [0.38, 0.55, 0.25]
+const C_BOSCO: [number, number, number] = [0.22, 0.4, 0.18]
+const C_ROCCIA: [number, number, number] = [0.46, 0.44, 0.42]
+const C_ROCCIA_S: [number, number, number] = [0.35, 0.33, 0.32]
+const C_NEVE: [number, number, number] = [0.93, 0.95, 0.98]
+const C_FONDO: [number, number, number] = [0.3, 0.42, 0.35]
+
+// v14: tinte del terreno per STILE del paesaggio
+type BiomeTint = {
+  prato: [number, number, number]
+  bosco: [number, number, number]
+  roccia: [number, number, number]
+  sabbia: [number, number, number]
+  neveShift: number // sposta la linea delle nevi (negativo = più neve)
+  beachWidth: number // larghezza extra delle spiagge (metri)
+  snowLow: boolean // neve anche in pianura (inverno)
+}
+const BIOME_TINT: Record<VastBiome, BiomeTint> = {
+  alpino: {
+    prato: C_PRATO, bosco: C_BOSCO, roccia: C_ROCCIA, sabbia: C_SABBIA,
+    neveShift: 0, beachWidth: 0, snowLow: false,
+  },
+  invernale: {
+    prato: [0.8, 0.84, 0.88], bosco: [0.32, 0.4, 0.36], roccia: [0.52, 0.54, 0.58],
+    sabbia: C_NEVE, neveShift: -16, beachWidth: 2.5, snowLow: true,
+  },
+  autunnale: {
+    prato: [0.63, 0.5, 0.2], bosco: [0.46, 0.24, 0.1], roccia: [0.48, 0.42, 0.36],
+    sabbia: [0.7, 0.6, 0.4], neveShift: 12, beachWidth: 0, snowLow: false,
+  },
+  mediterraneo: {
+    prato: [0.56, 0.56, 0.27], bosco: [0.32, 0.42, 0.2], roccia: [0.64, 0.6, 0.52],
+    sabbia: [0.82, 0.74, 0.52], neveShift: 30, beachWidth: 3.5, snowLow: false,
+  },
+}
 
 /** leggera variazione naturale del colore (macchie d'erba, muschio) */
 function tint(x: number, z: number, seed: number, k: number): number {
@@ -188,35 +232,38 @@ export function vastColor(
 ): [number, number, number] {
   const s = cfg.seed * 419 + 17
   const f = forest ?? vastForest(x, z, cfg)
+  const bt = BIOME_TINT[vastBiome(cfg.biome)]
   let c: [number, number, number]
   const rockLine = 14 + cfg.mountains * 30 // quota oltre la quale è roccia
-  const snowLine = rockLine + 12 + cfg.mountains * 22
+  const snowLine = Math.max(4, rockLine + 12 + cfg.mountains * 22 + bt.neveShift)
+  const beach = WATER_LEVEL + 1.6 + bt.beachWidth
 
   if (h < WATER_LEVEL + 0.35) {
-    c = [lerp(C_FONDO[0], C_SABBIA[0], smoothstep(WATER_LEVEL - 1.6, WATER_LEVEL + 0.35, h)),
-         lerp(C_FONDO[1], C_SABBIA[1], smoothstep(WATER_LEVEL - 1.6, WATER_LEVEL + 0.35, h)),
-         lerp(C_FONDO[2], C_SABBIA[2], smoothstep(WATER_LEVEL - 1.6, WATER_LEVEL + 0.35, h))]
-  } else if (h < WATER_LEVEL + 1.6) {
-    c = [...C_SABBIA] as [number, number, number]
+    c = [lerp(C_FONDO[0], bt.sabbia[0], smoothstep(WATER_LEVEL - 1.6, WATER_LEVEL + 0.35, h)),
+         lerp(C_FONDO[1], bt.sabbia[1], smoothstep(WATER_LEVEL - 1.6, WATER_LEVEL + 0.35, h)),
+         lerp(C_FONDO[2], bt.sabbia[2], smoothstep(WATER_LEVEL - 1.6, WATER_LEVEL + 0.35, h))]
+  } else if (h < beach) {
+    c = [...bt.sabbia] as [number, number, number]
   } else {
     // prato → bosco in base alla foresta + quota
     const forestMix = smoothstep(0.45, 0.72, f) * (1 - smoothstep(rockLine * 0.55, rockLine, h))
     c = [
-      lerp(C_PRATO[0], C_BOSCO[0], forestMix),
-      lerp(C_PRATO[1], C_BOSCO[1], forestMix),
-      lerp(C_PRATO[2], C_BOSCO[2], forestMix),
+      lerp(bt.prato[0], bt.bosco[0], forestMix),
+      lerp(bt.prato[1], bt.bosco[1], forestMix),
+      lerp(bt.prato[2], bt.bosco[2], forestMix),
     ]
     // pendenza → roccia affiorante
     const rockMix = smoothstep(0.55, 1.15, slope)
     c = [
-      lerp(c[0], slope > 0.9 ? C_ROCCIA_S[0] : C_ROCCIA[0], rockMix),
-      lerp(c[1], slope > 0.9 ? C_ROCCIA_S[1] : C_ROCCIA[1], rockMix),
-      lerp(c[2], slope > 0.9 ? C_ROCCIA_S[2] : C_ROCCIA[2], rockMix),
+      lerp(c[0], slope > 0.9 ? C_ROCCIA_S[0] : bt.roccia[0], rockMix),
+      lerp(c[1], slope > 0.9 ? C_ROCCIA_S[1] : bt.roccia[1], rockMix),
+      lerp(c[2], slope > 0.9 ? C_ROCCIA_S[2] : bt.roccia[2], rockMix),
     ]
-    // alta quota → roccia, poi neve
+    // alta quota → roccia, poi neve (in inverno nevica anche in pianura)
     const highRock = smoothstep(rockLine, rockLine + 6, h)
-    const snow = smoothstep(snowLine, snowLine + 7, h + tint(x, z, s, 3))
-    for (let i = 0; i < 3; i++) c[i] = lerp(c[i], C_ROCCIA[i], highRock)
+    let snow = smoothstep(snowLine, snowLine + 7, h + tint(x, z, s, 3))
+    if (bt.snowLow) snow = Math.max(snow, smoothstep(beach + 1.5, beach + 7, h))
+    for (let i = 0; i < 3; i++) c[i] = lerp(c[i], bt.roccia[i], highRock)
     for (let i = 0; i < 3; i++) c[i] = lerp(c[i], C_NEVE[i], snow * (1 - smoothstep(0.9, 1.4, slope)))
   }
 
@@ -276,8 +323,9 @@ export function vastPlants(
       if (slope > 0.95) continue // troppo ripido
       const f = vastForest(x, z, cfg)
       const forestMix = smoothstep(0.45, 0.72, f)
+      const bt = BIOME_TINT[vastBiome(cfg.biome)]
       const rockLine = 14 + cfg.mountains * 30
-      const snowLine = rockLine + 12 + cfg.mountains * 22
+      const snowLine = Math.max(4, rockLine + 12 + cfg.mountains * 22 + bt.neveShift)
       // densità: foreste fitte, radure con alberi radi
       const density = forestMix * 0.85 + 0.08
       if (r3 > density) continue
@@ -289,10 +337,20 @@ export function vastPlants(
       }
       const altitude = smoothstep(6, rockLine, h)
       // tipo: pini in quota, querce in pianura, betulle a metà
+      // v14: ogni STILE di paesaggio ha la sua vegetazione tipica
+      const b = vastBiome(cfg.biome)
       let kind: VastPlant['kind']
-      if (altitude > 0.62) kind = 'pino'
-      else if (altitude > 0.3) kind = r4 > 0.55 ? 'betulla' : 'pino'
-      else kind = r4 > 0.8 ? 'betulla' : 'querce'
+      if (b === 'invernale') {
+        kind = r4 > 0.3 ? 'pino' : 'betulla'
+      } else if (b === 'mediterraneo') {
+        kind = altitude > 0.5 ? 'pino' : r4 > 0.55 ? 'cespuglio' : 'querce'
+      } else if (b === 'autunnale') {
+        kind = altitude > 0.62 ? 'pino' : altitude > 0.3 ? (r4 > 0.7 ? 'pino' : 'querce') : (r4 > 0.85 ? 'betulla' : 'querce')
+      } else {
+        if (altitude > 0.62) kind = 'pino'
+        else if (altitude > 0.3) kind = r4 > 0.55 ? 'betulla' : 'pino'
+        else kind = r4 > 0.8 ? 'betulla' : 'querce'
+      }
       if (r3 > 0.94 && !forestMix) kind = 'roccia'
       else if (r3 > 0.9 - forestMix * 0.18) kind = 'cespuglio'
       const sc =
@@ -435,6 +493,11 @@ export function parseVastConfig(v: unknown): VastConfig | null {
       ? (o.tod as VastTod)
       : 'giorno',
     quality: o.quality === 'basso' || o.quality === 'alto' ? o.quality : 'medio',
+    biome: (['alpino', 'invernale', 'autunnale', 'mediterraneo'] as VastBiome[]).includes(
+      o.biome as VastBiome
+    )
+      ? (o.biome as VastBiome)
+      : 'alpino',
   }
 }
 
