@@ -53,18 +53,18 @@ type UIState = {
 }
 
 export const DEFAULT_SECTIONS: Record<string, { title: string; subtitle: string; enabled: boolean }> = {
-  gamestudio: { title: 'Game Studio', subtitle: 'Il reparto stile Godot/Unity: costruisci videogiochi veri — scene, nemici, boss, dialoghi, combattimento e porte tra livelli. Provali al volo con ▶ Gioca.', enabled: true },
+  gamestudio: { title: 'Game Studio', subtitle: 'Il cuore di darpon.m4trix: costruisci videogiochi veri nella scena 3D con le frecce — personaggi animati, nemici, boss, dialoghi e porte tra livelli. Provali al volo con ▶ Gioca.', enabled: true },
   creagame: { title: 'Crea da Script', subtitle: 'Scrivi il tuo gioco come una sceneggiatura: il sistema rileva ambientazione, nemici e obiettivo, chiede conferma dei dettagli e compila un gioco giocabile. Stesso script, seed diverso → gioco diverso.', enabled: true },
-  worldforge: { title: 'World Forge', subtitle: 'Crea il tuo mondo da zero: genera una mappa casuale e personalizza tutto — città con edifici e mura, villaggi, dungeon, caverne, fiumi e strade. Poi manda tutto nel Game Studio.', enabled: true },
-  mondi: { title: 'Mondi 3D (prova)', subtitle: 'Il vecchio laboratorio di mondi 3D: case, strade e alberi con un clic. Ora lo usi come banco di prova — i giochi veri nascono negli altri reparti.', enabled: true },
-  genera: { title: 'Genera', subtitle: 'Città medievali, villaggi, fortezze e paesaggi generati in un click.', enabled: true },
+  worldforge: { title: 'Mappe & Regni', subtitle: 'Crea il tuo mondo da zero: genera una mappa casuale e personalizza tutto — città con edifici e mura, villaggi, dungeon, caverne, fiumi e strade. Poi manda tutto nel Game Studio.', enabled: true },
+  mondi: { title: 'Mondi 3D', subtitle: 'Il laboratorio dei mondi 3D: case, strade e alberi con un clic, terreno scolpibile e il generatore di città e paesaggi con il bottone Genera.', enabled: true },
+  genera: { title: 'Genera', subtitle: 'Città medievali, villaggi, fortezze e paesaggi generati in un click. Lo trovi dentro il reparto Mondi 3D.', enabled: false },
   importati: { title: 'Progetti importati', subtitle: 'Carica qui tutti i modelli 3D che vuoi (.glb / .gltf): restano in ordine, scegli la loro dimensione e li trovi pronti nell\'editor di ogni tuo progetto.', enabled: true },
   strutture: { title: 'Strutture', subtitle: 'Progetta case e edifici pezzo per pezzo: la tua libreria è disponibile in ogni mondo.', enabled: true },
-  darpx: { title: 'Darpx.ai', subtitle: 'L\'AI del sito: immagine → mondo, testo o immagine → 3D e l\'Agente Darpx che ti aiuta subito.', enabled: true },
+  darpx: { title: 'Laboratorio', subtitle: 'Il laboratorio creativo: immagine → mondo, testo o immagine → 3D e l\'Agente che ti aiuta subito.', enabled: true },
 }
 
 export const useUI = create<UIState>((set, get) => ({
-  tab: 'creagame',
+  tab: 'gamestudio',
   setTab: tab => set({ tab }),
 
   darpxPrefill: null,

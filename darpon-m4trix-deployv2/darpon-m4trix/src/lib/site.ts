@@ -11,12 +11,12 @@
 
 export const SITE_DEFAULTS = {
   siteName: 'darpon.m4trix',
-  tagline: 'GAME FACTORY // CYBERPUNK',
+  tagline: 'darpon.m4trix // WORLD BUILDER',
   headline: 'Crea videogiochi veri.',
   headlineAccent: 'Dal tuo script, in rete.',
   intro:
-    'Scrivi una sceneggiatura e ottieni un gioco giocabile con nemici, boss e dialoghi. Costruisci livelli nello studio stile Godot/Unity, genera mappe procedurali infinite e quando tutto è pronto... premi Gioca e giocaci dentro.',
-  footer: 'darpon.m4trix — scrivi, costruisci, gioca. // CYBERPUNK',
+    'Scrivi una sceneggiatura e ottieni un gioco giocabile con nemici, boss e dialoghi. Costruisci livelli nello studio 3D, genera mappe procedurali infinite e quando tutto è pronto... premi Gioca e giocaci dentro.',
+  footer: 'darpon.m4trix — scrivi, costruisci, gioca.',
 }
 
 export type SiteConfig = typeof SITE_DEFAULTS
@@ -50,12 +50,12 @@ export const DEFAULT_PARAGRAPHS: HomeParagraph[] = [
   },
   {
     id: 'p-studio',
-    title: '🛠️ Game Studio stile Godot/Unity',
+    title: '🛠️ Game Studio 3D',
     text: 'Scene multiple, tilemap da dipingere, nemici con HP e IA, torrette, boss, NPC con dialoghi, casse, chiavi, porte tra livelli e portale obiettivo. Modifichi tutto dall\'ispettore e provi al volo con ▶ Gioca, direttamente nel browser.',
   },
   {
     id: 'p-worldforge',
-    title: '🗺️ Mondi procedurali (Watabou style)',
+    title: '🗺️ Mondi procedurali',
     text: 'Genera una mappa del mondo casuale e poi personalizza tutto: biomi col pennello, città con isolati, edifici e mura, villaggi, dungeon, caverne, fiumi e strade. Con un clic la mappa diventa un livello esplorabile nel Game Studio.',
   },
 ]
@@ -108,7 +108,7 @@ export const SECTION_DEFS: { key: string; defaultTitle: string; label: string }[
 
 export const DEFAULT_SECTION_SUBTITLES: Record<string, string> = {
   gamestudio:
-    'Il reparto stile Godot/Unity: costruisci videogiochi veri — scene, nemici, boss, dialoghi, combattimento e porte tra livelli.',
+    'Il cuore di darpon.m4trix: costruisci videogiochi veri — scena 3D con frecce, personaggi animati, nemici, boss, dialoghi e porte tra livelli.',
   creagame:
     'Scrivi il tuo gioco come una sceneggiatura: dettagli confermabili, compilazione e variazioni infinite.',
   worldforge:
@@ -120,7 +120,7 @@ export const DEFAULT_SECTION_SUBTITLES: Record<string, string> = {
     'Carica qui tutti i modelli 3D che vuoi (.glb / .gltf): restano in ordine, scegli la loro dimensione e li trovi pronti nell\'editor di ogni tuo progetto.',
   strutture:
     'Progetta case e edifici pezzo per pezzo: la tua libreria è disponibile in ogni mondo.',
-  darpx: "L'AI del sito: immagine → mondo, testo o immagine → 3D e l'Agente Darpx che ti aiuta subito.",
+  darpx: 'Il laboratorio creativo: immagine → mondo, testo o immagine → 3D e l\'Agente che ti aiuta subito.',
 }
 
 /** Valida la configurazione reparti arrivata dal client */
