@@ -131,6 +131,7 @@ export default function Editor() {
   const [confirmDeleteAsset, setConfirmDeleteAsset] = useState<string | null>(
     null
   )
+  const [paletteOpen, setPaletteOpen] = useState(false) // v16: dock compatto
   const fileRef = useRef<HTMLInputElement>(null)
   const firstRender = useRef(true)
   const glOK = useRef<boolean | null>(null)
@@ -794,125 +795,143 @@ export default function Editor() {
         </div>
       </div>
 
-      {/* bottom palette */}
+      {/* v16: DOCK OGGETTI compatto e richiudibile (non occupa più metà schermo) */}
       {!playMode && (
         <div className="absolute inset-x-0 bottom-0 z-10 flex justify-center p-3">
-          {!playMode && (
-            <div className="pointer-events-none mb-14 hidden rounded-full bg-black/55 px-4 py-1.5 text-[11px] font-medium text-white/90 shadow-lg backdrop-blur md:block">
-              {brush !== 'none'
-                ? 'Pennello terreno attivo: trascina col sinistro per scolpire'
-                : '🖱️ Tasto destro = ruota la visuale · click destro su un oggetto = elimina · rotella = zoom · R = ruota'}
-            </div>
-          )}
-          <div className="flex max-w-full flex-col gap-2 rounded-3xl bg-[var(--panel)] p-3 shadow-2xl ring-1 ring-[var(--line)] backdrop-blur">
-            {/* color chips */}
-            <div className="flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5">
-              <span className="mr-1 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
-                Colori
-              </span>
-              {PALETTE.map((c, i) => (
-                <button
-                  key={c}
-                  onClick={() => setGhostColor(i)}
-                  className={`h-6 w-6 shrink-0 rounded-full ring-2 transition-transform hover:scale-110 ${
-                    ghostColor % PALETTE.length === i
-                      ? 'ring-[var(--neon)]'
-                      : 'ring-transparent'
-                  }`}
-                  style={{ backgroundColor: c }}
-                  aria-label={`Colore ${i + 1}`}
-                />
-              ))}
-              <span className="mx-2 h-5 w-px shrink-0 bg-[var(--line-strong)]" />
-              <span className="mr-1 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
-                Ruota: R
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 shrink-0 rounded-full px-2"
-                onClick={() => setGhostRot(ghostRot + 1)}
-              >
-                <RotateCcw className="h-3 w-3" />
-              </Button>
-              {selectedDef?.isGlb && (
-                <>
-                  <span className="mx-2 h-5 w-px shrink-0 bg-[var(--line-strong)]" />
-                  <span className="mr-1 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-[var(--tx-faint)]">
-                    Dimensione
-                  </span>
-                  <input
-                    type="range"
-                    min={0.2}
-                    max={3}
-                    step={0.1}
-                    value={ghostScale}
-                    onChange={e => setGhostScale(Number(e.target.value))}
-                    className="h-1.5 w-28 shrink-0 cursor-pointer accent-[var(--primary)]"
-                    aria-label="Dimensione del modello"
-                  />
-                  <span className="w-9 shrink-0 text-[11px] font-bold text-[var(--tx-dim)]">
-                    {ghostScale.toFixed(1)}x
-                  </span>
-                </>
+          <div className="pointer-events-none mb-1 hidden rounded-full bg-black/55 px-4 py-1.5 text-[11px] font-medium text-white/90 shadow-lg backdrop-blur md:block">
+            {brush !== 'none'
+              ? 'Pennello terreno attivo: trascina col sinistro per scolpire'
+              : '🖱️ Tasto destro = ruota la visuale · click destro su un oggetto = elimina · rotella = zoom'}
+          </div>
+          <div className="absolute inset-x-0 bottom-3 flex flex-col items-center gap-2 px-3">
+            <div className="flex max-w-full flex-col gap-2 rounded-3xl bg-[var(--panel)] p-2.5 shadow-2xl ring-1 ring-[var(--line)] backdrop-blur">
+              {paletteOpen && (
+                <div className="flex max-h-[36vh] w-[min(92vw,760px)] flex-col gap-2 overflow-y-auto">
+                  {/* colori + rotazione + dimensione */}
+                  <div className="flex flex-wrap items-center gap-1.5 px-0.5">
+                    <span className="mr-1 shrink-0 text-[10px] font-bold uppercase tracking-wide text-[var(--tx-faint)]">
+                      Colori
+                    </span>
+                    {PALETTE.map((c, i) => (
+                      <button
+                        key={c}
+                        onClick={() => setGhostColor(i)}
+                        className={`h-5 w-5 shrink-0 rounded-full ring-2 transition-transform hover:scale-110 ${
+                          ghostColor % PALETTE.length === i
+                            ? 'ring-[var(--neon)]'
+                            : 'ring-transparent'
+                        }`}
+                        style={{ backgroundColor: c }}
+                        aria-label={`Colore ${i + 1}`}
+                      />
+                    ))}
+                    <span className="mx-1.5 h-4 w-px shrink-0 bg-[var(--line-strong)]" />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 shrink-0 rounded-full px-2 text-[10px]"
+                      onClick={() => setGhostRot(ghostRot + 1)}
+                    >
+                      <RotateCcw className="h-3 w-3" /> Ruota (R)
+                    </Button>
+                    {selectedDef?.isGlb && (
+                      <>
+                        <span className="mx-1.5 h-4 w-px shrink-0 bg-[var(--line-strong)]" />
+                        <label className="flex shrink-0 items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-[var(--tx-faint)]">
+                          Dimensione
+                          <input
+                            type="range"
+                            min={0.2}
+                            max={3}
+                            step={0.1}
+                            value={ghostScale}
+                            onChange={e => setGhostScale(Number(e.target.value))}
+                            className="h-1.5 w-24 cursor-pointer accent-[var(--primary)]"
+                            aria-label="Dimensione del modello"
+                          />
+                          <span className="w-8 text-[11px] font-bold text-[var(--tx-dim)]">
+                            {ghostScale.toFixed(1)}x
+                          </span>
+                        </label>
+                      </>
+                    )}
+                  </div>
+                  {/* oggetti base */}
+                  <div className="flex flex-wrap items-center gap-1 px-0.5">
+                    <span className="w-full text-[10px] font-bold uppercase tracking-wide text-[var(--tx-faint)]">
+                      Oggetti
+                    </span>
+                    {BUILTIN_ASSETS.map(a => (
+                      <button
+                        key={a.id}
+                        onClick={() => selectAsset(a.id)}
+                        className={`flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[10px] font-medium transition-all ${
+                          selectedAsset === a.id
+                            ? 'bg-[var(--primary-soft)] text-[var(--tx)] ring-1 ring-[var(--primary)]'
+                            : 'bg-[var(--panel-soft)] text-[var(--tx-dim)] ring-1 ring-[var(--line)] hover:bg-[var(--panel-hover)]'
+                        }`}
+                      >
+                        <span className="text-sm leading-none">{a.icon}</span>
+                        <span className="whitespace-nowrap">{a.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {/* modelli importati e strutture */}
+                  {customAssets.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1 px-0.5">
+                      <span className="w-full text-[10px] font-bold uppercase tracking-wide text-[var(--tx-faint)]">
+                        I tuoi modelli & strutture
+                      </span>
+                      {customAssets.map(a => (
+                        <button
+                          key={a.id}
+                          onClick={() => pickAsset(a.id)}
+                          className={`flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[10px] font-medium transition-all ${
+                            selectedAsset === a.id
+                              ? 'bg-[var(--primary-soft)] text-[var(--tx)] ring-1 ring-[var(--primary)]'
+                              : 'bg-[var(--panel-soft)] text-[var(--tx-dim)] ring-1 ring-[var(--line)] hover:bg-[var(--panel-hover)]'
+                          }`}
+                        >
+                          <span className="text-sm leading-none">
+                            {a.kind === 'structure' ? '🏗️' : '📦'}
+                          </span>
+                          <span className="max-w-28 truncate">{a.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
-            </div>
-            {/* assets */}
-            <div className="flex items-center gap-1.5 overflow-x-auto px-1 pt-0.5">
-              {BUILTIN_ASSETS.map(a => (
+              {/* barra compatta sempre visibile */}
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".glb,.gltf"
+                  className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (f) onUpload(f)
+                    e.target.value = ''
+                  }}
+                />
                 <button
-                  key={a.id}
-                  onClick={() => selectAsset(a.id)}
-                  className={`flex min-w-16 shrink-0 flex-col items-center gap-0.5 rounded-2xl px-2.5 py-2 transition-all ${
-                    selectedAsset === a.id
-                      ? 'bg-[var(--primary-soft)] ring-2 ring-[var(--primary)]'
-                      : 'bg-[var(--panel-soft)] ring-1 ring-[var(--line)] hover:bg-[var(--panel-hover)]'
+                  onClick={() => fileRef.current?.click()}
+                  className="flex shrink-0 items-center gap-1.5 rounded-xl border border-dashed border-[var(--line-strong)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--tx-dim)] transition-colors hover:bg-[var(--primary-soft)]"
+                >
+                  <CloudUpload className="h-4 w-4" /> Carica GLB
+                </button>
+                <button
+                  onClick={() => setPaletteOpen(o => !o)}
+                  className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-bold shadow-sm transition-all ${
+                    paletteOpen
+                      ? 'bg-[var(--primary)] text-white'
+                      : 'bg-[var(--primary-soft)] text-[var(--primary-strong)] ring-1 ring-[var(--primary)]'
                   }`}
                 >
-                  <span className="text-xl leading-none">{a.icon}</span>
-                  <span className="whitespace-nowrap text-[10px] font-medium text-[var(--tx-dim)]">
-                    {a.label}
-                  </span>
+                  🎒 Oggetti {paletteOpen ? '▼' : '▲'}
                 </button>
-              ))}
-              {customAssets.map(a => (
-                <button
-                  key={a.id}
-                  onClick={() => pickAsset(a.id)}
-                  className={`flex min-w-16 shrink-0 flex-col items-center gap-0.5 rounded-2xl px-2.5 py-2 transition-all ${
-                    selectedAsset === a.id
-                      ? 'bg-[var(--primary-soft)] ring-2 ring-[var(--primary)]'
-                      : 'bg-[var(--panel-soft)] ring-1 ring-[var(--line)] hover:bg-[var(--panel-hover)]'
-                  }`}
-                >
-                  <span className="text-xl leading-none">
-                    {a.kind === 'structure' ? '🏗️' : '📦'}
-                  </span>
-                  <span className="max-w-20 truncate text-[10px] font-medium text-[var(--tx-dim)]">
-                    {a.name}
-                  </span>
-                </button>
-              ))}
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".glb,.gltf"
-                className="hidden"
-                onChange={e => {
-                  const f = e.target.files?.[0]
-                  if (f) onUpload(f)
-                  e.target.value = ''
-                }}
-              />
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="flex min-w-16 shrink-0 flex-col items-center gap-0.5 rounded-2xl border border-dashed border-[var(--line-strong)] px-2.5 py-2 transition-colors hover:bg-[var(--primary-soft)]"
-              >
-                <CloudUpload className="h-5 w-5 text-[var(--tx-dim)]" />
-                <span className="whitespace-nowrap text-[10px] font-medium text-[var(--tx-dim)]">
-                  Carica GLB
-                </span>
-              </button>
+              </div>
             </div>
           </div>
         </div>
