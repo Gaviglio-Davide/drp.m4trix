@@ -373,7 +373,7 @@ export default function CreaDaScript() {
             <Question
               n={qIdx + 1}
               title="In quale mondo 3D si gioca?"
-              hint="Sono i mondi creati nel reparto Mondi 3D (quello di prova)."
+              hint="Sono i mondi creati nel reparto Mondi 3D."
             >
               {worlds === null || worldBusy ? (
                 <div className="flex items-center gap-2 py-6 text-sm text-[var(--tx-dim)]">
