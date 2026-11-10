@@ -54,6 +54,13 @@ export type EntityProps = {
   locked?: boolean // porta chiusa a chiave
   amount?: number // monete / cura
   solid?: boolean // decorazione solida (albero, barile)
+  // ---- v16: editor 3D stile Godot ----
+  scale?: number // scala uniforme del modello in scena (default 1)
+  rotY?: number // rotazione orizzontale in gradi (0-360)
+  glbUrl?: string // modello GLB piazzato in scena (deco/personaggio)
+  glbName?: string // nome del modello piazzato
+  assetId?: string // id asset (custom asset/struttura) piazzato
+  animIndex?: number // quale clip di animazione del GLB usare
 }
 
 export type GameEntity = {
@@ -75,6 +82,35 @@ export type GameScene = {
 }
 
 export type Objective = 'goal' | 'boss' | 'collezione'
+
+/** v16: un tasto azione del gioco (mostrato nell'HUD e premibile) */
+export type ActionButton = {
+  id: string
+  label: string
+  icon: string
+  key: string // tasto singolo: 'Q', 'R', 'F'...
+  action: 'parla' | 'attacca' | 'schiva' | 'parata' | 'magia' | 'inventario' | 'saluta'
+}
+
+/** le azioni che si possono assegnare a un tasto */
+export const ACTION_DEFS: { action: ActionButton['action']; label: string; icon: string; desc: string }[] = [
+  { action: 'parla', label: 'Parla', icon: '💬', desc: 'Parla con il PNG più vicino' },
+  { action: 'attacca', label: 'Attacca', icon: '⚔', desc: 'Colpisci con la tua arma' },
+  { action: 'schiva', label: 'Schivata', icon: '🌀', desc: 'Schivata rapida (richiede stamina)' },
+  { action: 'parata', label: 'Parata', icon: '🛡', desc: 'Parata con finestra perfetta' },
+  { action: 'magia', label: 'Lancia magia', icon: '🔮', desc: 'Lancia la magia selezionata' },
+  { action: 'inventario', label: 'Zaino', icon: '🎒', desc: 'Apri e chiudi lo zaino' },
+  { action: 'saluta', label: 'Saluta', icon: '👋', desc: 'Messaggio di saluto in gioco' },
+]
+
+/** tasti azione di serie per i giochi 3D */
+export function defaultActionButtons(): ActionButton[] {
+  return [
+    { id: 'a_parla', label: 'Parla', icon: '💬', key: 'R', action: 'parla' },
+    { id: 'a_attacca', label: 'Attacca', icon: '⚔', key: 'Spazio', action: 'attacca' },
+    { id: 'a_inventario', label: 'Zaino', icon: '🎒', key: 'I', action: 'inventario' },
+  ]
+}
 
 export type GameSettings = {
   playerHp: number
@@ -112,6 +148,9 @@ export type GameSettings = {
   animSpeed?: number // moltiplicatore velocità animazioni 0.5–2 (default: 1)
   enemyMode?: 'normale' | 'aggressivi' | 'fermi' // IA dei nemici (default: normale)
   npcWalk?: boolean // i PNG camminano per il mondo (default: on)
+  // ---- v16: SCENA 3D e AZIONI ----
+  playerAnimIndex?: number | null // clip di animazione del PG scelto dall'autore
+  actionButtons?: ActionButton[] // tasti azione del gioco (parla, attacca...)
 }
 
 export type GameProject = {
@@ -378,4 +417,16 @@ export function schematicToWorld(
   h = SCHEMATIC_SIZE
 ): [number, number] {
   return [(x + 0.5) * (60 / w) - 30, (y + 0.5) * (60 / h) - 30]
+}
+
+/** coordinate mondo (metri) → cella schematica (v16, per l'editor 3D) */
+export function worldToSchematic(
+  wx: number,
+  wz: number,
+  w = SCHEMATIC_SIZE,
+  h = SCHEMATIC_SIZE
+): [number, number] {
+  const x = Math.round(((wx + 30) * w) / 60 - 0.5)
+  const y = Math.round(((wz + 30) * h) / 60 - 0.5)
+  return [Math.max(0, Math.min(w - 1, x)), Math.max(0, Math.min(h - 1, y))]
 }
