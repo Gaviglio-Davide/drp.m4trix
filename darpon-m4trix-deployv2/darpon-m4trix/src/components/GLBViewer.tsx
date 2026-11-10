@@ -223,7 +223,7 @@ export default function GLBViewer({ url, name, onClose }: GLBViewerProps) {
 
   return (
     <Dialog open={!!url} onOpenChange={open => !open && onClose()}>
-      <DialogContent className="max-h-[92vh] max-w-4xl overflow-hidden p-0 sm:rounded-3xl">
+      <DialogContent className="max-h-[94vh] w-full max-w-6xl overflow-hidden p-0 sm:rounded-3xl">
         <DialogHeader className="border-b border-black/5 px-5 py-3">
           <div className="flex items-center justify-between gap-3 pr-8">
             <div className="min-w-0">
@@ -250,7 +250,7 @@ export default function GLBViewer({ url, name, onClose }: GLBViewerProps) {
           </div>
         </DialogHeader>
 
-        <div className="h-[58vh] min-h-[340px] bg-gradient-to-b from-stone-100 to-stone-200">
+        <div className="h-[62vh] min-h-[380px] bg-gradient-to-b from-stone-100 to-stone-200">
           {url && (
             <GLBError url={url}>
               <LoadShield>

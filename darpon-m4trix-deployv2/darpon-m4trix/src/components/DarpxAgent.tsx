@@ -27,9 +27,8 @@ import {
 
 // ============================================================
 // Agente Darpx v10 — IL SAMURAI DIGITALE ⚔️
-// • La bolla ospita il SAMURAI GEOMETRICO (il personaggio creato
-//   dall'utente): occhi vivi che seguono il cursore, glitch,
-//   cammina per il sito, festeggia
+// • La bolla ospita l'avatar geometrico: occhi vivi che seguono
+//   il cursore, glitch, festeggia
 // • PARLA con una voce italiana (altoparlante del browser)
 // • ASCOLTA col microfono: premi 🎙 e gli parli direttamente
 // • Ricorda il CONTESTO: «ancora» rifà l'ultima azione variandola
@@ -72,10 +71,6 @@ export default function DarpxAgent() {
   const micRef = useRef<{ stop: () => void } | null>(null)
   const finalTextRef = useRef('')
 
-  // viaggio nel sito (quando la bolla è chiusa e l'utente è tranquillo)
-  const [travelX, setTravelX] = useState(0)
-  const [traveling, setTraveling] = useState(false)
-  const lastActivity = useRef(Date.now())
 
   const listRef = useRef<HTMLDivElement>(null)
   const busyRef = useRef(false)
@@ -166,29 +161,6 @@ export default function DarpxAgent() {
     }
   }, [])
 
-  // ---------- il viaggio dell'avatar ----------
-  useEffect(() => {
-    const iv = setInterval(() => {
-      const idleFor = Date.now() - lastActivity.current
-      if (!open && !traveling && !busyRef.current && idleFor > 16000) {
-        // parte per una passeggiata sul fondo dello schermo
-        const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
-        const maxLeft = Math.min(340, vw * 0.34)
-        const target = -Math.round(20 + Math.random() * maxLeft)
-        setTraveling(true)
-        setMood('walk')
-        setTravelX(target)
-      }
-    }, 2500)
-    return () => clearInterval(iv)
-  }, [open, traveling])
-
-  const stopTravel = useCallback(() => {
-    setTraveling(false)
-    setMood('idle')
-    lastActivity.current = Date.now()
-  }, [])
-
   // ---------- azioni ----------
 
   const createWorld = useCallback(
@@ -268,8 +240,6 @@ export default function DarpxAgent() {
       const text = (raw ?? input).trim()
       if (!text || busyRef.current) return
       busyRef.current = true
-      lastActivity.current = Date.now()
-      stopTravel()
       stopSpeak() // nuova domanda: il samurai smette di parlare
       setInput('')
       setMsgs(m => [...m, { role: 'user', content: text }])
@@ -336,7 +306,7 @@ export default function DarpxAgent() {
       }
       busyRef.current = false
     },
-    [input, msgs, runAction, setMoodFor, stopTravel, speakIfOn]
+    [input, msgs, runAction, setMoodFor, speakIfOn]
   )
   // il microfono invoca sempre l'ultima versione di send
   sendRef.current = send
@@ -345,25 +315,18 @@ export default function DarpxAgent() {
   const grad = 'linear-gradient(to bottom, var(--primary), var(--primary-strong))'
   const gradH = 'linear-gradient(to right, var(--primary), var(--primary-strong))'
 
-  const bubbleMood: AvatarMood = thinking ? 'think' : traveling ? 'walk' : mood
+  const bubbleMood: AvatarMood = thinking ? 'think' : mood
 
   return (
     <>
       {/* bolla con l'avatar che viaggia */}
-      <div
-        className="fixed bottom-5 right-5 z-50"
-        style={{ transform: `translateX(${travelX}px)`, transition: traveling ? 'transform 5.2s ease-in-out' : 'transform 0.35s ease' }}
-      >
+      <div className="fixed bottom-5 right-5 z-50">
         <motion.button
           initial={{ scale: 0, rotate: -30 }}
           animate={{ scale: 1, rotate: 0 }}
           whileHover={{ scale: 1.08 }}
           whileTap={{ scale: 0.92 }}
-          onClick={() => {
-            stopTravel()
-            setTravelX(0)
-            setOpen(o => !o)
-          }}
+          onClick={() => setOpen(o => !o)}
           style={{ backgroundImage: grad }}
           className="relative flex h-16 w-16 items-center justify-center rounded-2xl text-white shadow-xl shadow-black/25 ring-2 ring-white/60"
           title="Agente Darpx"
@@ -383,15 +346,6 @@ export default function DarpxAgent() {
             </span>
           )}
         </motion.button>
-        {traveling && !open && (
-          <motion.div
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="pointer-events-none absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/65 px-2.5 py-1 text-[10px] font-medium text-white/90 shadow"
-          >
-            🚶 sto girando per il sito…
-          </motion.div>
-        )}
       </div>
 
       {/* pannello */}

@@ -298,8 +298,8 @@ export default function GLBCatalog({ open, onClose, onImported }: Props) {
           <div className="border-t border-[var(--line)] px-5 py-2.5 text-[11px] leading-relaxed text-[var(--tx-faint)]">
             Modelli gratuiti da Khronos glTF Sample Assets, three.js e
             modelviewer.dev · Licenze aperte (CC0, CC-BY, MIT) · Le voci
-            «CC-BY-NC» sono solo per uso non commerciale · Nessun pagamento
-            richiesto.
+            «no commerciale» sono solo per uso non commerciale · Nessun
+            pagamento richiesto.
           </div>
         </div>
 
