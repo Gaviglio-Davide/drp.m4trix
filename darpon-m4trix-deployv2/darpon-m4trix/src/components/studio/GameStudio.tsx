@@ -171,7 +171,7 @@ export default function GameStudio() {
           </h1>
           <p className="max-w-xl text-sm text-[var(--tx-dim)]">
             {sec.subtitle ||
-              'Il reparto stile Godot/Unity: scene, nemici, dialoghi, combattimento, porte tra livelli. Costruisci il gioco tile per tile e provalo al volo.'}
+              'Costruisci il tuo gioco: scena 3D con le frecce, personaggi animati, nemici, dialoghi e porte tra livelli. Provalo al volo.'}
           </p>
         </motion.div>
         <div className="flex items-center gap-2">

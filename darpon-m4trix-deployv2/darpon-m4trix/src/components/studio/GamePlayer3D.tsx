@@ -34,8 +34,10 @@ import { useStructures, libraryAssetId } from '@/lib/structures-store'
 import { fetchAuth } from '@/lib/http'
 import { sfx, unlockAudio } from '@/lib/game2d/sfx'
 import {
+  defaultActionButtons,
   gameDimension,
   schematicToWorld,
+  type ActionButton,
   type EntityKind,
   type GameProject,
 } from '@/lib/game2d/types'
@@ -1403,6 +1405,58 @@ function Director({
     return () => window.removeEventListener('dialogue3d-closed', h)
   }, [rt, runRef])
 
+  // v16: TASTI AZIONE personalizzati (parla con i PNG, saluta…)
+  useEffect(() => {
+    const h = (e: Event) => {
+      const action = (e as CustomEvent<{ action: string }>).detail?.action
+      const R = rt.current
+      if (!action || !R || R.phase !== 'play') return
+      const now = performance.now()
+      if (action === 'parla') {
+        // parla con il PNG più vicino (raggio generoso)
+        let best: NpcRT | null = null
+        let bd = Infinity
+        for (const n of R.npcs) {
+          const d = Math.hypot(n.x - R.px, n.z - R.pz)
+          if (d < bd) { bd = d; best = n }
+        }
+        if (best && bd < 5.5) {
+          dlgOpen.current = true
+          npcLatch.current = true
+          runRef.current = false
+          openNpcDialogue(R, best, onDialogue)
+        } else {
+          flashMsg(R, 'Avvicinati a un PNG per parlargli')
+        }
+      } else if (action === 'attacca') {
+        R.attack = now
+      } else if (action === 'schiva') {
+        if (!R.combat.dodge || R.dodgeCd > 0 || R.dodgeT > 0 || R.stamina < DODGE_COST) return
+        R.stamina -= DODGE_COST
+        R.dodgeCd = DODGE_CD
+        R.dodgeT = DODGE_TIME
+        const sin = Math.sin(R.yaw)
+        const cos = Math.cos(R.yaw)
+        R.dodgeX = cos // avanti rispetto allo sguardo
+        R.dodgeZ = -sin
+        sfx.step()
+        flashMsg(R, '🌀 Schivata!')
+      } else if (action === 'parata') {
+        if (!R.combat.parry || R.parryCd > 0) return
+        R.parryCd = PARRY_CD
+        R.parryT = PARRY_WINDOW
+        sfx.step()
+      } else if (action === 'magia') {
+        R.cast = now
+      } else if (action === 'saluta') {
+        flashMsg(R, '👋 Ciao!')
+        sfx.pickup()
+      }
+    }
+    window.addEventListener('game3d-action', h as EventListener)
+    return () => window.removeEventListener('game3d-action', h as EventListener)
+  }, [rt, runRef, onDialogue])
+
   return null
 }
 
@@ -1724,6 +1778,77 @@ function HouseInteriors({ rt }: { rt: React.MutableRefObject<Runtime> }) {
   )
 }
 
+// v16: modelli piazzati nella Scena 3D (deco con glbUrl/assetId)
+function DecoGlb({ url, scale, rotY, animIndex }: { url: string; scale: number; rotY: number; animIndex: number | null }) {
+  const { scene, animations } = useGLTF(url)
+  const prepared = useMemo(() => {
+    const c = skeletonClone(scene)
+    const box = new THREE.Box3().setFromObject(c)
+    const size = box.getSize(new THREE.Vector3())
+    const s = 1.8 / Math.max(size.y, 0.001)
+    c.scale.setScalar(s)
+    const box2 = new THREE.Box3().setFromObject(c)
+    c.position.y = -box2.min.y
+    c.position.x = -(box2.min.x + box2.max.x) / 2
+    c.position.z = -(box2.min.z + box2.max.z) / 2
+    return c
+  }, [scene])
+
+  const mixer = useMemo(() => new THREE.AnimationMixer(prepared), [prepared])
+  useEffect(() => {
+    const clip = animIndex != null && animations[animIndex] ? animations[animIndex] : animations[0]
+    const action = clip ? mixer.clipAction(clip) : null
+    action?.play()
+    return () => { action?.stop() }
+  }, [mixer, animations, animIndex])
+
+  useFrame((_, dt) => {
+    mixer.update(Math.min(dt, 0.05))
+  })
+
+  return (
+    <group rotation={[0, (rotY * Math.PI) / 180, 0]} scale={scale}>
+      <primitive object={prepared} dispose={null} />
+    </group>
+  )
+}
+
+function GameDecos({ project, W, H }: { project: GameProject; W: number; H: number }) {
+  const customAssets = useWorld(s => s.customAssets)
+  const groundY = useMemo(() => (x: number, z: number) => groundHeightAt(x, z), [])
+  const decos = (project.scenes[0]?.entities ?? []).filter(
+    e => e.type === 'deco' && (e.props.glbUrl || e.props.assetId)
+  )
+  return (
+    <group>
+      {decos.map(e => {
+        const [wx, wz] = schematicToWorld(e.x, e.y, W, H)
+        const y = groundY(wx, wz)
+        const sc = e.props.scale ?? 1
+        const rot = e.props.rotY ?? 0
+        return (
+          <group key={e.id} position={[wx, y, wz]}>
+            {e.props.glbUrl ? (
+              <DecoGlb url={e.props.glbUrl} scale={sc} rotY={rot} animIndex={e.props.animIndex ?? null} />
+            ) : (
+              (() => {
+                const def = getAssetDef(e.props.assetId!, customAssets)
+                if (!def) return null
+                const Render = def.render
+                return (
+                  <group rotation={[0, (rot * Math.PI) / 180, 0]} scale={sc}>
+                    <Render color={0} rot={0} />
+                  </group>
+                )
+              })()
+            )}
+          </group>
+        )
+      })}
+    </group>
+  )
+}
+
 /** eroe GLB del mondo (se impostato) — solo terza persona */
 function PlayerGlb({
   url,
@@ -1731,12 +1856,14 @@ function PlayerGlb({
   runRef,
   camMode,
   blocked,
+  animIndex = null,
 }: {
   url: string
   rt: React.MutableRefObject<Runtime>
   runRef: React.MutableRefObject<boolean>
   camMode: 'terza' | 'prima'
   blocked: Set<string>
+  animIndex?: number | null // v16: l'animazione scelta dall'autore
 }) {
   const { scene, animations } = useGLTF(url)
   const group = useRef<THREE.Group>(null)
@@ -1761,13 +1888,14 @@ function PlayerGlb({
   const mixer = useMemo(() => new THREE.AnimationMixer(cloned), [cloned])
   const actionRef = useRef<ReturnType<THREE.AnimationMixer['clipAction']> | null>(null)
   useEffect(() => {
-    const clip = animations[0]
+    // v16: se l'autore ha scelto un movimento, quello gira SEMPRE in loop
+    const clip = animIndex != null && animations[animIndex] ? animations[animIndex] : animations[0]
     if (!clip) return
     const a = mixer.clipAction(clip)
     a.play()
     actionRef.current = a
     return () => { a.stop(); actionRef.current = null }
-  }, [animations, mixer])
+  }, [animations, mixer, animIndex])
 
   // tastiera
   useEffect(() => {
@@ -1865,7 +1993,7 @@ function PlayerGlb({
     const a = actionRef.current
     const k = keys.current
     const mv = k.f || k.b || k.l || k.r
-    if (a) a.paused = !mv
+    if (a) a.paused = animIndex == null ? !mv : false
 
     // v13: ricariche e rigenerazioni (path GLB)
     if (R.dodgeCd > 0) R.dodgeCd = Math.max(0, R.dodgeCd - dt)
@@ -2500,6 +2628,33 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
     unlockAudio()
   }
 
+  // ---- v16: TASTI AZIONE del gioco (impostati nell'editor) ----
+  const actionButtons: ActionButton[] = (project.settings.actionButtons && project.settings.actionButtons.length
+    ? project.settings.actionButtons
+    : defaultActionButtons())
+
+  const performAction = useCallback((a: ActionButton['action']) => {
+    unlockAudio()
+    if (a === 'inventario') { setShowInv(v => !v); setShowTree(false); return }
+    window.dispatchEvent(new CustomEvent('game3d-action', { detail: { action: a } }))
+  }, [])
+
+  // tastiera: ogni tasto azione impostato dall'autore fa la sua azione
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (phase !== 'play' || dialogue || end) return
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      const pressed = e.key.length === 1 ? e.key.toUpperCase() : e.key
+      for (const b of actionButtons) {
+        const want = b.key === 'Spazio' ? ' ' : b.key.toUpperCase()
+        if (pressed === want) { performAction(b.action); return }
+      }
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [phase, dialogue, end, actionButtons, performAction])
+
   const hpPct = Math.max(0, (hud.hp / hud.maxHp) * 100)
 
   if (!glOK) {
@@ -2614,6 +2769,27 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
         <span className="text-[var(--neon)]">🔑 {hud.keys}{project.settings.objective === 'collezione' ? `/${project.settings.objectiveCount}` : ''}</span>
         <span className="ml-auto hidden text-[var(--tx-dim)] md:inline">{hud.objective}</span>
       </div>
+
+      {/* v16: TASTI AZIONE — cliccabili, quanti ne vuoi */}
+      {phase === 'play' && !end && (
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-[var(--line)] bg-[var(--panel)] px-3 py-1.5">
+          {actionButtons.map(b => (
+            <button
+              key={b.id}
+              onClick={() => performAction(b.action)}
+              title={`Azione: ${b.label} (tasto ${b.key})`}
+              className="cp-chip font-bold hover:border-[var(--neon)] hover:text-[var(--neon)]"
+            >
+              <span className="mr-1">{b.icon}</span>
+              {b.label}
+              <span className="ml-1.5 rounded bg-black/30 px-1 font-mono text-[10px] text-[var(--neon)]">{b.key}</span>
+            </button>
+          ))}
+          <span className="ml-auto text-[10px] text-[var(--tx-faint)]">
+            tasti impostabili nella sezione 🎮 Tasti dell&apos;editor
+          </span>
+        </div>
+      )}
 
       {/* scena 3D */}
       <div className="relative flex-1 overflow-hidden">
@@ -2891,7 +3067,7 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
         </div>
         <button
           className="absolute bottom-4 right-4 h-16 w-16 rounded-full bg-[var(--neon)] font-black text-[#04060d] shadow-[var(--glow)] md:hidden"
-          onTouchStart={() => { unlockAudio(); vkey('ATK', true) }}
+          onTouchStart={() => { unlockAudio(); performAction('attacca') }}
         >
           ATK
         </button>
@@ -2967,10 +3143,12 @@ function SceneContent({
       {vast ? null : <IslandEnvironment />}
       <ImportedWorld />
       <HouseInteriors rt={R} />
+      {/* v16: modelli e personaggi piazzati nella Scena 3D */}
+      <GameDecos project={project} W={project.scenes[0]?.w ?? 32} H={project.scenes[0]?.h ?? 32} />
 
       {playerCustom?.url ? (
         <Suspense fallback={null}>
-          <PlayerGlb url={playerCustom.url} rt={R} runRef={runRef} camMode={camMode} blocked={blocked} />
+          <PlayerGlb url={playerCustom.url} rt={R} runRef={runRef} camMode={camMode} blocked={blocked} animIndex={project.settings.playerAnimIndex ?? null} />
         </Suspense>
       ) : (
         <PlayerController rt={R} runRef={runRef} camMode={camMode} blocked={blocked} />
