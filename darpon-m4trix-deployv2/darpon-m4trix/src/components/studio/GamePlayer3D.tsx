@@ -139,6 +139,10 @@ type NpcRT = {
   routeSpeed: number
   wpIdx: number
   waitT: number
+  // ---- v17: girovagamento spontaneo (PNG senza percorso) ----
+  wdirX: number
+  wdirZ: number
+  wT: number
 }
 
 // v13: porte che portano negli interni delle case
@@ -159,6 +163,7 @@ type Runtime = {
   pz: number
   py: number
   yaw: number
+  pitch: number // v17: inclinazione dello sguardo (mouse catturato)
   hp: number
   maxHp: number
   coins: number
@@ -279,7 +284,7 @@ function PlayerController({
   const sword = useRef<THREE.Mesh>(null)
   const { camera: cam } = useThree()
   const keys = useRef<Keys>({ f: false, b: false, l: false, r: false, run: false })
-  const dragging = useRef<{ x: number; yaw: number } | null>(null)
+  const dragging = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null)
   const walkT = useRef(0)
   const moving = useRef(false)
   const facing = useRef(Math.PI)
@@ -364,11 +369,16 @@ function PlayerController({
       // v17: ruota la visuale SOLO trascinando direttamente sulla scena 3D
       // (canvas): su HUD, menu e dialoghi il cursore resta libero e normale
       if ((e.target as HTMLElement)?.tagName !== 'CANVAS') return
-      dragging.current = { x: e.clientX, yaw: rt.current.yaw }
+      dragging.current = { x: e.clientX, y: e.clientY, yaw: rt.current.yaw, pitch: rt.current.pitch }
     }
     const mv = (e: PointerEvent) => {
-      if (dragging.current)
-        rt.current.yaw = dragging.current.yaw + (e.clientX - dragging.current.x) * 0.006
+      if (!dragging.current) return
+      // v17: trascinare a DESTRA = guardare a DESTRA (prima era invertito)
+      rt.current.yaw = dragging.current.yaw - (e.clientX - dragging.current.x) * 0.006
+      rt.current.pitch = THREE.MathUtils.clamp(
+        dragging.current.pitch - (e.clientY - dragging.current.y) * 0.005,
+        -1.2, 1.2
+      )
     }
     const upp = () => { dragging.current = null }
     window.addEventListener('pointerdown', dn)
@@ -488,11 +498,15 @@ function PlayerController({
     // camera
     if (camMode === 'prima') {
       cam.position.set(R.px, R.py + EYE_HEIGHT, R.pz)
-      cam.rotation.set(0, R.yaw, 0, 'YXZ')
+      cam.rotation.set(R.pitch, R.yaw, 0, 'YXZ')
     } else {
       const camX = R.px + Math.sin(R.yaw) * 5.2
       const camZ = R.pz + Math.cos(R.yaw) * 5.2
-      cam.position.lerp(new THREE.Vector3(camX, R.py + 2.6, camZ), Math.min(1, dt * 6))
+      const camY = R.py + 2.6 - R.pitch * 2.4
+      cam.position.lerp(
+        new THREE.Vector3(camX, THREE.MathUtils.clamp(camY, R.py + 0.8, R.py + 6.5), camZ),
+        Math.min(1, dt * 6)
+      )
       cam.lookAt(R.px, R.py + 1.2, R.pz)
     }
 
@@ -1285,9 +1299,9 @@ function Director({
     let nearestNpc: NpcRT | null = null
     let nearestD = Infinity
     for (const n of R.npcs) {
+      const pd = Math.hypot(R.px - n.x, R.pz - n.z)
       if (R.npcWalk !== false && n.route.length >= 2) {
         // cammina per le sue strade quando il giocatore è lontano
-        const pd = Math.hypot(R.px - n.x, R.pz - n.z)
         if (pd > 6 && n.waitT <= 0) {
           const wp = n.route[n.wpIdx]
           const dx = wp.x - n.x
@@ -1302,6 +1316,33 @@ function Director({
           }
         } else if (n.waitT > 0) {
           n.waitT -= dt
+        }
+      } else if (R.npcWalk !== false && pd > 6) {
+        // v17: senza percorso il PNG girovaga lo stesso attorno a casa:
+        // i personaggi non restano più immobili come statue
+        if (n.waitT > 0) {
+          n.waitT -= dt
+        } else if (n.wdirX === 0 && n.wdirZ === 0) {
+          const a = Math.random() * Math.PI * 2
+          n.wdirX = Math.cos(a)
+          n.wdirZ = Math.sin(a)
+          n.wT = 1.6 + Math.random() * 2.6
+        } else {
+          const nx = n.x + n.wdirX * 0.65 * dt
+          const nz = n.z + n.wdirZ * 0.65 * dt
+          if (Math.hypot(nx - n.homeX, nz - n.homeZ) < 3.2) {
+            n.x = nx
+            n.z = nz
+          } else {
+            n.wdirX = -n.wdirX
+            n.wdirZ = -n.wdirZ
+          }
+          n.wT -= dt
+          if (n.wT <= 0) {
+            n.wdirX = 0
+            n.wdirZ = 0
+            n.waitT = 1 + Math.random() * 2
+          }
         }
       }
       const nd = Math.hypot(n.x - R.px, n.z - R.pz)
@@ -1870,7 +1911,7 @@ function PlayerGlb({
   const { scene, animations } = useGLTF(url)
   const group = useRef<THREE.Group>(null)
   const { camera } = useThree()
-  const dragging = useRef<{ x: number; yaw: number } | null>(null)
+  const dragging = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null)
   const keys = useRef<Keys>({ f: false, b: false, l: false, r: false, run: false })
   const facing = useRef(Math.PI)
 
@@ -1950,10 +1991,16 @@ function PlayerGlb({
   useEffect(() => {
     const dn = (e: PointerEvent) => {
       if ((e.target as HTMLElement)?.tagName === 'BUTTON') return
-      dragging.current = { x: e.clientX, yaw: rt.current.yaw }
+      dragging.current = { x: e.clientX, y: e.clientY, yaw: rt.current.yaw, pitch: rt.current.pitch }
     }
     const mv = (e: PointerEvent) => {
-      if (dragging.current) rt.current.yaw = dragging.current.yaw + (e.clientX - dragging.current.x) * 0.006
+      if (!dragging.current) return
+      // v17: trascinare a DESTRA = guardare a DESTRA (prima era invertito)
+      rt.current.yaw = dragging.current.yaw - (e.clientX - dragging.current.x) * 0.006
+      rt.current.pitch = THREE.MathUtils.clamp(
+        dragging.current.pitch - (e.clientY - dragging.current.y) * 0.005,
+        -1.2, 1.2
+      )
     }
     const upp = () => { dragging.current = null }
     window.addEventListener('pointerdown', dn)
@@ -2017,7 +2064,7 @@ function PlayerGlb({
       if (canStand(nx, R.pz)) R.px = nx
       if (canStand(R.px, nz)) R.pz = nz
       R.py += (groundHeightAt(R.px, R.pz) - R.py) * Math.min(1, dt * 12)
-      facing.current = Math.atan2(lastDx, lastDz) + Math.PI
+      facing.current = Math.atan2(lastDx, lastDz)
     } else if (mv) {
       const wantRun = k.run && R.combat.sprint && R.stamina > 1
       if (wantRun) R.stamina = Math.max(0, R.stamina - SPRINT_DRAIN * dt)
@@ -2042,7 +2089,7 @@ function PlayerGlb({
         // piccolo dondolio se il modello non ha animazioni
         group.current.position.y = R.py
       }
-      const target = Math.atan2(lastDx, lastDz) + Math.PI
+      const target = Math.atan2(lastDx, lastDz)
       let diff = target - facing.current
       while (diff > Math.PI) diff -= Math.PI * 2
       while (diff < -Math.PI) diff += Math.PI * 2
@@ -2059,11 +2106,15 @@ function PlayerGlb({
 
     if (camMode === 'prima') {
       camera.position.set(R.px, R.py + EYE_HEIGHT, R.pz)
-      camera.rotation.set(0, R.yaw, 0, 'YXZ')
+      camera.rotation.set(R.pitch, R.yaw, 0, 'YXZ')
     } else {
       const camX = R.px + Math.sin(R.yaw) * 5.2
       const camZ = R.pz + Math.cos(R.yaw) * 5.2
-      camera.position.lerp(new THREE.Vector3(camX, R.py + 2.6, camZ), Math.min(1, dt * 6))
+      const camY = R.py + 2.6 - R.pitch * 2.4
+      camera.position.lerp(
+        new THREE.Vector3(camX, THREE.MathUtils.clamp(camY, R.py + 0.8, R.py + 6.5), camZ),
+        Math.min(1, dt * 6)
+      )
       camera.lookAt(R.px, R.py + 1.2, R.pz)
     }
   })
@@ -2113,6 +2164,11 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
   const rtRef = useRef<Runtime | null>(null)
   const runRef = useRef(false)
   const downPos = useRef<{ x: number; y: number } | null>(null)
+  // v17: pointer lock — il mouse si cattura cliccando sulla scena
+  const canvasElRef = useRef<HTMLCanvasElement | null>(null)
+  const lastUnlockT = useRef(0)
+  const lockReqT = useRef(0)
+  const [mouseFree, setMouseFree] = useState(false)
 
   const entities = project.scenes[0]?.entities ?? []
 
@@ -2242,6 +2298,9 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
           routeSpeed: routeCfg?.speed ?? 1.6,
           wpIdx: 0,
           waitT: 0,
+          wdirX: 0,
+          wdirZ: 0,
+          wT: 0,
         })
       } else if (e.type === 'door') {
         const target = e.props.targetScene
@@ -2322,6 +2381,9 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
             routeSpeed: 1.4,
             wpIdx: 0,
             waitT: 0,
+            wdirX: 0,
+            wdirZ: 0,
+            wT: 0,
           })
         }
       }
@@ -2333,6 +2395,23 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
       while (blocked.has(`${Math.round(e.x)},${Math.round(e.z)}`) && tries < 24) {
         e.x = e.homeX + (Math.random() - 0.5) * 6
         e.z = e.homeZ + (Math.random() - 0.5) * 6
+        tries++
+      }
+    }
+
+    // v17: anche il GIOCATORE non deve nascere incastrato dentro un muro:
+    // se la cella di spawn è bloccata cerca la più vicina libera
+    {
+      let tries = 0
+      while (blocked.has(`${Math.round(start.x)},${Math.round(start.z)}`) && tries < 60) {
+        const a = Math.random() * Math.PI * 2
+        const r = 1.5 + Math.random() * 9
+        const nx = start.x + Math.cos(a) * r
+        const nz = start.z + Math.sin(a) * r
+        if (!blocked.has(`${Math.round(nx)},${Math.round(nz)}`)) {
+          start.x = nx
+          start.z = nz
+        }
         tries++
       }
     }
@@ -2358,6 +2437,7 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
       pz: start.z,
       py: groundHeightAt(start.x, start.z),
       yaw: Math.PI,
+      pitch: 0,
       hp: project.settings.playerHp,
       maxHp: project.settings.playerHp,
       coins: 0,
@@ -2449,17 +2529,86 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
   }, [floaters])
 
   // ESC esce dal gioco (se non ci sono dialoghi o pannelli aperti)
+  // v17: con il mouse CATTURATO il primo ESC lo libera (browser),
+  // solo un secondo ESC (dopo 600 ms) esce davvero dal gioco
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.code === 'Escape' && phase === 'play' && !dialogue && !end) {
         if (showInv) { setShowInv(false); return }
         if (showTree) { setShowTree(false); return }
+        if (document.pointerLockElement) return
+        if (performance.now() - lastUnlockT.current < 600) return
         onExit()
       }
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [phase, dialogue, end, onExit, showInv, showTree])
+
+  // ---------- v17: POINTER LOCK — il mouse catturato come nei giochi veri ----------
+  // click sulla scena → cattura; ESC → rilascia (con suggerimento a schermo)
+  useEffect(() => {
+    if (phase !== 'play') return
+    const onChange = () => {
+      if (document.pointerLockElement) {
+        setMouseFree(false)
+      } else {
+        lastUnlockT.current = performance.now()
+        setMouseFree(true)
+      }
+    }
+    const onClick = (e: MouseEvent) => {
+      const el = canvasElRef.current
+      if (!el || document.pointerLockElement) return
+      if ((e.target as HTMLElement)?.tagName !== 'CANVAS') return
+      if (dialogue || end || showInv || showTree) return
+      unlockAudio()
+      lockReqT.current = performance.now()
+      try {
+        const req = el.requestPointerLock as (o?: { unadjustedMovement?: boolean }) => Promise<void> | void
+        const p = req({ unadjustedMovement: true })
+        if (p && typeof (p as Promise<void>).catch === 'function') {
+          ;(p as Promise<void>).catch(() => {
+            try {
+              ;(el.requestPointerLock as () => void)()
+            } catch {
+              /* browser senza pointer lock */
+            }
+          })
+        }
+      } catch {
+        try {
+          ;(el.requestPointerLock as () => void)()
+        } catch {
+          /* browser senza pointer lock */
+        }
+      }
+    }
+    const onMove = (e: MouseEvent) => {
+      if (!document.pointerLockElement || !rtRef.current || !runRef.current) return
+      const R = rtRef.current
+      // v17: muovi il mouse a destra = guarda a destra (niente più inversioni)
+      R.yaw -= e.movementX * 0.0022
+      R.pitch = THREE.MathUtils.clamp(R.pitch - e.movementY * 0.0022, -1.25, 1.25)
+    }
+    document.addEventListener('pointerlockchange', onChange)
+    document.addEventListener('mousemove', onMove)
+    window.addEventListener('click', onClick)
+    return () => {
+      document.removeEventListener('pointerlockchange', onChange)
+      document.removeEventListener('mousemove', onMove)
+      window.removeEventListener('click', onClick)
+      if (document.pointerLockElement) document.exitPointerLock()
+    }
+  }, [phase, dialogue, end, showInv, showTree])
+
+  // quando si apre un dialogo o un pannello il mouse VA LIBERATO
+  // (serve il cursore per cliccare le scelte)
+  useEffect(() => {
+    if ((dialogue || showInv || showTree || end) && document.pointerLockElement) {
+      document.exitPointerLock()
+    }
+  }, [dialogue, showInv, showTree, end])
 
   // v13: I = inventario, T = albero abilità
   useEffect(() => {
@@ -2679,10 +2828,12 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
       }}
       onPointerUp={e => {
         // click breve (non drag) = attacco — v17: solo sulla scena 3D,
-        // così HUD e menu restano cliccabili col cursore normale
+        // così HUD e menu restano cliccabili col cursore normale.
+        // Il click che CATTURA il mouse non attacca.
         const d = downPos.current
         downPos.current = null
         if (!d || !runRef.current) return
+        if (performance.now() - lockReqT.current < 400) return
         if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) return
         const el = e.target as HTMLElement
         if (el.tagName !== 'CANVAS') return
@@ -2699,7 +2850,7 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
           </span>
           <span className="cp-chip hidden sm:inline-block">🌍 {worldLabel}</span>
           <span className="cp-chip hidden md:inline-block">3D · {camMode === 'prima' ? 'prima persona' : 'terza persona'}</span>
-          <span className="cp-chip hidden lg:inline-block">🖱 trascina SULLA SCENA per guardarti · ESC esce</span>
+          <span className="cp-chip hidden lg:inline-block">🖱 clicca sulla scena: mouse catturato · ESC libera · doppio ESC esce</span>
         </div>
         <div className="flex items-center gap-2">
           {onEdit && (
@@ -2818,6 +2969,9 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
             shadows
             dpr={[1, 2]}
             camera={{ fov: 55, near: 0.1, far: 500, position: [0, 3, 8] }}
+            onCreated={({ gl }) => {
+              canvasElRef.current = gl.domElement
+            }}
             onContextMenu={e => e.preventDefault()}
           >
             <SceneContent
@@ -2838,6 +2992,15 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
         {phase === 'play' && camMode === 'prima' && !end && (
           <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
             <div className="h-1.5 w-1.5 rounded-full bg-[var(--neon)] shadow-[0_0_8px_var(--neon)]" />
+          </div>
+        )}
+
+        {/* v17: mouse libero dopo ESC — suggerisci di ricatturarlo */}
+        {phase === 'play' && !end && mouseFree && !dialogue && !showInv && !showTree && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-6 z-10 flex justify-center">
+            <div className="cp-panel px-4 py-1.5 text-xs text-[var(--tx)]">
+              🖱 Clicca sulla scena per riprendere il mouse · ESC di nuovo per uscire
+            </div>
           </div>
         )}
 
@@ -2887,7 +3050,7 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
                   </div>
                 ) : null}
                 <p className="mt-3 text-xs text-[var(--tx-faint)]">
-                  WASD muovi · trascina SULLA SCENA col mouse per guardarti intorno · SPAZIO/click sulla scena attacca · SHIFT corri · E schiva · F parata · Q magia · I inventario · TAB abilità · ESC esce
+                  WASD muovi · clicca la scena per CATTURARE il mouse e guardarti intorno · SPAZIO/click attacca · SHIFT corri · E schiva · F parata · Q magia · I inventario · TAB abilità · ESC libera il mouse (doppio per uscire)
                 </p>
                 <Button
                   className="cp-btn mt-4 bg-[var(--neon)] font-bold text-[#04060d]"

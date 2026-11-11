@@ -409,32 +409,8 @@ function CamRig({
   const controls = useThree(s => s.controls) as unknown as {
     target: THREE.Vector3
     update: () => void
-    mouseButtons: { LEFT: number; MIDDLE: number; RIGHT: number }
   } | null
   const camera = useThree(s => s.camera)
-
-  // SHIFT: tasto destro = PAN (rilasciato: torna a RUOTARE)
-  useEffect(() => {
-    if (!controls) return
-    const setRight = (b: number) => {
-      controls.mouseButtons.RIGHT = b
-      controls.update()
-    }
-    const kd = (e: KeyboardEvent) => { if (e.key === 'Shift') setRight(THREE.MOUSE.PAN) }
-    const ku = (e: KeyboardEvent) => { if (e.key === 'Shift') setRight(THREE.MOUSE.ROTATE) }
-    const pd = (e: PointerEvent) => { if (e.shiftKey) setRight(THREE.MOUSE.PAN) }
-    const pu = () => { setRight(THREE.MOUSE.ROTATE) }
-    window.addEventListener('keydown', kd)
-    window.addEventListener('keyup', ku)
-    window.addEventListener('pointerdown', pd)
-    window.addEventListener('pointerup', pu)
-    return () => {
-      window.removeEventListener('keydown', kd)
-      window.removeEventListener('keyup', ku)
-      window.removeEventListener('pointerdown', pd)
-      window.removeEventListener('pointerup', pu)
-    }
-  }, [controls])
 
   // comandi per i bottoni di navigazione
   useEffect(() => {
@@ -929,17 +905,20 @@ export default function SceneEditor3D({
                 <Gizmo id={selectedId} groups={groups} mode={mode} onCommit={commitGizmo} />
                 <OrbitControls
                   makeDefault
+                  enableDamping
+                  dampingFactor={0.08}
                   enablePan
-                  panSpeed={1.1}
+                  panSpeed={1.15}
                   screenSpacePanning
+                  rotateSpeed={0.85}
                   minDistance={2}
                   maxDistance={280}
                   maxPolarAngle={Math.PI / 2.06}
                   target={[0, 0, 0]}
                   mouseButtons={{
                     LEFT: (cameraMode && !placing ? THREE.MOUSE.ROTATE : -1) as unknown as THREE.MOUSE,
-                    MIDDLE: THREE.MOUSE.PAN,
-                    RIGHT: THREE.MOUSE.ROTATE,
+                    MIDDLE: THREE.MOUSE.ROTATE,
+                    RIGHT: THREE.MOUSE.PAN,
                   }}
                   touches={{
                     ONE: (cameraMode && !placing ? THREE.TOUCH.ROTATE : -1) as unknown as THREE.TOUCH,
