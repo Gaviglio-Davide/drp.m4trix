@@ -93,7 +93,7 @@ export default function Dashboard() {
   const [renameName, setRenameName] = useState('')
   const [busy, setBusy] = useState(false)
   const [showGenera, setShowGenera] = useState(false) // v15: genera dentro Mondi 3D
-  const [welcomeOpen, setWelcomeOpen] = useState(false) // v16: benvenuto a ogni ingresso
+  // v17: pop-up di benvenuto RIMOSSO definitivamente su richiesta
   const tab = useUI(s => s.tab)
   const setTab = useUI(s => s.setTab)
   const site = useUI(s => s.site)
@@ -120,9 +120,6 @@ export default function Dashboard() {
       .then(r => r.json())
       .then(d => d.config?.siteName && setSiteName(d.config.siteName))
       .catch(() => {})
-    // v16: pop-up di benvenuto OGNI volta che entri
-    const t = setTimeout(() => setWelcomeOpen(true), 450)
-    return () => clearTimeout(t)
   }, [refresh, loadSite])
 
   const createProject = async () => {
@@ -507,44 +504,6 @@ export default function Dashboard() {
 
       {/* Agente Darpx: assistente AI fluttuante, sempre disponibile */}
       <DarpxAgent />
-
-      {/* v16: pop-up di BENVENUTO — si apre a ogni ingresso nel sito */}
-      <Dialog open={welcomeOpen} onOpenChange={setWelcomeOpen}>
-        <DialogContent className="max-w-md border-[var(--line)] bg-[var(--panel)] sm:rounded-3xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-xl font-black text-[var(--tx)]">
-              <span className="text-2xl">👋</span> Bentornato su {siteName}
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-sm leading-relaxed text-[var(--tx-dim)]">
-            Tutto è pronto. Ecco i tuoi posti di lavoro:
-          </p>
-          <div className="flex flex-col gap-2 text-sm">
-            {[
-              { icon: '🎮', t: 'Game Studio', d: 'Il cuore del sito: costruisci il tuo videogioco in 3D, sposti tutto con le frecce e scegli le animazioni dei personaggi.' },
-              { icon: '🌍', t: 'Mondi 3D', d: 'Crea mondi a mano o generali città e paesaggi con un clic (bottone Genera).' },
-              { icon: '📦', t: 'Progetti importati', d: 'Carica i tuoi modelli .glb o prendili dal Catalogo 3D gratuito.' },
-            ].map(x => (
-              <div key={x.t} className="flex items-start gap-3 rounded-2xl border border-[var(--line)] bg-[var(--panel-soft)] p-3">
-                <span className="text-xl">{x.icon}</span>
-                <div className="min-w-0">
-                  <p className="font-bold text-[var(--tx)]">{x.t}</p>
-                  <p className="text-xs leading-snug text-[var(--tx-dim)]">{x.d}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-          <p className="text-[11px] text-[var(--tx-faint)]">
-            Suggerimento: se ti perdi, premi il pulsante con l'ingranaggio in alto per nome, password e colore del sito.
-          </p>
-          <Button
-            className="w-full bg-[var(--primary)] font-bold text-white"
-            onClick={() => setWelcomeOpen(false)}
-          >
-            Entra e crea 🚀
-          </Button>
-        </DialogContent>
-      </Dialog>
 
       <Dialog
         open={!!renameId}
