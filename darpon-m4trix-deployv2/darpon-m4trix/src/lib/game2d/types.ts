@@ -7,6 +7,7 @@
 
 import type { RpgConfig } from '@/lib/rpg/types'
 import { VAST_DEFAULT, type VastConfig } from '@/lib/vastworld'
+import { newRealWorld, type RWorld } from '@/lib/engine3d/types'
 
 export type EntityKind =
   | 'drone' // nemico volante, veloce
@@ -123,10 +124,12 @@ export type GameSettings = {
   intro?: string[] // pagine mostrate all'avvio
   controlsHint?: string
   // ---- v9: dimensione del gioco ----
-  dimension?: '2d' | '3d' // default '2d' (retrocompatibile)
+  dimension?: '2d' | '3d' | 'real3d' // default '2d' (retrocompatibile)
   camera?: 'terza' | 'prima' // visuale dei giochi 3D
   worldProjectId?: string | null // mondo 3D importato dal reparto Mondi 3D
   worldProjectName?: string | null
+  // ---- v17: DARPX ENGINE — mondo realistico PBR ----
+  realWorld?: RWorld
   // ---- v12: personaggio principale + opzioni extra ----
   playerModelUrl?: string | null // GLB scelto tra i Progetti importati
   playerModelName?: string | null
@@ -356,12 +359,13 @@ export function addBorderWalls(sc: GameScene, tile = 1) {
 }
 
 /** progetto di gioco vuoto, pronto per l'editor.
- *  v14: opts.dimension = '2d' (classico) oppure '3d' (Mondo Vasto terzapersona) */
+ *  v14: opts.dimension = '2d' (classico) oppure '3d' (Mondo Vasto terzapersona)
+ *  v17: opts.dimension = 'real3d' (Darpx Engine realistico) + template */
 export function newGameProject(
   title: string,
-  opts?: { dimension?: '2d' | '3d' }
+  opts?: { dimension?: '2d' | '3d' | 'real3d'; template?: string }
 ): GameProject {
-  const dimension = opts?.dimension === '3d' ? '3d' : '2d'
+  const dimension = opts?.dimension === '3d' || opts?.dimension === 'real3d' ? opts.dimension : '2d'
   const sc = emptyScene('Livello 1', 36, 26)
   addBorderWalls(sc)
   sc.entities.push({
@@ -392,6 +396,12 @@ export function newGameProject(
             vast: { ...VAST_DEFAULT, seed: Math.floor(Math.random() * 1e9) },
           }
         : {}),
+      ...(dimension === 'real3d'
+        ? {
+            // v17: il gioco REALISTICO nasce con un ambiente Darpx Engine
+            realWorld: newRealWorld(opts?.template ?? 'vuoto'),
+          }
+        : {}),
     },
     scenes: [sc],
     startScene: sc.id,
@@ -400,7 +410,7 @@ export function newGameProject(
 }
 
 /** dimensione effettiva del gioco ('2d' per i vecchi progetti) */
-export function gameDimension(g: GameProject): '2d' | '3d' {
+export function gameDimension(g: GameProject): '2d' | '3d' | 'real3d' {
   return g.settings.dimension ?? '2d'
 }
 
