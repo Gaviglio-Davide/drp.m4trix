@@ -1049,7 +1049,7 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
               if (w) mutate(p => { p.settings.worldProjectId = w.id; p.settings.worldProjectName = w.name })
             }}
             className="h-8 max-w-44 bg-[var(--panel-soft)] px-2 text-xs text-[var(--tx)] ring-1 ring-[var(--line)]"
-            title="Mondo 3D usato dal gioco"
+            title="Mondo 3D usato dal gioco: i tuoi mondi del reparto Mondi 3D sono tutti qui"
           >
             {!project.settings.worldProjectId && <option value="">— nessun mondo —</option>}
             {worlds === null && project.settings.worldProjectId && (
@@ -1059,6 +1059,16 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
               <option key={w.id} value={w.id}>🌍 {w.name}</option>
             ))}
           </select>
+          <button
+            className="cp-chip"
+            title="Ricarica la lista dei tuoi mondi (se ne hai creato uno nuovo adesso)"
+            onClick={() => setWorlds(null)}
+          >🔄</button>
+          {(worlds ?? []).length === 0 && (
+            <span className="text-[11px] text-[var(--tx-faint)]">
+              nessun mondo: crealo nel reparto «Mondi 3D» poi premi 🔄
+            </span>
+          )}
           <div className="ml-auto flex items-center gap-2">
             <Button size="sm" variant="outline" className="cp-btn" onClick={() => exportGameFile(project)}>
               ⇩ JSON

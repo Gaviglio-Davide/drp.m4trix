@@ -14,7 +14,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Sky, TransformControls, useGLTF } from '@react-three/drei'
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { Button } from '@/components/ui/button'
@@ -393,6 +393,80 @@ function SpinLoop({ spin }: { spin: React.MutableRefObject<number> }) {
   return null
 }
 
+// ---------- v17: rig della camera ----------
+// 1) SHIFT tenuto premuto → il tasto DESTRO sposta la mappa (pan)
+// 2) espone all'interfaccia i comandi pan/zoom/ricentra dei bottoni on-screen
+type CamApi = {
+  pan: (dx: number, dy: number) => void
+  zoom: (f: number) => void
+  reset: () => void
+}
+function CamRig({
+  api,
+}: {
+  api: React.MutableRefObject<CamApi | null>
+}) {
+  const controls = useThree(s => s.controls) as unknown as {
+    target: THREE.Vector3
+    update: () => void
+    mouseButtons: { LEFT: number; MIDDLE: number; RIGHT: number }
+  } | null
+  const camera = useThree(s => s.camera)
+
+  // SHIFT: tasto destro = PAN (rilasciato: torna a RUOTARE)
+  useEffect(() => {
+    if (!controls) return
+    const setRight = (b: number) => {
+      controls.mouseButtons.RIGHT = b
+      controls.update()
+    }
+    const kd = (e: KeyboardEvent) => { if (e.key === 'Shift') setRight(THREE.MOUSE.PAN) }
+    const ku = (e: KeyboardEvent) => { if (e.key === 'Shift') setRight(THREE.MOUSE.ROTATE) }
+    const pd = (e: PointerEvent) => { if (e.shiftKey) setRight(THREE.MOUSE.PAN) }
+    const pu = () => { setRight(THREE.MOUSE.ROTATE) }
+    window.addEventListener('keydown', kd)
+    window.addEventListener('keyup', ku)
+    window.addEventListener('pointerdown', pd)
+    window.addEventListener('pointerup', pu)
+    return () => {
+      window.removeEventListener('keydown', kd)
+      window.removeEventListener('keyup', ku)
+      window.removeEventListener('pointerdown', pd)
+      window.removeEventListener('pointerup', pu)
+    }
+  }, [controls])
+
+  // comandi per i bottoni di navigazione
+  useEffect(() => {
+    if (!controls) return
+    api.current = {
+      pan: (dx, dy) => {
+        const dist = camera.position.distanceTo(controls.target)
+        const k = dist * 0.0016
+        const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0)
+        const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1)
+        const v = new THREE.Vector3().addScaledVector(right, dx * k).addScaledVector(up, -dy * k)
+        controls.target.add(v)
+        camera.position.add(v)
+        controls.update()
+      },
+      zoom: f => {
+        const dir = camera.position.clone().sub(controls.target).multiplyScalar(f)
+        camera.position.copy(controls.target.clone().add(dir))
+        controls.update()
+      },
+      reset: () => {
+        controls.target.set(0, 0, 0)
+        camera.position.set(14, 13, 18)
+        controls.update()
+      },
+    }
+    return () => { api.current = null }
+  }, [api, controls, camera])
+
+  return null
+}
+
 // ---------- mondo importato (terreno + oggetti del mondo) ----------
 function EditorWorld() {
   const objects = useWorld(s => s.objects)
@@ -441,6 +515,8 @@ export default function SceneEditor3D({
   const [glOK] = useState(() => webglSupported())
   const groups = useRef<Map<string, THREE.Group>>(new Map())
   const spin = useRef(0)
+  // v17: comandi camera per i bottoni di navigazione della mappa
+  const camApi = useRef<CamApi | null>(null)
 
   const entities = scene?.entities ?? []
   const selected = entities.find(e => e.id === selectedId) ?? null
@@ -854,13 +930,15 @@ export default function SceneEditor3D({
                 <OrbitControls
                   makeDefault
                   enablePan
-                  minDistance={3}
-                  maxDistance={110}
+                  panSpeed={1.1}
+                  screenSpacePanning
+                  minDistance={2}
+                  maxDistance={280}
                   maxPolarAngle={Math.PI / 2.06}
                   target={[0, 0, 0]}
                   mouseButtons={{
                     LEFT: (cameraMode && !placing ? THREE.MOUSE.ROTATE : -1) as unknown as THREE.MOUSE,
-                    MIDDLE: THREE.MOUSE.ROTATE,
+                    MIDDLE: THREE.MOUSE.PAN,
                     RIGHT: THREE.MOUSE.ROTATE,
                   }}
                   touches={{
@@ -868,15 +946,58 @@ export default function SceneEditor3D({
                     TWO: THREE.TOUCH.DOLLY_ROTATE,
                   }}
                 />
+                <CamRig api={camApi} />
               </Suspense>
             </Canvas>
 
+            {/* v17: comandi di navigazione della mappa */}
+            <div className="absolute right-3 top-3 flex flex-col items-center gap-1 rounded-2xl bg-black/55 p-1.5 backdrop-blur">
+              <button
+                title="Zoom + (avvicina)"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold text-white/85 transition-colors hover:bg-white/15 active:bg-white/25"
+                onClick={() => camApi.current?.zoom(0.78)}
+              >＋</button>
+              <button
+                title="Zoom − (allontana)"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold text-white/85 transition-colors hover:bg-white/15 active:bg-white/25"
+                onClick={() => camApi.current?.zoom(1.28)}
+              >－</button>
+              <div className="my-0.5 h-px w-6 bg-white/25" />
+              <button
+                title="Sposta la vista in su"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white/85 transition-colors hover:bg-white/15 active:bg-white/25"
+                onClick={() => camApi.current?.pan(0, 1)}
+              >▲</button>
+              <div className="flex gap-1">
+                <button
+                  title="Sposta la vista a sinistra"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white/85 transition-colors hover:bg-white/15 active:bg-white/25"
+                  onClick={() => camApi.current?.pan(-1, 0)}
+                >◀</button>
+                <button
+                  title="Ricentra la vista sul centro della mappa"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold text-white/85 transition-colors hover:bg-white/15 active:bg-white/25"
+                  onClick={() => camApi.current?.reset()}
+                >⌖</button>
+                <button
+                  title="Sposta la vista a destra"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white/85 transition-colors hover:bg-white/15 active:bg-white/25"
+                  onClick={() => camApi.current?.pan(1, 0)}
+                >▶</button>
+              </div>
+              <button
+                title="Sposta la vista in giù"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white/85 transition-colors hover:bg-white/15 active:bg-white/25"
+                onClick={() => camApi.current?.pan(0, -1)}
+              >▼</button>
+            </div>
+
             {/* suggerimento controlli */}
             <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
-              <div className="rounded-full bg-black/55 px-4 py-1.5 text-[11px] font-medium text-white/90 backdrop-blur">
+              <div className="rounded-full bg-black/55 px-4 py-1.5 text-center text-[11px] font-medium text-white/90 backdrop-blur">
                 {placing
                   ? `👆 clicca il terreno per piazzare: ${placing.label}`
-                  : 'trascina col DESTRO per ruotare · rotella = zoom · clicca un oggetto e usalo con le frecce'}
+                  : 'DESTRO = ruota · TASTO CENTRALE o SHIFT+trascina = sposta la mappa · rotella = zoom · frecce a destra = muoviti'}
               </div>
             </div>
           </div>

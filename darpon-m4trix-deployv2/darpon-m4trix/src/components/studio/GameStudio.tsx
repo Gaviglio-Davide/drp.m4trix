@@ -22,7 +22,6 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import {
   Gamepad2,
-  Import,
   Pencil,
   Play,
   Plus,
@@ -37,6 +36,7 @@ import {
   type GameMeta,
 } from '@/lib/game2d/persist'
 import { newGameProject, gameDimension } from '@/lib/game2d/types'
+import { fetchAuth } from '@/lib/http'
 import GameEditor from '@/components/studio/GameEditor'
 import GamePlayer from '@/components/studio/GamePlayer'
 import GamePlayer3D from '@/components/studio/GamePlayer3D'
@@ -116,6 +116,39 @@ export default function GameStudio() {
     }
   }
 
+  // v17: importa un MONDO (file .mondo.json esportato dal reparto Mondi 3D):
+  // lo crea come progetto e lo trovi in Mondi 3D e nel selettore Mondo dell'editor
+  const importWorldFile = async (f: File) => {
+    try {
+      const w = JSON.parse(await f.text()) as {
+        objects?: unknown[]
+        terrain?: unknown
+        vast?: unknown
+        customAssets?: unknown[]
+      }
+      if (!w || (!Array.isArray(w.objects) && !w.terrain && !w.vast)) {
+        throw new Error('File non valido: serve un file .mondo.json (esportalo dal reparto Mondi 3D con il bottone ⇩ Esporta)')
+      }
+      const name = (f.name.replace(/\.mondo\.json$/i, '').replace(/\.json$/i, '') || 'Mondo importato').slice(0, 60)
+      const res = await fetchAuth('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? 'Errore durante la creazione')
+      const save = await fetchAuth(`/api/projects/${data.project.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: JSON.stringify(w) }),
+      })
+      if (!save.ok) throw new Error('Salvataggio del mondo non riuscito')
+      toast.success(`🌍 Mondo "${name}" importato! Lo trovi in Mondi 3D e nel selettore Mondo dell'editor.`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Import mondo fallito')
+    }
+  }
+
   const remove = async (m: GameMeta) => {
     try {
       await deleteGame(m.id)
@@ -175,8 +208,8 @@ export default function GameStudio() {
           </p>
         </motion.div>
         <div className="flex items-center gap-2">
-          <label className="cp-chip cursor-pointer hover:text-[var(--neon)]">
-            <Import className="mr-1 inline h-3 w-3" /> Importa JSON
+          <label className="cp-chip cursor-pointer hover:text-[var(--neon)]" title="Carica un gioco salvato come file .game.json">
+            📂 Importa gioco
             <input
               type="file"
               accept=".json"
@@ -184,6 +217,19 @@ export default function GameStudio() {
               onChange={e => {
                 const f = e.target.files?.[0]
                 if (f) void importFile(f)
+                e.currentTarget.value = ''
+              }}
+            />
+          </label>
+          <label className="cp-chip cursor-pointer hover:text-[var(--neon)]" title="Carica un mondo da file .mondo.json (esportato dal reparto Mondi 3D)">
+            🌍 Importa mondo
+            <input
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={e => {
+                const f = e.target.files?.[0]
+                if (f) void importWorldFile(f)
                 e.currentTarget.value = ''
               }}
             />

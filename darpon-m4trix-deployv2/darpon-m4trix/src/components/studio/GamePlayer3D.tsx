@@ -361,7 +361,9 @@ function PlayerController({
   // drag del mouse per ruotare la visuale
   useEffect(() => {
     const dn = (e: PointerEvent) => {
-      if ((e.target as HTMLElement)?.tagName === 'BUTTON') return
+      // v17: ruota la visuale SOLO trascinando direttamente sulla scena 3D
+      // (canvas): su HUD, menu e dialoghi il cursore resta libero e normale
+      if ((e.target as HTMLElement)?.tagName !== 'CANVAS') return
       dragging.current = { x: e.clientX, yaw: rt.current.yaw }
     }
     const mv = (e: PointerEvent) => {
@@ -2676,13 +2678,14 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
         downPos.current = { x: e.clientX, y: e.clientY }
       }}
       onPointerUp={e => {
-        // click breve (non drag) = attacco
+        // click breve (non drag) = attacco — v17: solo sulla scena 3D,
+        // così HUD e menu restano cliccabili col cursore normale
         const d = downPos.current
         downPos.current = null
         if (!d || !runRef.current) return
         if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) return
         const el = e.target as HTMLElement
-        if (el.closest('button') || el.closest('.cp-panel')) return
+        if (el.tagName !== 'CANVAS') return
         if (rtRef.current && rtRef.current.phase === 'play')
           rtRef.current.attack = performance.now()
         unlockAudio()
@@ -2696,6 +2699,7 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
           </span>
           <span className="cp-chip hidden sm:inline-block">🌍 {worldLabel}</span>
           <span className="cp-chip hidden md:inline-block">3D · {camMode === 'prima' ? 'prima persona' : 'terza persona'}</span>
+          <span className="cp-chip hidden lg:inline-block">🖱 trascina SULLA SCENA per guardarti · ESC esce</span>
         </div>
         <div className="flex items-center gap-2">
           {onEdit && (
@@ -2883,7 +2887,7 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
                   </div>
                 ) : null}
                 <p className="mt-3 text-xs text-[var(--tx-faint)]">
-                  WASD muovi · mouse guarda · SPAZIO/click attacca · SHIFT corri · E schiva · F parata · Q magia · I inventario · TAB abilità
+                  WASD muovi · trascina SULLA SCENA col mouse per guardarti intorno · SPAZIO/click sulla scena attacca · SHIFT corri · E schiva · F parata · Q magia · I inventario · TAB abilità · ESC esce
                 </p>
                 <Button
                   className="cp-btn mt-4 bg-[var(--neon)] font-bold text-[#04060d]"
