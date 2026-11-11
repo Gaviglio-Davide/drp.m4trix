@@ -28,6 +28,7 @@ import {
   Camera,
   Check,
   CloudUpload,
+  Download,
   HelpCircle,
   Eraser,
   Hammer,
@@ -335,6 +336,23 @@ export default function Editor() {
     }
   }
 
+  // ---------- v17: esporta il mondo come file .mondo.json ----------
+  // il file si può ri-importare nel Game Studio (bottone «🌍 Importa mondo»)
+  // o nell'account di un amico: perfetto per condividere i propri mondi
+  const exportWorld = () => {
+    try {
+      const blob = new Blob([serializeState()], { type: 'application/json' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `${(project?.name || 'mondo').replace(/[^\w-]+/g, '_')}.mondo.json`
+      a.click()
+      URL.revokeObjectURL(a.href)
+      toast.success('🌍 Mondo esportato! Importalo nel Game Studio con «🌍 Importa mondo».')
+    } catch {
+      toast.error('Esportazione non riuscita')
+    }
+  }
+
   const renameProject = async (newName: string) => {
     if (!newName.trim()) return
     await fetchAuth(`/api/projects/${project.id}`, {
@@ -512,6 +530,15 @@ export default function Editor() {
             onClick={undo}
           >
             <Undo2 className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            title="Scarica il mondo come file (.mondo.json): si importa nel Game Studio con «🌍 Importa mondo» o nell'account di un amico"
+            onClick={exportWorld}
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden lg:inline">Esporta</span>
           </Button>
           <Dialog
             open={savesOpen}
