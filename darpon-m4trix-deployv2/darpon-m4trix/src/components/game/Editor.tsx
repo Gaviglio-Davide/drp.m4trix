@@ -619,17 +619,6 @@ export default function Editor() {
               <span className="hidden lg:inline">Cielo</span>
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            title="Progetta le strutture nella home, reparto Strutture"
-            onClick={() => {
-              toast.info('Le strutture si progettano nella home → reparto Strutture. Qui le trovi già nella barra oggetti!')
-            }}
-          >
-            <Hammer className="h-4 w-4" />
-            <span className="hidden sm:inline">Strutture</span>
-          </Button>
           <Dialog
             open={playerOpen}
             onOpenChange={o => setPlayerOpen(o)}
@@ -806,11 +795,6 @@ export default function Editor() {
                   <b>Modalità Gioca</b>: <b>WASD</b> per camminare, <b>Shift</b>{' '}
                   corri, trascina il mouse per guardarti attorno. Salci su
                   colline e strade rialzate: il mondo ha i dislivelli!
-                </li>
-                <li>
-                  <b>🔨 Strutture</b> → le strutture si progettano nella home,
-                  nel reparto «Strutture»: qui le ritrovi già nella barra
-                  oggetti, pronte da piazzare
                 </li>
                 <li>
                   <b>📖 Legenda</b> → tutti gli oggetti spiegati ·{' '}
