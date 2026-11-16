@@ -36,13 +36,11 @@ import {
   Box as Cube,
   Gamepad2,
   Globe2,
-  Hammer,
   Library,
   LogOut,
   Package,
   Pencil,
   Plus,
-  ScrollText,
   Sparkles,
   Trash2,
   Wand2,
@@ -51,20 +49,56 @@ import { useWorld, type ProjectMeta } from '@/lib/world-store'
 import { isGameProjectState } from '@/lib/game2d/persist'
 import { fetchAuth } from '@/lib/http'
 import ImportedModels from '@/components/ImportedModels'
-import StructuresLab from '@/components/StructuresLab'
 import WorldGen from '@/components/WorldGen'
 import DarpxAI from '@/components/DarpxAI'
 import DarpxAgent from '@/components/DarpxAgent'
 import ProfileDialog from '@/components/ProfileDialog'
 import GameStudio from '@/components/studio/GameStudio'
-import CreaDaScript from '@/components/creagame/CreaDaScript'
 import WorldForge from '@/components/worldforge/WorldForge'
-import { SITE_DEFAULTS, type SiteConfig } from '@/lib/site'
-import { sectionOf, useUI, type DashboardTab } from '@/lib/ui-store'
+import { SITE_DEFAULTS, stateMessage, type SiteConfig, type FeatureState } from '@/lib/site'
+import { featureOn, sectionOf, useUI, type DashboardTab } from '@/lib/ui-store'
 
-// I reparti della home: mondi, modelli importati, strutture, genera, darpx
+// I reparti della home — v18: Strutture e Crea da Script RIMOSSI
+// definitivamente; ogni reparto rispetta lo stato scelto dall'admin
+// nel pannello Controllo Funzioni (on/off/manutenzione/aggiornamento/sospesa).
 
 type Tab = DashboardTab
+
+// icona per ogni reparto (lucide)
+const TAB_ICONS: Record<Tab, React.ReactNode> = {
+  gamestudio: <Gamepad2 className="h-4 w-4" />,
+  worldforge: <Globe2 className="h-4 w-4" />,
+  mondi: <Cube className="h-4 w-4" />,
+  importati: <Package className="h-4 w-4" />,
+  darpx: <Sparkles className="h-4 w-4" />,
+}
+
+/** badge di stato sulla tab (solo per stati bloccati visibili) */
+const STATE_BADGE: Record<Exclude<FeatureState, 'on' | 'off'>, string> = {
+  maintenance: '🛠',
+  updating: '🔄',
+  suspended: '⛔',
+}
+
+/** schermata di blocco per reparti in manutenzione / aggiornamento / sospesi */
+function SectionGate({ state, title }: { state: FeatureState; title: string }) {
+  const msg = stateMessage(state, title)
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.97 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="mx-auto mt-10 max-w-md"
+    >
+      <Card className="border-dashed bg-[var(--panel)] text-center">
+        <CardContent className="flex flex-col items-center gap-3 py-14">
+          <span className="text-5xl">{msg.icon}</span>
+          <p className="text-lg font-bold text-[var(--tx)]">{msg.title}</p>
+          <p className="max-w-sm text-sm text-[var(--tx-dim)]">{msg.text}</p>
+        </CardContent>
+      </Card>
+    </motion.div>
+  )
+}
 
 const CARD_ITEM = {
   hidden: { opacity: 0, y: 18, scale: 0.98 },
@@ -98,6 +132,8 @@ export default function Dashboard() {
   const setTab = useUI(s => s.setTab)
   const site = useUI(s => s.site)
   const loadSite = useUI(s => s.loadSite)
+  // v18: stato admin delle funzioni interne (Genera, Agente…)
+  const cfgGenera = sectionOf(site.sections, 'genera')
 
   const refresh = async () => {
     try {
@@ -247,36 +283,34 @@ export default function Dashboard() {
           </motion.div>
         )}
 
-        {/* ===== barra dei reparti ===== */}
+        {/* ===== barra dei reparti (v18: stati admin) ===== */}
         <div className="mb-6 flex flex-wrap items-center gap-1.5 rounded-2xl bg-[var(--panel)] p-1.5 ring-1 ring-[var(--line)]">
-          {(
-            [
-              { id: 'gamestudio' as Tab, icon: <Gamepad2 className="h-4 w-4" />, label: sectionOf(site.sections, 'gamestudio').title, enabled: sectionOf(site.sections, 'gamestudio').enabled },
-              { id: 'creagame' as Tab, icon: <ScrollText className="h-4 w-4" />, label: sectionOf(site.sections, 'creagame').title, enabled: sectionOf(site.sections, 'creagame').enabled },
-              { id: 'worldforge' as Tab, icon: <Globe2 className="h-4 w-4" />, label: sectionOf(site.sections, 'worldforge').title, enabled: sectionOf(site.sections, 'worldforge').enabled },
-              { id: 'mondi' as Tab, icon: <Cube className="h-4 w-4" />, label: sectionOf(site.sections, 'mondi').title, enabled: sectionOf(site.sections, 'mondi').enabled },
-              { id: 'importati' as Tab, icon: <Package className="h-4 w-4" />, label: sectionOf(site.sections, 'importati').title, enabled: sectionOf(site.sections, 'importati').enabled },
-              { id: 'strutture' as Tab, icon: <Hammer className="h-4 w-4" />, label: sectionOf(site.sections, 'strutture').title, enabled: sectionOf(site.sections, 'strutture').enabled },
-              { id: 'darpx' as Tab, icon: <Sparkles className="h-4 w-4" />, label: sectionOf(site.sections, 'darpx').title, enabled: sectionOf(site.sections, 'darpx').enabled },
-            ]
-          ).filter(t => t.enabled !== false && t.id !== 'genera').map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-all ${
-                tab === t.id
-                  ? 'bg-[var(--primary)] text-white shadow-md'
-                  : 'text-[var(--tx-dim)] hover:bg-[var(--primary-soft)] hover:text-[var(--primary-strong)]'
-              }`}
-            >
-              {t.icon}
-              {/* v15: il vecchio suffisso «(prova)» non si mostra più */}
-              {t.label.replace(/ \(prova\)$/, '')}
-            </button>
-          ))}
+          {(['gamestudio', 'worldforge', 'mondi', 'importati', 'darpx'] as Tab[])
+            .map(t => ({ id: t, cfg: sectionOf(site.sections, t) }))
+            .filter(t => t.cfg.state !== 'off')
+            .map(t => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-all ${
+                  tab === t.id
+                    ? 'bg-[var(--primary)] text-white shadow-md'
+                    : 'text-[var(--tx-dim)] hover:bg-[var(--primary-soft)] hover:text-[var(--primary-strong)]'
+                }`}
+              >
+                {TAB_ICONS[t.id]}
+                {t.cfg.title.replace(/ \(prova\)$/, '')}
+                {t.cfg.state !== 'on' && (
+                  <span title={stateMessage(t.cfg.state, t.cfg.title).title}>
+                    {STATE_BADGE[t.cfg.state as Exclude<FeatureState, 'on' | 'off'>]}
+                  </span>
+                )}
+              </button>
+            ))}
         </div>
 
         {tab === 'mondi' && (
+          sectionOf(site.sections, 'mondi').state === 'on' ? (
           <>
           <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <motion.div
@@ -292,14 +326,16 @@ export default function Dashboard() {
               videogioco.
             </p>
           </motion.div>
-          {/* v15: tasto GENERA dentro Mondi 3D, accanto a Nuovo progetto */}
-          <Button
-            variant="outline"
-            className="shadow-md"
-            onClick={() => setShowGenera(g => !g)}
-          >
-            <Wand2 className="mr-1 h-4 w-4" /> Genera {showGenera ? '▲' : '▼'}
-          </Button>
+          {/* v15+v18: tasto GENERA dentro Mondi 3D, controllato dall'admin */}
+          {cfgGenera.state === 'on' && (
+            <Button
+              variant="outline"
+              className="shadow-md"
+              onClick={() => setShowGenera(g => !g)}
+            >
+              <Wand2 className="mr-1 h-4 w-4" /> Genera {showGenera ? '▲' : '▼'}
+            </Button>
+          )}
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
               <Button className="shadow-md">
@@ -340,7 +376,7 @@ export default function Dashboard() {
         </div>
 
         {/* v15: generatore di città e paesaggi, dentro il reparto Mondi 3D */}
-        {tab === 'mondi' && showGenera && (
+        {tab === 'mondi' && showGenera && cfgGenera.state === 'on' && (
           <div className="mb-6">
             <WorldGen />
           </div>
@@ -481,29 +517,44 @@ export default function Dashboard() {
             </p>
           )}
           </>
+          ) : (
+            <SectionGate state={sectionOf(site.sections, 'mondi').state} title={sectionOf(site.sections, 'mondi').title} />
+          )
         )}
 
-        {/* REPARTO: game studio — editor di videogiochi stile Godot/Unity */}
-        {tab === 'gamestudio' && <GameStudio />}
+        {/* ===== REPARTI (v18: ognuno rispetta lo stato scelto dall'admin) ===== */}
 
-        {/* REPARTO: crea un gioco giocabile da una sceneggiatura */}
-        {tab === 'creagame' && <CreaDaScript />}
+        {/* REPARTO: game studio — editor di videogiochi stile Unreal/Godot */}
+        {tab === 'gamestudio' && (
+          sectionOf(site.sections, 'gamestudio').state === 'on'
+            ? <GameStudio />
+            : <SectionGate state={sectionOf(site.sections, 'gamestudio').state} title={sectionOf(site.sections, 'gamestudio').title} />
+        )}
 
         {/* REPARTO: mappe procedurali personalizzabili stile Watabou */}
-        {tab === 'worldforge' && <WorldForge />}
+        {tab === 'worldforge' && (
+          sectionOf(site.sections, 'worldforge').state === 'on'
+            ? <WorldForge />
+            : <SectionGate state={sectionOf(site.sections, 'worldforge').state} title={sectionOf(site.sections, 'worldforge').title} />
+        )}
 
         {/* REPARTO: modelli 3D importati dall'utente (disponibili in ogni editor) */}
-        {tab === 'importati' && <ImportedModels />}
+        {tab === 'importati' && (
+          sectionOf(site.sections, 'importati').state === 'on'
+            ? <ImportedModels />
+            : <SectionGate state={sectionOf(site.sections, 'importati').state} title={sectionOf(site.sections, 'importati').title} />
+        )}
 
         {/* REPARTO: Darpx.ai — immagine → mondo, testo → 3D */}
-        {tab === 'darpx' && <DarpxAI />}
-
-        {/* REPARTO: progettazione strutture, separata dalla creazione dei mondi */}
-        {tab === 'strutture' && <StructuresLab />}
+        {tab === 'darpx' && (
+          sectionOf(site.sections, 'darpx').state === 'on'
+            ? <DarpxAI />
+            : <SectionGate state={sectionOf(site.sections, 'darpx').state} title={sectionOf(site.sections, 'darpx').title} />
+        )}
       </main>
 
-      {/* Agente Darpx: assistente AI fluttuante, sempre disponibile */}
-      <DarpxAgent />
+      {/* Agente Darpx: assistente AI fluttuante (controllato dall'admin) */}
+      {featureOn(site.sections, 'agente') && <DarpxAgent />}
 
       <Dialog
         open={!!renameId}
