@@ -177,7 +177,8 @@ export function GlbView({ o, reg }: { o: RObject; reg?: (g: THREE.Group | null) 
     }
   }, [animations, mixer, o.anim])
   useFrame((_, dt) => {
-    mixer.update(dt)
+    // v18: velocità dell'animazione regolabile dall'ispettore
+    mixer.update(dt * Math.max(0, o.animSpeed ?? 1))
   })
   return (
     <group
@@ -337,13 +338,17 @@ export function WorldObjects({
 }) {
   return (
     <>
-      {world.objects.map(o =>
-        o.prefab === 'glb' && o.url ? (
-          <GlbView key={o.id} o={o} />
-        ) : (
-          <PrefabView key={o.id} o={o} selected={o.id === selectedId} onSelect={onSelect} playMode={playMode} />
-        )
-      )}
+      {/* v18: gli oggetti nascosti NON si vedono in modalità GIOCO
+          (nell'editor restano visibili, per ritrovarli con l'Outliner) */}
+      {world.objects
+        .filter(o => !playMode || !o.hidden)
+        .map(o =>
+          o.prefab === 'glb' && o.url ? (
+            <GlbView key={o.id} o={o} />
+          ) : (
+            <PrefabView key={o.id} o={o} selected={o.id === selectedId} onSelect={onSelect} playMode={playMode} />
+          )
+        )}
       {world.lights.map(l => (
         <LightView key={l.id} l={l} selected={l.id === selectedId} onSelect={onSelect} playMode={playMode} />
       ))}

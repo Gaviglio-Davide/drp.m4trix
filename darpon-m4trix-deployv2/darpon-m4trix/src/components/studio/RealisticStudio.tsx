@@ -35,6 +35,8 @@ import { PREFABS, PREFAB_DEFS, type PrefabCat } from '@/lib/engine3d/prefabs'
 import { collideAndGround, safeSpawn, worldColliders } from '@/lib/engine3d/builder'
 import { GlbView, LightView, PlayerCharView, PostFXView, PrefabView, RealEnv, WorldObjects } from './RealisticViews'
 import { GLB_CATALOG } from '@/lib/glb-catalog-data'
+import StudioDetails from './StudioDetails'
+import StudioOutliner from './StudioOutliner'
 
 type Props = {
   meta: GameMeta
@@ -611,12 +613,74 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
   const [paletteCat, setPaletteCat] = useState<PrefabCat | 'luce' | 'glb'>('ambiente')
   const [models, setModels] = useState<{ id: string; name: string; url: string }[]>([])
   const [tplOpen, setTplOpen] = useState(false)
-  const [uniformScale, setUniformScale] = useState(true)
   const [snapOn, setSnapOn] = useState(true)
+  // v18: dock Details ridimensionabile + guida scorciatoie
+  const [detailsW, setDetailsW] = useState(380)
+  const [showHelp, setShowHelp] = useState(false)
 
   const groups = useRef<Map<string, THREE.Group>>(new Map())
   const controlsRef = useRef<unknown>(null)
   const camRef = useRef<THREE.PerspectiveCamera | null>(null)
+
+  // ---------- v18: UNDO / REDO (cronologia del mondo, stile Unreal) ----------
+  const projectRef = useRef(project)
+  useEffect(() => {
+    projectRef.current = project
+  }, [project])
+  const hist = useRef<{ undo: string[]; redo: string[] }>({ undo: [], redo: [] })
+  const lastPush = useRef(0)
+  const pushHist = useCallback(() => {
+    const cur = JSON.stringify(projectRef.current.settings.realWorld ?? null)
+    const last = hist.current.undo[hist.current.undo.length - 1]
+    if (cur === last) return // niente doppioni
+    // assorbi le raffiche (drag dei numerici): 1 passo per 200 ms
+    const now = Date.now()
+    if (now - lastPush.current < 200) return
+    lastPush.current = now
+    hist.current.undo.push(cur)
+    if (hist.current.undo.length > 60) hist.current.undo.shift()
+    hist.current.redo = []
+  }, [])
+  const undo = useCallback(() => {
+    const prev = hist.current.undo.pop()
+    if (!prev) return
+    hist.current.redo.push(JSON.stringify(projectRef.current.settings.realWorld ?? null))
+    setProject(p => {
+      const q = JSON.parse(JSON.stringify(p)) as GameProject
+      q.settings.realWorld = JSON.parse(prev)
+      return q
+    })
+    setDirty(true)
+  }, [])
+  const redo = useCallback(() => {
+    const next = hist.current.redo.pop()
+    if (!next) return
+    hist.current.undo.push(JSON.stringify(projectRef.current.settings.realWorld ?? null))
+    setProject(p => {
+      const q = JSON.parse(JSON.stringify(p)) as GameProject
+      q.settings.realWorld = JSON.parse(next)
+      return q
+    })
+    setDirty(true)
+  }, [])
+
+  // v18: trascina il bordo del dock per allargare/_stringere il Details
+  const dockDragX = useRef(0)
+  const startDockResize = (e: React.PointerEvent) => {
+    e.preventDefault()
+    dockDragX.current = e.clientX
+    const move = (ev: PointerEvent) => {
+      const dx = dockDragX.current - ev.clientX // dock a destra: trascina a sinistra = allarga
+      dockDragX.current = ev.clientX
+      setDetailsW(w => Math.min(680, Math.max(300, w + dx)))
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
 
   // ---------- salvataggio ----------
   useEffect(() => {
@@ -652,13 +716,14 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
 
   // ---------- mutazioni ----------
   const mutateWorld = useCallback((fn: (w: RWorld) => void) => {
+    pushHist() // v18: ogni cambiamento entra nella cronologia (CTRL+Z)
     setProject(prev => {
       const q = JSON.parse(JSON.stringify(prev)) as GameProject
       fn(q.settings.realWorld!)
       return q
     })
     setDirty(true)
-  }, [])
+  }, [pushHist])
 
   const mutateProject = useCallback((fn: (p: GameProject) => void) => {
     setProject(prev => {
@@ -760,20 +825,33 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
     }
   }
 
-  // ---------- scorciatoie da tastiera ----------
+  // ---------- scorciatoie da tastiera (v18: stile Unreal/Godot) ----------
   useEffect(() => {
     if (mode !== 'edit') return
     const h = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      // UNDO / REDO (Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y)
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+        e.preventDefault()
+        if (e.shiftKey) redo()
+        else undo()
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyY') {
+        e.preventDefault()
+        redo()
+        return
+      }
       if (e.code === 'Escape') {
         if (placing) setPlacing(null)
         else setSelectedId(null)
       }
       if (e.code === 'KeyR' && placing) setPlaceRot(r => (r + 45) % 360)
-      if (e.code === 'Digit1') setGizmo('translate')
-      if (e.code === 'Digit2') setGizmo('rotate')
-      if (e.code === 'Digit3') setGizmo('scale')
+      // gizmo: 1/2/3 (classici) e W/E/R (come in Unreal Engine)
+      if (e.code === 'Digit1' || e.code === 'KeyW') setGizmo('translate')
+      if (e.code === 'Digit2' || e.code === 'KeyE') setGizmo('rotate')
+      if (e.code === 'Digit3' || e.code === 'KeyR') setGizmo('scale')
       if (e.code === 'Delete' || e.code === 'Backspace') {
         if (selectedId) deleteSelected()
       }
@@ -781,11 +859,29 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
         e.preventDefault()
         duplicateSelected()
       }
+      // F: inquadra la selezione (come Unreal/Godot)
+      if (e.code === 'KeyF' && selectedId) {
+        const controls = controlsRef.current as { target: THREE.Vector3; update: () => void } | null
+        const g = groups.current.get(selectedId)
+        if (controls && g) {
+          const p = new THREE.Vector3()
+          g.getWorldPosition(p)
+          controls.target.copy(p)
+          controls.update()
+        }
+      }
+      // H: nascondi/mostra la selezione in gioco
+      if (e.code === 'KeyH' && selectedObj) {
+        mutateWorld(w => {
+          const o = w.objects.find(x => x.id === selectedId)
+          if (o) o.hidden = !o.hidden
+        })
+      }
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, placing, selectedId, world])
+  }, [mode, placing, selectedId, world, selectedObj, undo, redo])
 
   const deleteSelected = () => {
     if (!selectedId) return
@@ -808,6 +904,17 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
       w.objects.push(c)
     })
     toast.success('Duplicato (+1.5 m in avanti)')
+  }
+
+  // v18: inquadra la selezione con la camera (bottone 🎯 nel Details)
+  const focusSelected = () => {
+    const controls = controlsRef.current as { target: THREE.Vector3; update: () => void } | null
+    const g = selectedId ? groups.current.get(selectedId) : null
+    if (!controls || !g) return
+    const p = new THREE.Vector3()
+    g.getWorldPosition(p)
+    controls.target.copy(p)
+    controls.update()
   }
 
   // ---------- spawn dalla vista ----------
@@ -906,6 +1013,16 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
         <span className="cp-chip">{saveState === 'ok' ? '● salvato' : '◌ salvo…'}</span>
         <span className="cp-chip hidden text-[10px] md:inline-flex">DARPX ENGINE · PBR + BLOOM</span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          {/* v18: undo/redo + guida scorciatoie, stile editor seri */}
+          <button className="cp-chip hover:text-[var(--neon)]" onClick={undo} title="Annulla (CTRL+Z)" disabled={hist.current.undo.length === 0}>
+            ↶
+          </button>
+          <button className="cp-chip hover:text-[var(--neon)]" onClick={redo} title="Ripeti (CTRL+Y)">
+            ↷
+          </button>
+          <button className="cp-chip hover:text-[var(--neon)]" onClick={() => setShowHelp(v => !v)} title="Tutti i comandi dell'editor">
+            ⌨ ?
+          </button>
           <button className="cp-chip hover:text-[var(--neon)]" onClick={() => setTplOpen(v => !v)} title="Carica un ambiente completo">
             🏗 Template
           </button>
@@ -936,6 +1053,33 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
                 <p className="mt-0.5 text-[11px] leading-snug text-[var(--tx-dim)]">{t.desc}</p>
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* v18: GUIDA — tutti i comandi dell'editor (stile Unreal/Godot) */}
+      {showHelp && (
+        <div className="cp-panel p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-bold text-[var(--tx)]">⌨ Comandi dell&apos;editor</p>
+            <button className="cp-chip" onClick={() => setShowHelp(false)}>✕ chiudi</button>
+          </div>
+          <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-[11px] leading-relaxed text-[var(--tx-dim)] sm:grid-cols-2 lg:grid-cols-3">
+            <p><b>W / 1</b> — gizmo Sposta (Translate)</p>
+            <p><b>E / 2</b> — gizmo Ruota (Rotate)</p>
+            <p><b>R / 3</b> — gizmo Scala (Scale)</p>
+            <p><b>CANC</b> — elimina la selezione</p>
+            <p><b>CTRL+D</b> — duplica la selezione</p>
+            <p><b>CTRL+Z</b> — annulla (undo)</p>
+            <p><b>CTRL+Y / CTRL+SHIFT+Z</b> — ripeti (redo)</p>
+            <p><b>F</b> — inquadra la selezione</p>
+            <p><b>H</b> — nascondi/mostra la selezione in gioco</p>
+            <p><b>R</b> (piazzando) — ruota di 45°</p>
+            <p><b>ESC</b> — deseleziona / annulla piazzamento</p>
+            <p><b>Click sx</b> — ruota la vista · <b>rotella</b> zoom</p>
+            <p><b>Trascina bordo Details</b> — allarga/stringe l&apos;ispettore</p>
+            <p><b>Click destro</b> — pan della mappa</p>
+            <p><b>▶ PROVA</b> — WASD muovi · SHIFT corri · SPAZIO salta</p>
           </div>
         </div>
       )}
@@ -1018,9 +1162,21 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
             </div>
           )}
 
+          {/* v18: OUTLINER — la lista gerarchica del mondo, stile Unreal */}
+          <div className="mt-3">
+            <StudioOutliner
+              world={world}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onPatchObj={(id, fn) => patchObject(id, fn)}
+            />
+          </div>
+
           <div className="mt-auto border-t border-[var(--line)] pt-2 text-[10px] leading-relaxed text-[var(--tx-faint)]">
-            <b className="text-[var(--tx-dim)]">Comandi:</b> click sx ruota la vista · tasto dx trascina la mappa ·
-            rotella zoom · <b className="text-[var(--tx-dim)]">1/2/3</b> sposta/ruota/scala · <b className="text-[var(--tx-dim)]">CANC</b> elimina · <b className="text-[var(--tx-dim)]">CTRL+D</b> duplica
+            <b className="text-[var(--tx-dim)]">Comandi:</b> <b className="text-[var(--tx-dim)]">1/2/3</b> o{' '}
+            <b className="text-[var(--tx-dim)]">W/E/R</b> sposta/ruota/scala · <b className="text-[var(--tx-dim)]">CANC</b> elimina ·{' '}
+            <b className="text-[var(--tx-dim)]">CTRL+D</b> duplica · <b className="text-[var(--tx-dim)]">F</b> inquadra ·{' '}
+            <b className="text-[var(--tx-dim)]">H</b> nasconde · <b className="text-[var(--tx-dim)]">CTRL+Z</b> undo
           </div>
         </div>
 
@@ -1161,199 +1317,39 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
           </div>
         </div>
 
-        {/* ISPETTORE */}
-        <div className="cp-panel w-full shrink-0 overflow-y-auto p-3 lg:w-72">
-          {selectedObj || selectedLight ? (
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <p className="truncate text-sm font-bold text-[var(--tx)]">
-                  {selectedObj
-                    ? `${PREFABS[selectedObj.prefab]?.icon ?? '📦'} ${PREFABS[selectedObj.prefab]?.name ?? selectedObj.prefab}`
-                    : selectedLight?.kind === 'point'
-                      ? '💡 Luce di punto'
-                      : '🔦 Riflettore'}
-                </p>
-                <div className="flex gap-1">
-                  {selectedObj && (
-                    <button className="cp-chip" title="Duplica (CTRL+D)" onClick={duplicateSelected}>⧉</button>
-                  )}
-                  <button className="cp-chip text-red-400" title="Elimina (CANC)" onClick={deleteSelected}>🗑</button>
-                </div>
+        {/* v18: DOCK DESTRO — Details stile Unreal, LARGHEZZA regolabile */}
+        <div
+          className="flex w-full shrink-0 flex-col lg:w-[var(--dock-w)]"
+          style={{ '--dock-w': `${detailsW}px` } as React.CSSProperties}
+        >
+          {/* maniglia di ridimensionamento (solo desktop) */}
+          <div
+            className="mb-2 hidden w-full cursor-row-resize self-stretch rounded-full bg-[var(--line)] transition-colors hover:bg-[var(--neon)] lg:block lg:h-1.5 lg:w-auto"
+            title="Trascina per allargare o stringere il Details"
+            onPointerDown={startDockResize}
+          />
+          <div className="cp-panel flex min-h-0 flex-1 flex-col overflow-y-auto">
+            {/* v18: DETAILS PANEL in scala 1:1 su Unreal/Godot */}
+            <StudioDetails
+              obj={selectedObj}
+              light={selectedLight}
+              onPatchObj={fn => { if (selectedObj) patchObject(selectedObj.id, fn) }}
+              onPatchLight={fn => { if (selectedLight) patchLight(selectedLight.id, fn) }}
+              onDuplicate={duplicateSelected}
+              onDelete={deleteSelected}
+              onFocus={focusSelected}
+            />
+
+            {/* WORLD SETTINGS — ambiente e personaggio, sempre visibili */}
+            <div className="mt-2 border-t border-[var(--line)] px-3 pb-3">
+              <div className="mt-2 flex items-center gap-1.5">
+                <span className="text-[10px] text-[var(--tx-faint)]">▶</span>
+                <span className="text-[11px] font-black uppercase tracking-wider text-[var(--tx-dim)]">World Settings</span>
               </div>
-
-              {selectedObj ? (
-                <>
-                  <div>
-                    <p className="mb-1 text-[10px] font-bold tracking-wider text-[var(--tx-faint)]">POSIZIONE (m)</p>
-                    <div className="grid grid-cols-3 gap-1">
-                      {(['X', 'Y', 'Z'] as const).map((ax, i) => (
-                        <NumField
-                          key={ax}
-                          label={ax}
-                          value={selectedObj.p[i]}
-                          step={0.25}
-                          onChange={v => patchObject(selectedObj.id, o => { o.p[i] = snapOn ? Math.round(v * 4) / 4 : v })}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="mb-1 text-[10px] font-bold tracking-wider text-[var(--tx-faint)]">ROTAZIONE (gradi)</p>
-                    <div className="grid grid-cols-3 gap-1">
-                      {(['X', 'Y', 'Z'] as const).map((ax, i) => (
-                        <NumField
-                          key={ax}
-                          label={ax}
-                          value={selectedObj.r[i]}
-                          step={15}
-                          onChange={v => patchObject(selectedObj.id, o => { o.r[i] = v })}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 flex items-center justify-between">
-                      <p className="text-[10px] font-bold tracking-wider text-[var(--tx-faint)]">SCALA</p>
-                      <button
-                        className={`cp-chip text-[10px] ${uniformScale ? 'border-[var(--neon)] text-[var(--neon)]' : ''}`}
-                        onClick={() => setUniformScale(v => !v)}
-                        title="Scala uniforme"
-                      >
-                        🔗 uniforme
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-3 gap-1">
-                      {(['X', 'Y', 'Z'] as const).map((ax, i) => (
-                        <NumField
-                          key={ax}
-                          label={ax}
-                          value={selectedObj.s[i]}
-                          step={0.1}
-                          min={0.05}
-                          onChange={v => patchObject(selectedObj.id, o => {
-                            if (uniformScale) o.s = [v, v, v]
-                            else o.s[i] = v
-                          })}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="border-t border-[var(--line)] pt-2">
-                    <p className="mb-1.5 text-[10px] font-bold tracking-wider text-[var(--tx-faint)]">MATERIALE PBR</p>
-                    <div className="flex flex-col gap-2">
-                      <label className="flex items-center justify-between text-[11px] text-[var(--tx-dim)]">
-                        Colore
-                        <input
-                          type="color"
-                          value={selectedObj.mat?.color ?? '#ffffff'}
-                          onChange={e => patchObject(selectedObj.id, o => { o.mat = { ...o.mat, color: e.target.value } })}
-                          className="h-7 w-14 cursor-pointer rounded border border-[var(--line)] bg-transparent"
-                        />
-                      </label>
-                      <Slider
-                        label="Rugosità"
-                        value={selectedObj.mat?.rough ?? 0.5}
-                        onChange={v => patchObject(selectedObj.id, o => { o.mat = { ...o.mat, rough: v } })}
-                      />
-                      <Slider
-                        label="Metallicità"
-                        value={selectedObj.mat?.metal ?? 0.1}
-                        onChange={v => patchObject(selectedObj.id, o => { o.mat = { ...o.mat, metal: v } })}
-                      />
-                      <label className="flex items-center justify-between text-[11px] text-[var(--tx-dim)]">
-                        Emissivo (glow)
-                        <input
-                          type="color"
-                          value={selectedObj.mat?.emissive ?? '#000000'}
-                          onChange={e => patchObject(selectedObj.id, o => { o.mat = { ...o.mat, emissive: e.target.value } })}
-                          className="h-7 w-14 cursor-pointer rounded border border-[var(--line)] bg-transparent"
-                        />
-                      </label>
-                      {(selectedObj.mat?.emissive && selectedObj.mat.emissive !== '#000000') ? (
-                        <Slider
-                          label="Intensità glow"
-                          value={selectedObj.mat?.eInt ?? 1}
-                          min={0}
-                          max={4}
-                          step={0.05}
-                          onChange={v => patchObject(selectedObj.id, o => { o.mat = { ...o.mat, eInt: v } })}
-                        />
-                      ) : null}
-                      {selectedObj.mat && (
-                        <button
-                          className="cp-chip w-fit text-[10px] hover:text-[var(--neon)]"
-                          onClick={() => patchObject(selectedObj.id, o => { o.mat = undefined })}
-                        >
-                          ↺ materiale originale
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </>
-              ) : (
-                /* ispettore LUCE */
-                selectedLight && (
-                  <>
-                    <div>
-                      <p className="mb-1 text-[10px] font-bold tracking-wider text-[var(--tx-faint)]">POSIZIONE (m)</p>
-                      <div className="grid grid-cols-3 gap-1">
-                        {(['X', 'Y', 'Z'] as const).map((ax, i) => (
-                          <NumField
-                            key={ax}
-                            label={ax}
-                            value={selectedLight.p[i]}
-                            step={0.25}
-                            onChange={v => patchLight(selectedLight.id, l => { l.p[i] = v })}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                    <label className="flex items-center justify-between text-[11px] text-[var(--tx-dim)]">
-                      Colore
-                      <input
-                        type="color"
-                        value={selectedLight.color}
-                        onChange={e => patchLight(selectedLight.id, l => { l.color = e.target.value })}
-                        className="h-7 w-14 cursor-pointer rounded border border-[var(--line)] bg-transparent"
-                      />
-                    </label>
-                    <Slider
-                      label="Intensità"
-                      value={selectedLight.intensity}
-                      min={0}
-                      max={60}
-                      step={0.5}
-                      onChange={v => patchLight(selectedLight.id, l => { l.intensity = v })}
-                    />
-                    <Slider
-                      label="Portata"
-                      value={selectedLight.distance}
-                      min={1}
-                      max={40}
-                      step={0.5}
-                      onChange={v => patchLight(selectedLight.id, l => { l.distance = v })}
-                    />
-                    {selectedLight.kind === 'spot' && (
-                      <Slider
-                        label="Apertura cono"
-                        value={selectedLight.angle ?? 0.7}
-                        min={0.15}
-                        max={1.4}
-                        onChange={v => patchLight(selectedLight.id, l => { l.angle = v })}
-                      />
-                    )}
-                  </>
-                )
-              )}
+              <p className="mb-2 text-[10px] leading-relaxed text-[var(--tx-faint)]">
+                Cielo, nebbia, bloom e personaggio del giocatore valgono per TUTTO il mondo (come il World Settings di Unreal).
+              </p>
             </div>
-          ) : (
-            <p className="py-6 text-center text-xs text-[var(--tx-dim)]">
-              Seleziona un oggetto nella scena per modificarlo,
-              oppure scegline uno dalla palette a sinistra e
-              clicca nel mondo per piazzarlo.
-            </p>
-          )}
 
           {/* AMBIENTE */}
           <div className="mt-4 border-t border-[var(--line)] pt-3">
@@ -1485,6 +1481,7 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
                 </p>
               </div>
             )}
+          </div>
           </div>
         </div>
       </div>

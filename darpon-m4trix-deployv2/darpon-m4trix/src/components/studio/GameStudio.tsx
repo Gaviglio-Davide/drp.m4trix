@@ -45,8 +45,7 @@ import GameEditor from '@/components/studio/GameEditor'
 import GamePlayer from '@/components/studio/GamePlayer'
 import GamePlayer3D from '@/components/studio/GamePlayer3D'
 import dynamic from 'next/dynamic'
-import { useUI } from '@/lib/ui-store'
-import { sectionOf } from '@/lib/ui-store'
+import { featureOn, sectionOf, useUI } from '@/lib/ui-store'
 
 // v17: studio REALISTICO (Darpx Engine) — solo client, niente SSR
 const RealisticStudio = dynamic(
@@ -67,6 +66,8 @@ type HubWorld = {
 export default function GameStudio() {
   const site = useUI(s => s.site)
   const sec = sectionOf(site.sections, 'gamestudio')
+  // v18: la funzione "Importa mondi da Hub" è controllata dall'admin
+  const hubOn = featureOn(site.sections, 'hubimport')
   const [metas, setMetas] = useState<GameMeta[]>([])
   const [loading, setLoading] = useState(true)
   const [mode, setMode] = useState<Mode>({ kind: 'list' })
@@ -329,39 +330,44 @@ export default function GameStudio() {
           </p>
         </motion.div>
         <div className="flex items-center gap-2">
-          <label className="cp-chip cursor-pointer hover:text-[var(--neon)]" title="Carica un gioco salvato come file .game.json">
-            📂 Importa gioco
-            <input
-              type="file"
-              accept=".json"
-              className="hidden"
-              onChange={e => {
-                const f = e.target.files?.[0]
-                if (f) void importFile(f)
-                e.currentTarget.value = ''
-              }}
-            />
-          </label>
-          <label className="cp-chip cursor-pointer hover:text-[var(--neon)]" title="Carica un mondo da file .mondo.json (esportato dal reparto Mondi 3D)">
-            🌍 Importa da file
-            <input
-              type="file"
-              accept=".json"
-              className="hidden"
-              onChange={e => {
-                const f = e.target.files?.[0]
-                if (f) void importWorldFile(f)
-                e.currentTarget.value = ''
-              }}
-            />
-          </label>
-          <button
-            className="cp-chip cursor-pointer hover:text-[var(--neon)]"
-            title="Scegli un mondo creato in qualsiasi reparto dell'hub e trasformalo in gioco"
-            onClick={() => void openHub()}
-          >
-            🌐 Importa da Hub
-          </button>
+          {/* v18: gli import sono controllati dall'admin (funzione hubimport) */}
+          {hubOn && (
+            <>
+              <label className="cp-chip cursor-pointer hover:text-[var(--neon)]" title="Carica un gioco salvato come file .game.json">
+                📂 Importa gioco
+                <input
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (f) void importFile(f)
+                    e.currentTarget.value = ''
+                  }}
+                />
+              </label>
+              <label className="cp-chip cursor-pointer hover:text-[var(--neon)]" title="Carica un mondo da file .mondo.json (esportato dal reparto Mondi 3D)">
+                🌍 Importa da file
+                <input
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (f) void importWorldFile(f)
+                    e.currentTarget.value = ''
+                  }}
+                />
+              </label>
+              <button
+                className="cp-chip cursor-pointer hover:text-[var(--neon)]"
+                title="Scegli un mondo creato in qualsiasi reparto dell'hub e trasformalo in gioco"
+                onClick={() => void openHub()}
+              >
+                🌐 Importa da Hub
+              </button>
+            </>
+          )}
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
               <Button className="cp-btn bg-[var(--neon)] font-bold text-[#04060d]">
@@ -687,13 +693,8 @@ export default function GameStudio() {
       {metas.length > 0 && (
         <p className="mt-6 flex items-center gap-2 text-xs text-[var(--tx-faint)]">
           <Wand2 className="h-3.5 w-3.5 text-[var(--neon-2)]" />
-          Vuoi un gioco pronto in un click? Vai al reparto{' '}
-          <button
-            className="neon-text underline"
-            onClick={() => useUI.getState().setTab('creagame')}
-          >
-            Crea da Script
-          </button>
+          Suggerimento: con <b className="text-[var(--neon)]">🌐 Importa da Hub</b> riprendi un mondo
+          creato in qualsiasi reparto e lo trasformi in gioco, senza rifare nulla.
         </p>
       )}
     </div>
