@@ -196,6 +196,69 @@ export function GlbView({ o, reg }: { o: RObject; reg?: (g: THREE.Group | null) 
   )
 }
 
+// ---------------- personaggio del GIOCATORE (v17) ----------------
+// Il GLB scelto dall'autore come eroe: segue il rig del player
+// (posizione + orientamento, aggiornati ogni frame da PlayRig) e
+// anima la clip scelta solo quando il personaggio sta camminando.
+
+export function PlayerCharView({
+  url,
+  anim,
+  yawOff = 0,
+  rig,
+}: {
+  url: string
+  anim: number | null
+  yawOff?: number // gradi extra se il modello guarda "al contrario"
+  rig: React.MutableRefObject<{ x: number; y: number; z: number; yaw: number; moving: boolean }>
+}) {
+  const { scene, animations } = useGLTF(url)
+  // clone normalizzato: alto 1.7 m, piedi a y=0, centrato
+  const cloned = useMemo(() => {
+    const c = skeletonClone(scene)
+    const box = new THREE.Box3().setFromObject(c)
+    const size = box.getSize(new THREE.Vector3())
+    const s = 1.7 / Math.max(size.y, 0.001)
+    c.scale.setScalar(s)
+    const box2 = new THREE.Box3().setFromObject(c)
+    c.position.y = -box2.min.y
+    c.position.x = -(box2.min.x + box2.max.x) / 2
+    c.position.z = -(box2.min.z + box2.max.z) / 2
+    return c
+  }, [scene])
+  const mixer = useMemo(() => new THREE.AnimationMixer(cloned), [cloned])
+  const actionRef = useRef<THREE.AnimationAction | null>(null)
+  useEffect(() => {
+    const clip =
+      (anim != null && animations[anim]) ||
+      animations.find(a => /walk|run|move|corsa|camminata/i.test(a.name)) ||
+      animations[0]
+    if (!clip) return
+    const a = mixer.clipAction(clip)
+    a.play()
+    actionRef.current = a
+    return () => {
+      a.stop()
+      actionRef.current = null
+    }
+  }, [animations, mixer, anim])
+  const g = useRef<THREE.Group>(null)
+  useFrame((_, rawDt) => {
+    mixer.update(Math.min(rawDt, 0.05))
+    const r = rig.current
+    if (actionRef.current) actionRef.current.paused = !r.moving
+    if (g.current) {
+      g.current.position.set(r.x, r.y, r.z)
+      g.current.rotation.y = r.yaw + THREE.MathUtils.degToRad(yawOff)
+    }
+  })
+  return (
+    <group ref={g}>
+      <primitive object={cloned} dispose={null} />
+    </group>
+  )
+}
+
 // ---------------- luci piazzate a mano ----------------
 
 export function LightView({

@@ -34,6 +34,7 @@ import { VAST_BIOMES, VAST_DEFAULT, VAST_TOD_LABEL, type VastConfig, type VastTo
 import { drawKind } from '@/lib/game2d/sprites'
 import { exportGameFile, isGameProjectState, saveGame, type GameMeta } from '@/lib/game2d/persist'
 import { fetchAuth } from '@/lib/http'
+import { GLB_CATALOG } from '@/lib/glb-catalog-data'
 import dynamic from 'next/dynamic'
 
 // v13: HUB STORIA (storia, personaggi, dialoghi, oggetti, abilità, magie...)
@@ -50,6 +51,10 @@ type Section3d = 'hub' | 'scena' | 'mappa' | 'regole'
 type WorldChoice = { id: string; name: string; updatedAt: string }
 
 const TILE_LIST = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+
+// v17: personaggi del catalogo (i Cyber Samurai e gli altri animati)
+// scegliabili come personaggio principale del gioco
+const CHAR_CATALOG = GLB_CATALOG.filter(e => e.category === 'personaggi')
 
 const ENTITY_PALETTE: { type: EntityType; kind?: EntityKind; label: string; color: string }[] = [
   { type: 'player', label: '★ Start Eroe', color: '#00f0ff' },
@@ -495,7 +500,10 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
             className="h-7 w-full bg-[var(--panel-soft)] px-1 ring-1 ring-[var(--line)]"
             value={project.settings.playerModelUrl ?? ''}
             onChange={e => {
-              const m = models.find(x => x.url === e.target.value)
+              // v17: il personaggio può venire dal catalogo (Cyber Samurai…)
+              // oppure da uno dei tuoi progetti importati
+              const m = models.find(x => x.url === e.target.value) ??
+                CHAR_CATALOG.find(x => x.url === e.target.value)
               mutate(p => {
                 p.settings.playerModelUrl = m?.url ?? null
                 p.settings.playerModelName = m?.name ?? null
@@ -503,6 +511,11 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
             }}
           >
             <option value="">Eroe classico (quadratino neon)</option>
+            {CHAR_CATALOG.map(e => (
+              <option key={e.id} value={e.url}>
+                🎬 {e.name} (catalogo)
+              </option>
+            ))}
             {models.map(m => (
               <option key={m.id} value={m.url}>
                 🧊 {m.name}

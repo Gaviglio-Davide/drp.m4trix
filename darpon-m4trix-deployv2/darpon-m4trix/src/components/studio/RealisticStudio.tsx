@@ -27,12 +27,14 @@ import {
   rid,
   type RLightObj,
   type RObject,
+  type RPlayerChar,
   type RSkyPreset,
   type RWorld,
 } from '@/lib/engine3d/types'
 import { PREFABS, PREFAB_DEFS, type PrefabCat } from '@/lib/engine3d/prefabs'
 import { collideAndGround, safeSpawn, worldColliders } from '@/lib/engine3d/builder'
-import { GlbView, LightView, PostFXView, PrefabView, RealEnv, WorldObjects } from './RealisticViews'
+import { GlbView, LightView, PlayerCharView, PostFXView, PrefabView, RealEnv, WorldObjects } from './RealisticViews'
+import { GLB_CATALOG } from '@/lib/glb-catalog-data'
 
 type Props = {
   meta: GameMeta
@@ -261,9 +263,13 @@ const GRAVITY = 24
 function PlayRig({
   world,
   lookRef,
+  player,
+  charRef,
 }: {
   world: RWorld
   lookRef: React.MutableRefObject<{ yaw: number; pitch: number }>
+  player?: RPlayerChar | null
+  charRef: React.MutableRefObject<{ x: number; y: number; z: number; yaw: number; moving: boolean }>
 }) {
   const { camera } = useThree()
   const colliders = useMemo(() => worldColliders(world), [world])
@@ -273,6 +279,7 @@ function PlayRig({
   const bob = useRef(0)
   const stepT = useRef(0)
   const fovRef = useRef(70)
+  const faceYaw = useRef(world.spawnYaw + Math.PI) // il modello guarda dove guarda la camera
 
   useEffect(() => {
     const set = (code: string, down: boolean) => {
@@ -319,12 +326,33 @@ function PlayRig({
     }
     if (res.hitCeiling && vel.current.y > 0) vel.current.y = 0
 
-    // camera + head bob
-    const speedF = moving ? move.length() / RUN_SPEED : 0
-    bob.current += dt * (7 + speedF * 7)
-    const bobY = Math.sin(bob.current * 1.15) * 0.04 * (0.35 + speedF)
-    camera.rotation.set(lookRef.current.pitch, lookRef.current.yaw, 0, 'YXZ')
-    camera.position.set(pos.current.x, pos.current.y + 1.66 + bobY, pos.current.z)
+    // v17: se c'è un personaggio del giocatore in terza persona, la camera
+    // orbita dietro di lui e il modello segue il rig (posizione+orientamento)
+    const third = !!(player && player.url && player.cam === 'terza')
+    if (moving) faceYaw.current = Math.atan2(move.x, move.z)
+    charRef.current.x = pos.current.x
+    charRef.current.y = pos.current.y
+    charRef.current.z = pos.current.z
+    charRef.current.yaw = faceYaw.current
+    charRef.current.moving = moving
+
+    if (third) {
+      const pitch = lookRef.current.pitch
+      const dist = 4.6
+      camera.position.set(
+        pos.current.x + Math.sin(yaw) * dist * Math.cos(pitch),
+        Math.max(pos.current.y + 0.35, pos.current.y + 1.9 - Math.sin(pitch) * dist * 0.9),
+        pos.current.z + Math.cos(yaw) * dist * Math.cos(pitch)
+      )
+      camera.lookAt(pos.current.x, pos.current.y + 1.4, pos.current.z)
+    } else {
+      // camera + head bob
+      const speedF = moving ? move.length() / RUN_SPEED : 0
+      bob.current += dt * (7 + speedF * 7)
+      const bobY = Math.sin(bob.current * 1.15) * 0.04 * (0.35 + speedF)
+      camera.rotation.set(lookRef.current.pitch, lookRef.current.yaw, 0, 'YXZ')
+      camera.position.set(pos.current.x, pos.current.y + 1.66 + bobY, pos.current.z)
+    }
 
     // fov kick in corsa
     const targetFov = running && moving ? 77 : 70
@@ -365,6 +393,8 @@ function PlayView({
 }) {
   const canvasEl = useRef<HTMLCanvasElement | null>(null)
   const look = useRef({ yaw: world.spawnYaw, pitch: 0 })
+  // v17: rig del personaggio del giocatore (se scelto dall'autore)
+  const charRig = useRef({ x: world.spawn[0], y: world.spawn[1], z: world.spawn[2], yaw: world.spawnYaw + Math.PI, moving: false })
   const [lockState, setLockState] = useState<'start' | 'playing' | 'paused'>('start')
   const [hud, setHud] = useState({ fps: 0, pos: '' })
   const fpsCount = useRef({ n: 0, t: 0 })
@@ -442,7 +472,17 @@ function PlayView({
           <RealEnv env={env} />
           <WorldObjects world={world} playMode />
         </Suspense>
-        <PlayRig world={world} lookRef={look} />
+        <PlayRig world={world} lookRef={look} player={world.player} charRef={charRig} />
+        {world.player?.url && world.player.cam === 'terza' && (
+          <Suspense fallback={null}>
+            <PlayerCharView
+              url={world.player.url}
+              anim={world.player.anim ?? null}
+              yawOff={world.player.yawOff ?? 0}
+              rig={charRig}
+            />
+          </Suspense>
+        )}
         <PostFXView params={{ bloom: env.bloom, vignette: env.vignette, exposure: env.exposure }} />
         <HudSpy onHud={setHud} fpsCount={fpsCount} />
       </Canvas>
@@ -798,11 +838,21 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
   }
 
   // ---------- palette ----------
+  // v17: nel tab Personaggi ci sono anche i modelli del CATALOGO
+  // (i Cyber Samurai e tutti gli altri personaggi animati)
   const paletteItems =
     paletteCat === 'luce'
       ? []
       : paletteCat === 'glb'
-        ? models.map(m => ({ id: `glb:${m.url}`, name: m.name, icon: '🧍', desc: 'Modello GLB tuo' }))
+        ? [
+            ...GLB_CATALOG.filter(e => e.category === 'personaggi').map(e => ({
+              id: `glb:${e.url}`,
+              name: e.name,
+              icon: '🧍',
+              desc: 'Catalogo · pronto',
+            })),
+            ...models.map(m => ({ id: `glb:${m.url}`, name: m.name, icon: '🧍', desc: 'Modello GLB tuo' })),
+          ]
         : PREFAB_DEFS.filter(d => d.cat === paletteCat)
 
   // ============================================================
@@ -1119,7 +1169,7 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
                 <p className="truncate text-sm font-bold text-[var(--tx)]">
                   {selectedObj
                     ? `${PREFABS[selectedObj.prefab]?.icon ?? '📦'} ${PREFABS[selectedObj.prefab]?.name ?? selectedObj.prefab}`
-                    : selectedLight.kind === 'point'
+                    : selectedLight?.kind === 'point'
                       ? '💡 Luce di punto'
                       : '🔦 Riflettore'}
                 </p>
@@ -1364,6 +1414,77 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
                 onChange={v => mutateWorld(w => { w.env.vignette = v })}
               />
             </div>
+          </div>
+
+          {/* v17: PERSONAGGIO DEL GIOCATORE */}
+          <div className="mt-4 border-t border-[var(--line)] pt-3">
+            <p className="mb-2 text-[10px] font-bold tracking-wider text-[var(--tx-faint)]">PERSONAGGIO DEL GIOCATORE</p>
+            <label className="block text-[11px] text-[var(--tx-dim)]">
+              Eroe controllato in gioco
+              <select
+                value={world.player?.url ?? ''}
+                onChange={e => {
+                  const url = e.target.value
+                  if (!url) {
+                    mutateWorld(w => { w.player = undefined })
+                    return
+                  }
+                  const cat = GLB_CATALOG.find(x => x.url === url)
+                  const usr = models.find(x => x.url === url)
+                  mutateWorld(w => {
+                    w.player = {
+                      url,
+                      name: cat?.name ?? usr?.name,
+                      anim: w.player?.anim ?? null,
+                      cam: 'terza',
+                      yawOff: w.player?.yawOff ?? 0,
+                    }
+                  })
+                }}
+                className="mt-1 h-8 w-full rounded-md border border-[var(--line)] bg-[var(--panel-soft)] px-2 text-xs text-[var(--tx)]"
+              >
+                <option value="">Nessuno — solo camera (prima persona)</option>
+                {GLB_CATALOG.filter(x => x.category === 'personaggi').map(e => (
+                  <option key={e.id} value={e.url}>🎬 {e.name} (catalogo)</option>
+                ))}
+                {models.map(m => (
+                  <option key={m.id} value={m.url}>🧊 {m.name} (tuo)</option>
+                ))}
+              </select>
+            </label>
+            {world.player?.url && (
+              <div className="mt-2 flex flex-col gap-2">
+                <div className="flex gap-1">
+                  {(['prima', 'terza'] as const).map(cm => (
+                    <button
+                      key={cm}
+                      onClick={() => mutateWorld(w => { if (w.player) w.player.cam = cm })}
+                      className={`cp-chip flex-1 text-center text-[11px] ${world.player?.cam === cm ? 'cp-chip-active' : 'hover:text-[var(--neon)]'}`}
+                      title={cm === 'prima' ? 'Vedi dal punto di vista del personaggio' : 'Vedi il personaggio dietro le spalle'}
+                    >
+                      {cm === 'prima' ? '👁 camera in testa' : '🎥 camera dietro'}
+                    </button>
+                  ))}
+                </div>
+                <NumField
+                  label="clip"
+                  value={world.player.anim ?? 0}
+                  step={1}
+                  min={0}
+                  onChange={v => mutateWorld(w => { if (w.player) w.player.anim = Math.max(0, Math.round(v)) })}
+                />
+                <NumField
+                  label="yaw"
+                  value={world.player.yawOff ?? 0}
+                  step={15}
+                  onChange={v => mutateWorld(w => { if (w.player) w.player.yawOff = v })}
+                />
+                <p className="text-[10px] leading-relaxed text-[var(--tx-faint)]">
+                  <b>clip</b>: numero dell&apos;animazione del modello (0 = la prima, per i Cyber Samurai è
+                  sempre la giusta). <b>yaw</b>: metti 90° o 180° solo se il modello corre al contrario.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>
