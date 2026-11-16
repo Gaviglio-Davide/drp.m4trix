@@ -654,9 +654,10 @@ export function askBrain(message: string, prev?: BrainContext): { reply: AgentRe
   // ---- navigazione ----
   const navMap: { tab: DashboardTab; words: string[]; label: string }[] = [
     { tab: 'mondi', words: ['mondi', 'progetti', 'miei mondi', 'le mie citta'], label: 'I miei mondi' },
-    { tab: 'genera', words: ['genera reparto', 'reparto genera', 'genera'], label: 'Genera' },
+    // v18: Strutture e Crea da Script sono stati RIMOSSI dal sito; il
+    // bottone Genera ora vive dentro il reparto Mondi 3D
+    { tab: 'mondi', words: ['genera reparto', 'reparto genera', 'genera'], label: 'Mondi 3D (il bottone Genera è dentro)' },
     { tab: 'importati', words: ['importati', 'modelli importati', 'libreria modelli', 'modelli 3d', 'import'], label: 'Progetti importati' },
-    { tab: 'strutture', words: ['strutture', 'struttura', 'costruttore'], label: 'Strutture' },
     { tab: 'darpx', words: ['darpx', 'ai', 'intelligenza'], label: 'Darpx.ai' },
   ]
   if (has(text, 'vai', 'apri', 'mostra', 'portami', 'voglio vedere', 'fammi vedere', 'voglio andare', 'torna', 'riporta', 'portami')) {

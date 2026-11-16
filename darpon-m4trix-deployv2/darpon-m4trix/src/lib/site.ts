@@ -84,64 +84,120 @@ export function sanitizeParagraphs(input: unknown): HomeParagraph[] {
   return out
 }
 
-// ---------- reparti della home (aggiornamento .4) ----------
+// ---------- reparti e funzioni controllate dall'admin (v18) ----------
+//
+// Ogni funzione del sito ha uno STATO scelto dall'admin nel pannello
+// "Controllo Funzioni":
+//   on           → normale, disponibile
+//   off          → nascosta completamente (non si vede nemmeno il bottone)
+//   maintenance  → visibile con 🛠, accesso bloccato: "In manutenzione"
+//   updating     → visibile con 🔄, accesso bloccato: "Aggiornamento in corso"
+//   suspended    → visibile con ⛔, accesso bloccato: "Sospesa dall'amministratore"
+
+export type FeatureState = 'on' | 'off' | 'maintenance' | 'updating' | 'suspended'
+
+export const FEATURE_STATES: { value: FeatureState; label: string; icon: string; color: string }[] = [
+  { value: 'on', label: 'Attiva', icon: '🟢', color: '#22c55e' },
+  { value: 'off', label: 'Nascosta', icon: '⚫', color: '#6b7280' },
+  { value: 'maintenance', label: 'Manutenzione', icon: '🛠', color: '#f59e0b' },
+  { value: 'updating', label: 'Aggiornamento', icon: '🔄', color: '#3b82f6' },
+  { value: 'suspended', label: 'Sospesa', icon: '⛔', color: '#ef4444' },
+]
 
 export type SectionConfig = {
   title: string
   subtitle: string
-  enabled: boolean
+  state: FeatureState
+  enabled: boolean // retrocompatibilità: false = 'off'
 }
 
 export const SECTIONS_KEY = 'homeSections'
 
-/** chiavi dei reparti modificabili + etichette per l'admin */
-export const SECTION_DEFS: { key: string; defaultTitle: string; label: string }[] = [
-  { key: 'gamestudio', defaultTitle: 'Game Studio', label: 'Game Studio (editor di videogiochi)' },
-  { key: 'creagame', defaultTitle: 'Crea da Script', label: 'Crea da Script (gioco da sceneggiatura)' },
-  { key: 'worldforge', defaultTitle: 'World Forge', label: 'World Forge (mappe procedurali)' },
-  { key: 'mondi', defaultTitle: 'Mondi 3D', label: 'Mondi 3D (laboratorio mondi)' },
-  { key: 'genera', defaultTitle: 'Genera', label: 'Genera (città e paesaggi)' },
-  { key: 'importati', defaultTitle: 'Progetti importati', label: 'Progetti importati (modelli 3D)' },
-  { key: 'strutture', defaultTitle: 'Strutture', label: 'Strutture (costruttore)' },
-  { key: 'darpx', defaultTitle: 'Darpx.ai', label: 'Darpx.ai (AI del sito)' },
+/** tutte le funzioni controllabili: reparti della home + funzioni interne */
+export const FEATURE_DEFS: {
+  key: string
+  label: string
+  desc: string
+  section: boolean // true = reparto con tab nella home
+}[] = [
+  { key: 'gamestudio', label: 'Game Studio', desc: 'Editor di videogiochi: Darpx Engine realistico, mondi vasti e giochi 2D.', section: true },
+  { key: 'worldforge', label: 'Mappe & Regni', desc: 'Mappe procedurali personalizzabili: città, villaggi, dungeon.', section: true },
+  { key: 'mondi', label: 'Mondi 3D', desc: 'Il laboratorio dei mondi 3D: progetti liberi con terreno, case e alberi.', section: true },
+  { key: 'importati', label: 'Progetti importati', desc: 'I tuoi modelli GLB/GLTF caricati, pronti in ogni editor.', section: true },
+  { key: 'darpx', label: 'Laboratorio Darpx', desc: 'Immagine → mondo, testo o immagine → 3D, strumenti AI.', section: true },
+  { key: 'genera', label: 'Generatore città/paesaggi', desc: 'Il bottone Genera dentro il reparto Mondi 3D.', section: false },
+  { key: 'catalogo', label: 'Catalogo modelli 3D', desc: 'La libreria di modelli gratuiti (Cyber Samurai, personaggi animati…) nel sito e nell\u2019editor.', section: false },
+  { key: 'agente', label: 'Agente Darpx', desc: 'L\u2019assistente AI fluttuante in basso a destra.', section: false },
+  { key: 'hubimport', label: 'Importa mondi da Hub', desc: 'L\u2019importazione universale di mondi e giochi dentro il Game Studio.', section: false },
 ]
+
+/** i reparti (tab della home): le funzioni con section=true */
+export const SECTION_DEFS = FEATURE_DEFS.filter(f => f.section)
 
 export const DEFAULT_SECTION_SUBTITLES: Record<string, string> = {
   gamestudio:
-    'Il cuore di darpon.m4trix: costruisci videogiochi veri — scena 3D con frecce, personaggi animati, nemici, boss, dialoghi e porte tra livelli.',
-  creagame:
-    'Scrivi il tuo gioco come una sceneggiatura: dettagli confermabili, compilazione e variazioni infinite.',
+    'Il cuore di darpon.m4trix: costruisci videogiochi veri — Darpx Engine realistico, personaggi animati, mondi vasti e giochi 2D.',
   worldforge:
     'Crea il tuo mondo da zero: mappa casuale poi personalizza tutto — città, villaggi, dungeon, caverne, acqua.',
   mondi:
-    'Il laboratorio dei mondi 3D: crea mondi a mano o generali città e paesaggi in un click con il bottone Genera.',
-  genera: 'Città medievali, villaggi, fortezze e paesaggi generati in un click.',
+    'Il laboratorio dei mondi 3D: case, strade e alberi con un clic, terreno scolpibile e il generatore di città e paesaggi con il bottone Genera.',
   importati:
     'Carica qui tutti i modelli 3D che vuoi (.glb / .gltf): restano in ordine, scegli la loro dimensione e li trovi pronti nell\'editor di ogni tuo progetto.',
-  strutture:
-    'Progetta case e edifici pezzo per pezzo: la tua libreria è disponibile in ogni mondo.',
   darpx: 'Il laboratorio creativo: immagine → mondo, testo o immagine → 3D e l\'Agente che ti aiuta subito.',
 }
 
-/** Valida la configurazione reparti arrivata dal client */
+/** valori predefiniti di una funzione non ancora configurata */
+export function defaultSectionConfig(key: string): SectionConfig {
+  const def = FEATURE_DEFS.find(f => f.key === key)
+  return {
+    title: def?.label ?? key,
+    subtitle: DEFAULT_SECTION_SUBTITLES[key] ?? '',
+    state: 'on',
+    enabled: true,
+  }
+}
+
+/** Valida la configurazione funzioni arrivata dal client (v18: con stati) */
 export function sanitizeSections(input: unknown): Record<string, SectionConfig> {
   const out: Record<string, SectionConfig> = {}
   if (!input || typeof input !== 'object') return out
   const raw = input as Record<string, unknown>
-  for (const def of SECTION_DEFS) {
+  for (const def of FEATURE_DEFS) {
     const r = raw[def.key]
     if (!r || typeof r !== 'object') continue
     const rr = r as Record<string, unknown>
+    // stato valido o derivato dal vecchio campo enabled (retrocompatibilità)
+    const state: FeatureState =
+      typeof rr.state === 'string' && FEATURE_STATES.some(s => s.value === rr.state)
+        ? (rr.state as FeatureState)
+        : rr.enabled === false
+          ? 'off'
+          : 'on'
     out[def.key] = {
       title:
         typeof rr.title === 'string' && rr.title.trim()
           ? rr.title.trim().slice(0, 80)
-          : def.defaultTitle,
+          : def.label,
       subtitle: typeof rr.subtitle === 'string' ? rr.subtitle.trim().slice(0, 400) : '',
-      enabled: rr.enabled !== false,
+      state,
+      enabled: state !== 'off',
     }
   }
   return out
+}
+
+/** etichetta breve per le schermate di blocco */
+export function stateMessage(state: FeatureState, title: string): { icon: string; title: string; text: string } {
+  switch (state) {
+    case 'maintenance':
+      return { icon: '🛠', title: `${title} è in manutenzione`, text: 'Stiamo sistemando questo reparto. Torna tra poco: sarà di nuovo disponibile appena finiamo.' }
+    case 'updating':
+      return { icon: '🔄', title: `${title} si sta aggiornando`, text: 'Stiamo installando una nuova versione di questo reparto. Non serve ricaricare: quando finisce, torna disponibile da solo.' }
+    case 'suspended':
+      return { icon: '⛔', title: `${title} è stata sospesa`, text: 'L\'amministratore ha sospeso temporaneamente questo reparto. Contatta l\'amministratore per saperne di più.' }
+    default:
+      return { icon: '🔒', title: `${title} non è disponibile`, text: 'Questo reparto non è attivo al momento.' }
+  }
 }
 
 // ---------- banner annuncio (aggiornamento .4) ----------

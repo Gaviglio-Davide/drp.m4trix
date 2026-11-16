@@ -4,6 +4,8 @@ import { create } from 'zustand'
 import {
   DEFAULT_PARAGRAPHS,
   SITE_DEFAULTS,
+  defaultSectionConfig,
+  type FeatureState,
   type HomeParagraph,
   type SectionConfig,
   type SiteConfig,
@@ -14,22 +16,22 @@ import {
 // componenti) di cambiare reparto della home, precompilare la
 // creazione 3D e leggere i contenuti del sito configurati
 // dall'admin, senza prop-drilling.
+// v18: i reparti sono 5 (Strutture e Crea da Script RIMOSSI
+// definitivamente) e ogni funzione ha uno stato admin
+// (on / off / manutenzione / aggiornamento / sospesa).
 // ============================================================
 
 export type DashboardTab =
   | 'gamestudio'
-  | 'creagame'
   | 'worldforge'
   | 'mondi'
-  | 'genera'
   | 'importati'
-  | 'strutture'
   | 'darpx'
 
 type SiteContent = {
   config: SiteConfig
   paragraphs: HomeParagraph[]
-  sections: Record<string, { title: string; subtitle: string; enabled: boolean }>
+  sections: Record<string, SectionConfig>
   announcement: { text: string; enabled: boolean }
 }
 
@@ -52,15 +54,16 @@ type UIState = {
   loadSite: () => Promise<void>
 }
 
-export const DEFAULT_SECTIONS: Record<string, { title: string; subtitle: string; enabled: boolean }> = {
-  gamestudio: { title: 'Game Studio', subtitle: 'Il cuore di darpon.m4trix: costruisci videogiochi veri nella scena 3D con le frecce — personaggi animati, nemici, boss, dialoghi e porte tra livelli. Provali al volo con ▶ Gioca.', enabled: true },
-  creagame: { title: 'Crea da Script', subtitle: 'Scrivi il tuo gioco come una sceneggiatura: il sistema rileva ambientazione, nemici e obiettivo, chiede conferma dei dettagli e compila un gioco giocabile. Stesso script, seed diverso → gioco diverso.', enabled: true },
-  worldforge: { title: 'Mappe & Regni', subtitle: 'Crea il tuo mondo da zero: genera una mappa casuale e personalizza tutto — città con edifici e mura, villaggi, dungeon, caverne, fiumi e strade. Poi manda tutto nel Game Studio.', enabled: true },
-  mondi: { title: 'Mondi 3D', subtitle: 'Il laboratorio dei mondi 3D: case, strade e alberi con un clic, terreno scolpibile e il generatore di città e paesaggi con il bottone Genera.', enabled: true },
-  genera: { title: 'Genera', subtitle: 'Città medievali, villaggi, fortezze e paesaggi generati in un click. Lo trovi dentro il reparto Mondi 3D.', enabled: false },
-  importati: { title: 'Progetti importati', subtitle: 'Carica qui tutti i modelli 3D che vuoi (.glb / .gltf): restano in ordine, scegli la loro dimensione e li trovi pronti nell\'editor di ogni tuo progetto.', enabled: true },
-  strutture: { title: 'Strutture', subtitle: 'Progetta case e edifici pezzo per pezzo: la tua libreria è disponibile in ogni mondo.', enabled: true },
-  darpx: { title: 'Laboratorio', subtitle: 'Il laboratorio creativo: immagine → mondo, testo o immagine → 3D e l\'Agente che ti aiuta subito.', enabled: true },
+export const DEFAULT_SECTIONS: Record<string, SectionConfig> = {
+  gamestudio: { title: 'Game Studio', subtitle: 'Il cuore di darpon.m4trix: costruisci videogiochi veri con il Darpx Engine realistico — personaggi animati, terza persona, mondi vasti e giochi 2D. Provali al volo con ▶ PROVA.', state: 'on', enabled: true },
+  worldforge: { title: 'Mappe & Regni', subtitle: 'Crea il tuo mondo da zero: genera una mappa casuale e personalizza tutto — città con edifici e mura, villaggi, dungeon, caverne, fiumi e strade. Poi manda tutto nel Game Studio.', state: 'on', enabled: true },
+  mondi: { title: 'Mondi 3D', subtitle: 'Il laboratorio dei mondi 3D: case, strade e alberi con un clic, terreno scolpibile e il generatore di città e paesaggi con il bottone Genera.', state: 'on', enabled: true },
+  importati: { title: 'Progetti importati', subtitle: 'Carica qui tutti i modelli 3D che vuoi (.glb / .gltf): restano in ordine, scegli la loro dimensione e li trovi pronti nell\'editor di ogni tuo progetto.', state: 'on', enabled: true },
+  darpx: { title: 'Laboratorio', subtitle: 'Il laboratorio creativo: immagine → mondo, testo o immagine → 3D e l\'Agente che ti aiuta subito.', state: 'on', enabled: true },
+  genera: { title: 'Genera', subtitle: 'Città medievali, villaggi, fortezze e paesaggi generati in un click. Lo trovi dentro il reparto Mondi 3D.', state: 'on', enabled: true },
+  catalogo: { title: 'Catalogo modelli 3D', subtitle: '', state: 'on', enabled: true },
+  agente: { title: 'Agente Darpx', subtitle: '', state: 'on', enabled: true },
+  hubimport: { title: 'Importa mondi da Hub', subtitle: '', state: 'on', enabled: true },
 }
 
 export const useUI = create<UIState>((set, get) => ({
@@ -89,7 +92,7 @@ export const useUI = create<UIState>((set, get) => ({
       const data = (await res.json()) as {
         config?: SiteConfig
         paragraphs?: HomeParagraph[]
-        sections?: Record<string, { title: string; subtitle: string; enabled: boolean }>
+        sections?: Record<string, SectionConfig>
         announcement?: { text: string; enabled: boolean }
       }
       set({
@@ -109,10 +112,26 @@ export const useUI = create<UIState>((set, get) => ({
 
 /** sezione con fallback sui valori predefiniti */
 export function sectionOf(
-  sections: Record<string, { title: string; subtitle: string; enabled: boolean }>,
+  sections: Record<string, SectionConfig>,
   key: string
-): { title: string; subtitle: string; enabled: boolean } {
-  return sections[key] ?? DEFAULT_SECTIONS[key] ?? { title: key, subtitle: '', enabled: true }
+): SectionConfig {
+  return sections[key] ?? DEFAULT_SECTIONS[key] ?? defaultSectionConfig(key)
+}
+
+/** stato admin di una funzione (on / off / manutenzione / aggiornamento / sospesa) */
+export function featureState(
+  sections: Record<string, SectionConfig>,
+  key: string
+): FeatureState {
+  return sectionOf(sections, key).state
+}
+
+/** true solo se la funzione è pienamente attiva */
+export function featureOn(
+  sections: Record<string, SectionConfig>,
+  key: string
+): boolean {
+  return featureState(sections, key) === 'on'
 }
 
 export type { SectionConfig }
