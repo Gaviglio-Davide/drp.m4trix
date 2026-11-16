@@ -43,6 +43,15 @@ export type RLightObj = {
 
 export type RSkyPreset = 'interno' | 'notte' | 'tramonto' | 'giorno' | 'nebbia'
 
+/** v17: personaggio del GIOCATORE nel mondo realistico */
+export type RPlayerChar = {
+  url: string // GLB del personaggio ('' = nessuno: camera in prima persona)
+  name?: string
+  anim?: number | null // indice della clip da girare mentre si muove
+  cam: 'prima' | 'terza' // camera dentro il personaggio o dietro di lui
+  yawOff?: number // rotazione extra del modello in gradi (se il GLB guarda "al contrario")
+}
+
 /** impostazioni di rendering dell'ambiente */
 export type REnv = {
   sky: RSkyPreset
@@ -61,6 +70,7 @@ export type RWorld = {
   lights: RLightObj[]
   spawn: RVec3
   spawnYaw: number // radianti
+  player?: RPlayerChar // v17: personaggio del giocatore (facoltativo)
 }
 
 // ---------------- preset ambientali ----------------
@@ -270,6 +280,7 @@ export function sanitizeRealWorld(v: unknown): RWorld {
   const base = newRealWorld('vuoto')
   if (!isRWorld(v)) return base
   const w = v as RWorld
+  const pl = w.player
   return {
     engine: 'darpx3d',
     v: 1,
@@ -278,5 +289,15 @@ export function sanitizeRealWorld(v: unknown): RWorld {
     lights: (w.lights ?? []).filter(l => l && (l.kind === 'point' || l.kind === 'spot')),
     spawn: Array.isArray(w.spawn) && w.spawn.length === 3 ? w.spawn : base.spawn,
     spawnYaw: typeof w.spawnYaw === 'number' ? w.spawnYaw : 0,
+    player:
+      pl && typeof pl.url === 'string'
+        ? {
+            url: pl.url,
+            name: typeof pl.name === 'string' ? pl.name : undefined,
+            anim: typeof pl.anim === 'number' ? pl.anim : null,
+            cam: pl.cam === 'terza' ? 'terza' : 'prima',
+            yawOff: typeof pl.yawOff === 'number' ? pl.yawOff : 0,
+          }
+        : undefined,
   }
 }
