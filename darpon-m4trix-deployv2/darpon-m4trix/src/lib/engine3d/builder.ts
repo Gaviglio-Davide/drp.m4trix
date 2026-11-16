@@ -23,6 +23,7 @@ export function worldColliders(world: RWorld): THREE.Box3[] {
   const out: THREE.Box3[] = []
   for (const o of world.objects) {
     if (o.prefab === 'glb') continue // i GLB non hanno collider (per ora)
+    if (o.noCollide) continue // v18: oggetti attraversabili (ispettore)
     out.push(...collidersOf(o))
   }
   return out

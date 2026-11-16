@@ -24,10 +24,16 @@ export type RObject = {
   r: RVec3 // rotazione in GRADI [x, y, z]
   s: RVec3 // scala [x, y, z]
   mat?: RMatOverride
+  // v18: proprietà "seri" dell'ispettore (stile Unreal/Godot)
+  name?: string // nome mostrato in Outliner e Details
+  hidden?: boolean // invisibile in modalità GIOCO
+  noCollide?: boolean // attraversabile: nessuna collisione
+  locked?: boolean // selezionabile ma NON muovibile col gizmo
+  note?: string // nota libera dell'autore (tag, descrizione…)
   // ---- solo per prefab 'glb' (personaggi/modelli dell'utente) ----
   url?: string
-  name?: string
   anim?: number | null // indice clip di animazione
+  animSpeed?: number // velocità dell'animazione (1 = normale)
 }
 
 /** una luce piazzata a mano nel mondo */
