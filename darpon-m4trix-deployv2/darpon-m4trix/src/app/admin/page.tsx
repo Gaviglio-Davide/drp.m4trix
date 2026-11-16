@@ -25,6 +25,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  SlidersHorizontal,
   Trash2,
   Type,
   UserRound,
@@ -34,7 +35,8 @@ import GLBViewer from '@/components/GLBViewer'
 import {
   SITE_DEFAULTS,
   SITE_LABELS,
-  SECTION_DEFS,
+  FEATURE_DEFS,
+  FEATURE_STATES,
   DEFAULT_SECTION_SUBTITLES,
   DEFAULT_PARAGRAPHS,
   type SiteConfig,
@@ -421,8 +423,9 @@ function AdminPanel({
     setSections(ss => ({
       ...ss,
       [key]: {
-        title: ss[key]?.title ?? SECTION_DEFS.find(d => d.key === key)?.defaultTitle ?? key,
+        title: ss[key]?.title ?? FEATURE_DEFS.find(d => d.key === key)?.label ?? key,
         subtitle: ss[key]?.subtitle ?? '',
+        state: ss[key]?.state ?? 'on',
         enabled: ss[key]?.enabled ?? true,
         ...patch,
       },
@@ -557,8 +560,9 @@ function AdminPanel({
         )}
 
         <Tabs defaultValue="stato">
-          <TabsList className="mb-4 grid w-full grid-cols-4 sm:grid-cols-7">
+          <TabsList className="mb-4 grid w-full grid-cols-4 sm:grid-cols-8">
             <TabsTrigger value="stato">Stato</TabsTrigger>
+            <TabsTrigger value="controllo">Controllo</TabsTrigger>
             <TabsTrigger value="utenti">Utenti</TabsTrigger>
             <TabsTrigger value="progetti">Progetti</TabsTrigger>
             <TabsTrigger value="modelli">Modelli</TabsTrigger>
@@ -600,6 +604,83 @@ function AdminPanel({
                 />
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* ---------------- CONTROLLO FUNZIONI (v18) ---------------- */}
+          <TabsContent value="controllo" className="flex flex-col gap-4">
+            <Card className="rounded-2xl border-[var(--line)]">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <SlidersHorizontal className="h-4 w-4" /> Controllo Funzioni — tutto il sito da qui
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                <p className="text-xs text-[var(--tx-faint)]">
+                  Ogni funzione di darpon.m4trix, controllata a distanza: attiva, nascosta,
+                  in manutenzione, in aggiornamento o sospesa. Dopo il salvataggio gli utenti
+                  la vedono al prossimo caricamento della home.
+                </p>
+                <div className="flex flex-wrap gap-2 text-[11px]">
+                  {FEATURE_STATES.map(s => (
+                    <span
+                      key={s.value}
+                      className="inline-flex items-center gap-1 rounded-full bg-[var(--panel-soft)] px-2 py-0.5 font-semibold text-[var(--tx-dim)]"
+                    >
+                      {s.icon} {s.label}
+                    </span>
+                  ))}
+                </div>
+                {FEATURE_DEFS.map(def => {
+                  const st = sections[def.key]?.state ?? 'on'
+                  const meta = FEATURE_STATES.find(x => x.value === st)
+                  return (
+                    <div
+                      key={def.key}
+                      className="flex flex-col gap-2 rounded-2xl border border-[var(--line)] bg-[var(--panel-soft)] p-3"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-[var(--tx)]">
+                            {def.section ? '🧩 ' : '⚙️ '}
+                            {def.label}
+                            <span className="ml-2 rounded bg-[var(--primary-soft)] px-1.5 py-0.5 text-[10px] font-bold uppercase text-[var(--tx-dim)]">
+                              {def.section ? 'reparto home' : 'funzione interna'}
+                            </span>
+                          </p>
+                          <p className="text-xs text-[var(--tx-faint)]">{def.desc}</p>
+                        </div>
+                        <span
+                          className="rounded-full px-2.5 py-0.5 text-[11px] font-bold text-white"
+                          style={{ backgroundColor: meta?.color }}
+                        >
+                          {meta?.icon} {meta?.label}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {FEATURE_STATES.map(fs => (
+                          <button
+                            key={fs.value}
+                            onClick={() => updateSection(def.key, { state: fs.value, enabled: fs.value !== 'off' })}
+                            className={`rounded-lg border px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                              st === fs.value
+                                ? 'border-transparent text-white'
+                                : 'border-[var(--line)] bg-background text-[var(--tx-dim)] hover:border-[var(--primary)]'
+                            }`}
+                            style={st === fs.value ? { backgroundColor: fs.color } : undefined}
+                            title={`Imposta «${def.label}» come: ${fs.label}`}
+                          >
+                            {fs.icon} {fs.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+              </CardContent>
+            </Card>
+            <Button onClick={saveSite} size="lg" className="self-start">
+              💾 Salva gli stati delle funzioni
+            </Button>
           </TabsContent>
 
           {/* ---------------- UTENTI ---------------- */}
@@ -978,19 +1059,20 @@ function AdminPanel({
               </CardContent>
             </Card>
 
-            {/* reparti on/off + titoli */}
+            {/* reparti: titoli e descrizioni (gli STATI si gestiscono in Controllo) */}
             <Card className="rounded-2xl border-[var(--line)]">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <Database className="h-4 w-4" /> Reparti della home (titoli, descrizioni, on/off)
+                  <Database className="h-4 w-4" /> Reparti della home (titoli e descrizioni)
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 <p className="text-xs text-[var(--tx-faint)]">
-                  Puoi rinominare i reparti, cambiarne la descrizione oppure
-                  nasconderli: la barra della home si aggiorna subito.
+                  Rinomina i reparti o cambia la loro descrizione. Per nasconderli,
+                  metterli in manutenzione o sospenderli usa la scheda{' '}
+                  <b className="text-[var(--tx-dim)]">Controllo</b>.
                 </p>
-                {SECTION_DEFS.map(def => {
+                {FEATURE_DEFS.filter(d => d.section).map(def => {
                   const s = sections[def.key]
                   return (
                     <div
@@ -1002,20 +1084,15 @@ function AdminPanel({
                           {def.label}
                         </span>
                         <Input
-                          value={s?.title ?? def.defaultTitle}
+                          value={s?.title ?? def.label}
                           onChange={e => updateSection(def.key, { title: e.target.value })}
-                          placeholder={def.defaultTitle}
+                          placeholder={def.label}
                           className="h-8 flex-1"
                         />
-                        <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-[var(--tx-dim)]">
-                          <input
-                            type="checkbox"
-                            checked={s?.enabled !== false}
-                            onChange={e => updateSection(def.key, { enabled: e.target.checked })}
-                            className="accent-[var(--primary)]"
-                          />
-                          visibile
-                        </label>
+                        <span className="shrink-0 text-[11px] font-semibold text-[var(--tx-dim)]">
+                          {FEATURE_STATES.find(x => x.value === (s?.state ?? 'on'))?.icon}{' '}
+                          {FEATURE_STATES.find(x => x.value === (s?.state ?? 'on'))?.label}
+                        </span>
                       </div>
                       <textarea
                         value={s?.subtitle ?? ''}
