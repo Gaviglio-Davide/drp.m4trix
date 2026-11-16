@@ -40,6 +40,13 @@ const TJ = 'https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/mode
 
 export const GLB_CATALOG: GlbCatalogEntry[] = [
   // ---------- PERSONAGGI (tutti con movimenti pronti) ----------
+  // v17: CYBER SAMURAI — i modelli realistici dell'utente (Bevy), inclusi
+  // nel sito come file statici: PBR 4K compresso, scheletro animato
+  { id: 'samurai-walk', name: 'Cyber Samurai (Cammina)', category: 'personaggi', url: '/models/samurai/samurai_walk.glb', size: 1570956, license: 'Modello dell\u2019utente', animated: true, desc: 'Il samurai cibernetico cammina: perfetto come eroe o PNG che pattuglia la scena.' },
+  { id: 'samurai-run', name: 'Cyber Samurai (Corre)', category: 'personaggi', url: '/models/samurai/samurai_run.glb', size: 1560328, license: 'Modello dell\u2019utente', animated: true, desc: 'Il samurai in corsa: per inseguimenti, fughe e cariche feroci.' },
+  { id: 'samurai-idle', name: 'Cyber Samurai (Fermo)', category: 'personaggi', url: '/models/samurai/samurai_idle.glb', size: 897096, license: 'Modello dell\u2019utente', desc: 'Il samurai in posa statica: statue, guardie immobili, presentazioni del personaggio.' },
+  { id: 'samurai-sit-floor', name: 'Cyber Samurai (Seduto a Terra)', category: 'personaggi', url: '/models/samurai/samurai_sit_floor.glb', size: 1609880, license: 'Modello dell\u2019utente', animated: true, desc: 'Seduto a terra gambe incrociate: meditazione, riposo, NPC che aspetta.' },
+  { id: 'samurai-sit-chair', name: 'Cyber Samurai (Si Siede)', category: 'personaggi', url: '/models/samurai/samurai_sit_chair.glb', size: 1669188, license: 'Modello dell\u2019utente', animated: true, desc: 'Si alza e si siede: cinematiche di taverna, troni, sale riunioni.' },
   { id: 'Soldier', name: 'Soldato in Marcia', category: 'personaggi', url: `${TJ}/Soldier.glb`, size: 2160468, license: 'MIT (three.js)', animated: true, desc: 'Cammina, corre e si mette in guardia: perfetto come eroe o soldato.' },
   { id: 'Xbot', name: 'Guerriero Robot', category: 'personaggi', url: `${TJ}/Xbot.glb`, size: 2930032, license: 'MIT (three.js)', animated: true, desc: 'Robot da combattimento: corre, colpisce e si mette in posa.' },
   { id: 'RobotExpressive', name: 'Robot Compagno', category: 'personaggi', url: `${TJ}/RobotExpressive/RobotExpressive.glb`, size: 463988, license: 'MIT (three.js)', animated: true, desc: 'Saluta, balla, salta e ride: la spalla comica della squadra.' },
