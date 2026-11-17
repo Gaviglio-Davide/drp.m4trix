@@ -74,7 +74,7 @@ export default function GameStudio() {
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
   const [newStyle, setNewStyle] = useState<'2d' | '3d' | 'real3d'>('real3d') // v17: realistico in evidenza
-  const [newTemplate, setNewTemplate] = useState('corridoio-spaziale') // template Darpx Engine
+  const [newTemplate, setNewTemplate] = useState('bosco-notturno') // v19: il Bosco Notturno è la porta d'ingresso
   const [busy, setBusy] = useState(false)
   const [hubOpen, setHubOpen] = useState(false) // v17: import da hub
   const [hubWorlds, setHubWorlds] = useState<HubWorld[] | null>(null)
@@ -326,7 +326,7 @@ export default function GameStudio() {
           </h1>
           <p className="max-w-xl text-sm text-[var(--tx-dim)]">
             {sec.subtitle ||
-              'Costruisci il tuo gioco: scena 3D con le frecce, personaggi animati, nemici, dialoghi e porte tra livelli. Provalo al volo.'}
+              'La tua software house: giochi horror in prima persona nel Bosco Notturno, mondi realistici col Darpx Engine, 3D vasto e 2D classico. Editi creature e interazioni, provi tutto a schermo intero.'}
           </p>
         </motion.div>
         <div className="flex items-center gap-2">
@@ -470,7 +470,7 @@ export default function GameStudio() {
                     onChange={e => setNewName(e.target.value)}
                     placeholder={
                       newStyle === 'real3d'
-                        ? 'Es. Stazione Kepler'
+                        ? 'Es. Il Bosco di Mezzanotte'
                         : newStyle === '3d'
                           ? 'Es. Le Torri di Neve'
                           : 'Es. Neon Drift: Settore 7'
@@ -496,7 +496,7 @@ export default function GameStudio() {
               </div>
               <DialogFooter>
                 <Button onClick={createNew} disabled={busy} className="cp-btn">
-                  {busy ? 'Creo...' : newStyle === 'real3d' ? '🎬 Crea gioco realistico' : newStyle === '3d' ? '🌍 Crea gioco 3D' : 'Crea e apri editor'}
+                  {busy ? 'Creo...' : newStyle === 'real3d' ? '🎬 Crea il gioco' : newStyle === '3d' ? '🌍 Crea gioco 3D' : 'Crea e apri editor'}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -609,7 +609,7 @@ export default function GameStudio() {
                     <Gamepad2 className="h-4 w-4 text-[var(--neon)]" />
                     <span className="truncate font-semibold text-[var(--tx)]">{m.name}</span>
                     {gameDimension(m.game) === 'real3d' && (
-                      <span className="cp-chip shrink-0 text-[10px]">🎬 REALISTICO</span>
+                      <span className="cp-chip shrink-0 text-[10px]">🎬 DARPX ENGINE</span>
                     )}
                     {gameDimension(m.game) === '3d' && (
                       <span className="cp-chip shrink-0 text-[10px]">🌍 3D</span>

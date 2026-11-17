@@ -8,7 +8,7 @@
 // ESC per liberarlo, gravità, salto e collisioni vere.
 // ============================================================
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, TransformControls } from '@react-three/drei'
@@ -25,15 +25,18 @@ import {
   ENV_PRESETS,
   newRealWorld,
   rid,
+  type RCreature,
   type RLightObj,
   type RObject,
   type RPlayerChar,
   type RSkyPreset,
+  type RSpot,
   type RWorld,
 } from '@/lib/engine3d/types'
 import { PREFABS, PREFAB_DEFS, type PrefabCat } from '@/lib/engine3d/prefabs'
 import { collideAndGround, safeSpawn, worldColliders } from '@/lib/engine3d/builder'
 import { GlbView, LightView, PlayerCharView, PostFXView, PrefabView, RealEnv, WorldObjects } from './RealisticViews'
+import RealPlay from './RealPlay'
 import { GLB_CATALOG } from '@/lib/glb-catalog-data'
 import StudioDetails from './StudioDetails'
 import StudioOutliner from './StudioOutliner'
@@ -47,12 +50,14 @@ type Props = {
 
 type GizmoMode = 'translate' | 'rotate' | 'scale'
 
-const CAT_LABEL: Record<PrefabCat | 'luce' | 'glb', string> = {
+const CAT_LABEL: Record<PrefabCat | 'luce' | 'glb' | 'creature' | 'interazioni', string> = {
   ambiente: 'Ambienti',
   struttura: 'Strutture',
   prop: 'Arredi',
   luce: 'Luci',
   glb: 'Personaggi',
+  creature: '👹 Creature',
+  interazioni: '⛺ Interazioni',
 }
 
 // ============================================================
@@ -253,334 +258,6 @@ function EditorSpy({
   return null
 }
 
-// ============================================================
-// PLAY: controller in prima persona
-// ============================================================
-
-const WALK_SPEED = 4.4
-const RUN_SPEED = 8.2
-const JUMP_VEL = 7.6
-const GRAVITY = 24
-
-function PlayRig({
-  world,
-  lookRef,
-  player,
-  charRef,
-}: {
-  world: RWorld
-  lookRef: React.MutableRefObject<{ yaw: number; pitch: number }>
-  player?: RPlayerChar | null
-  charRef: React.MutableRefObject<{ x: number; y: number; z: number; yaw: number; moving: boolean }>
-}) {
-  const { camera } = useThree()
-  const colliders = useMemo(() => worldColliders(world), [world])
-  const pos = useRef(safeSpawn(world, colliders))
-  const vel = useRef(new THREE.Vector3())
-  const keys = useRef<Record<string, boolean>>({})
-  const bob = useRef(0)
-  const stepT = useRef(0)
-  const fovRef = useRef(70)
-  const faceYaw = useRef(world.spawnYaw + Math.PI) // il modello guarda dove guarda la camera
-
-  useEffect(() => {
-    const set = (code: string, down: boolean) => {
-      keys.current[code] = down
-    }
-    const dn = (e: KeyboardEvent) => {
-      if (e.code === 'Space') e.preventDefault()
-      set(e.code, true)
-    }
-    const up = (e: KeyboardEvent) => set(e.code, false)
-    window.addEventListener('keydown', dn)
-    window.addEventListener('keyup', up)
-    return () => {
-      window.removeEventListener('keydown', dn)
-      window.removeEventListener('keyup', up)
-    }
-  }, [])
-
-  useFrame((state, rawDt) => {
-    const dt = Math.min(rawDt, 0.05)
-    const k = keys.current
-    // direzione input relativa alla camera
-    const ix = (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0)
-    const iz = (k.KeyW ? 1 : 0) - (k.KeyS ? 1 : 0)
-    const yaw = lookRef.current.yaw
-    const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw))
-    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw))
-    const running = !!(k.ShiftLeft || k.ShiftRight)
-    const speed = running ? RUN_SPEED : WALK_SPEED
-    const move = new THREE.Vector3().addScaledVector(fwd, iz).addScaledVector(right, ix)
-    const moving = move.lengthSq() > 0
-    if (moving) move.normalize().multiplyScalar(speed)
-
-    pos.current.x += move.x * dt
-    pos.current.z += move.z * dt
-    vel.current.y -= GRAVITY * dt
-    pos.current.y += vel.current.y * dt
-
-    const res = collideAndGround(pos.current, 0.35, 1.72, 0.55, colliders)
-    if (res.onGround) {
-      pos.current.y = res.groundY
-      vel.current.y = 0
-      if (k.Space) vel.current.y = JUMP_VEL
-    }
-    if (res.hitCeiling && vel.current.y > 0) vel.current.y = 0
-
-    // v17: se c'è un personaggio del giocatore in terza persona, la camera
-    // orbita dietro di lui e il modello segue il rig (posizione+orientamento)
-    const third = !!(player && player.url && player.cam === 'terza')
-    if (moving) faceYaw.current = Math.atan2(move.x, move.z)
-    charRef.current.x = pos.current.x
-    charRef.current.y = pos.current.y
-    charRef.current.z = pos.current.z
-    charRef.current.yaw = faceYaw.current
-    charRef.current.moving = moving
-
-    if (third) {
-      const pitch = lookRef.current.pitch
-      const dist = 4.6
-      camera.position.set(
-        pos.current.x + Math.sin(yaw) * dist * Math.cos(pitch),
-        Math.max(pos.current.y + 0.35, pos.current.y + 1.9 - Math.sin(pitch) * dist * 0.9),
-        pos.current.z + Math.cos(yaw) * dist * Math.cos(pitch)
-      )
-      camera.lookAt(pos.current.x, pos.current.y + 1.4, pos.current.z)
-    } else {
-      // camera + head bob
-      const speedF = moving ? move.length() / RUN_SPEED : 0
-      bob.current += dt * (7 + speedF * 7)
-      const bobY = Math.sin(bob.current * 1.15) * 0.04 * (0.35 + speedF)
-      camera.rotation.set(lookRef.current.pitch, lookRef.current.yaw, 0, 'YXZ')
-      camera.position.set(pos.current.x, pos.current.y + 1.66 + bobY, pos.current.z)
-    }
-
-    // fov kick in corsa
-    const targetFov = running && moving ? 77 : 70
-    fovRef.current += (targetFov - fovRef.current) * Math.min(1, dt * 5)
-    if (camera instanceof THREE.PerspectiveCamera && Math.abs(camera.fov - fovRef.current) > 0.05) {
-      camera.fov = fovRef.current
-      camera.updateProjectionMatrix()
-    }
-
-    // passi
-    if (moving && res.onGround) {
-      stepT.current += dt
-      const interval = running ? 0.3 : 0.44
-      if (stepT.current > interval) {
-        stepT.current = 0
-        sfx.step()
-      }
-    }
-    void state
-  })
-  return null
-}
-
-// ============================================================
-// PLAY VIEW (schermo intero + overlay pointer lock)
-// ============================================================
-
-function PlayView({
-  world,
-  title,
-  onEditor,
-  onExit,
-}: {
-  world: RWorld
-  title: string
-  onEditor: () => void
-  onExit: () => void
-}) {
-  const canvasEl = useRef<HTMLCanvasElement | null>(null)
-  const look = useRef({ yaw: world.spawnYaw, pitch: 0 })
-  // v17: rig del personaggio del giocatore (se scelto dall'autore)
-  const charRig = useRef({ x: world.spawn[0], y: world.spawn[1], z: world.spawn[2], yaw: world.spawnYaw + Math.PI, moving: false })
-  const [lockState, setLockState] = useState<'start' | 'playing' | 'paused'>('start')
-  const [hud, setHud] = useState({ fps: 0, pos: '' })
-  const fpsCount = useRef({ n: 0, t: 0 })
-
-  const requestLock = useCallback(() => {
-    const el = canvasEl.current
-    if (!el) return
-    unlockAudio()
-    try {
-      const req = el.requestPointerLock as (o?: { unadjustedMovement?: boolean }) => Promise<void> | void
-      const p = req({ unadjustedMovement: true })
-      if (p && typeof (p as Promise<void>).catch === 'function') {
-        ;(p as Promise<void>).catch(() => {
-          try {
-            ;(el.requestPointerLock as () => void)()
-          } catch {
-            /* browser senza pointer lock */
-          }
-        })
-      }
-    } catch {
-      try {
-        ;(el.requestPointerLock as () => void)()
-      } catch {
-        /* browser senza pointer lock */
-      }
-    }
-  }, [])
-
-  useEffect(() => {
-    const onLockChange = () => {
-      if (document.pointerLockElement) {
-        setLockState('playing')
-      } else {
-        setLockState(s => (s === 'start' ? 'start' : 'paused'))
-      }
-    }
-    const onMove = (e: MouseEvent) => {
-      if (!document.pointerLockElement) return
-      look.current.yaw -= e.movementX * 0.0022
-      look.current.pitch = THREE.MathUtils.clamp(look.current.pitch - e.movementY * 0.0022, -1.35, 1.35)
-    }
-    document.addEventListener('pointerlockchange', onLockChange)
-    document.addEventListener('mousemove', onMove)
-    return () => {
-      document.removeEventListener('pointerlockchange', onLockChange)
-      document.removeEventListener('mousemove', onMove)
-      if (document.pointerLockElement) document.exitPointerLock()
-    }
-  }, [])
-
-  // clicca sul canvas quando in pausa → riaggancia il mouse
-  useEffect(() => {
-    if (lockState !== 'paused') return
-    const el = canvasEl.current
-    if (!el) return
-    const h = () => requestLock()
-    el.addEventListener('click', h)
-    return () => el.removeEventListener('click', h)
-  }, [lockState, requestLock])
-
-  const env = world.env
-  return (
-    <div className="relative h-[calc(100vh-140px)] min-h-[480px] w-full overflow-hidden rounded-xl ring-1 ring-[var(--line)]">
-      <Canvas
-        shadows
-        dpr={[1, 2]}
-        camera={{ fov: 70, near: 0.08, far: 420, position: [world.spawn[0], world.spawn[1] + 1.66, world.spawn[2]] }}
-        onCreated={({ gl }) => {
-          canvasEl.current = gl.domElement
-        }}
-        onContextMenu={e => e.preventDefault()}
-      >
-        <Suspense fallback={null}>
-          <RealEnv env={env} />
-          <WorldObjects world={world} playMode />
-        </Suspense>
-        <PlayRig world={world} lookRef={look} player={world.player} charRef={charRig} />
-        {world.player?.url && world.player.cam === 'terza' && (
-          <Suspense fallback={null}>
-            <PlayerCharView
-              url={world.player.url}
-              anim={world.player.anim ?? null}
-              yawOff={world.player.yawOff ?? 0}
-              rig={charRig}
-            />
-          </Suspense>
-        )}
-        <PostFXView params={{ bloom: env.bloom, vignette: env.vignette, exposure: env.exposure }} />
-        <HudSpy onHud={setHud} fpsCount={fpsCount} />
-      </Canvas>
-
-      {/* mirino */}
-      {lockState === 'playing' && (
-        <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          <div className="h-1 w-1 rounded-full bg-white/90 shadow-[0_0_6px_rgba(255,255,255,0.9)]" />
-        </div>
-      )}
-
-      {/* chip info */}
-      <div className="pointer-events-none absolute left-3 top-3 flex flex-col gap-1.5 text-[11px]">
-        <span className="rounded-md bg-black/55 px-2 py-1 font-bold tracking-widest text-white/90 backdrop-blur">
-          {title}
-        </span>
-        <span className="rounded-md bg-black/45 px-2 py-0.5 font-mono text-white/60 backdrop-blur">
-          {hud.fps} fps · {hud.pos}
-        </span>
-      </div>
-      {lockState === 'playing' && (
-        <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/45 px-3 py-1 text-[11px] text-white/55 backdrop-blur">
-          WASD muovi · SHIFT corri · SPAZIO salta · ESC libera il mouse
-        </div>
-      )}
-
-      {/* overlay START */}
-      {lockState === 'start' && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="cp-panel cp-panel-neon w-full max-w-md p-6 text-center">
-            <p className="text-[10px] font-bold tracking-[0.3em] text-[var(--neon)]">DARPX ENGINE · PROVA</p>
-            <h2 className="mt-1 text-2xl font-black text-[var(--tx)]">{title}</h2>
-            <div className="mt-4 grid grid-cols-2 gap-2 text-left text-xs text-[var(--tx-dim)]">
-              <span className="rounded-md bg-[var(--panel-soft)] px-2 py-1.5"><b className="text-[var(--tx)]">WASD</b> · cammina</span>
-              <span className="rounded-md bg-[var(--panel-soft)] px-2 py-1.5"><b className="text-[var(--tx)]">SHIFT</b> · corri</span>
-              <span className="rounded-md bg-[var(--panel-soft)] px-2 py-1.5"><b className="text-[var(--tx)]">SPAZIO</b> · salta</span>
-              <span className="rounded-md bg-[var(--panel-soft)] px-2 py-1.5"><b className="text-[var(--tx)]">ESC</b> · libera il mouse</span>
-            </div>
-            <Button
-              className="cp-btn mt-5 w-full bg-[var(--neon)] text-base font-black text-[#04060d]"
-              onClick={requestLock}
-            >
-              🖱 CLICCA PER GIOCARE
-            </Button>
-            <p className="mt-2 text-[10px] text-[var(--tx-faint)]">
-              Il mouse viene catturato dallo schermo, come nei giochi veri. ESC lo libera subito.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* overlay PAUSA */}
-      {lockState === 'paused' && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/55 backdrop-blur-sm">
-          <div className="cp-panel w-full max-w-sm p-5 text-center">
-            <p className="text-sm font-bold text-[var(--tx)]">⏸ In pausa — mouse libero</p>
-            <div className="mt-4 flex flex-col gap-2">
-              <Button className="cp-btn bg-[var(--neon)] font-bold text-[#04060d]" onClick={requestLock}>
-                ▶ Riprendi
-              </Button>
-              <Button variant="outline" className="cp-btn" onClick={onEditor}>
-                ✎ Torna all&apos;editor
-              </Button>
-              <Button variant="outline" className="cp-btn" onClick={onExit}>
-                ✕ Esci dal gioco
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-/** aggiorna il chip FPS/posizione nel play mode */
-function HudSpy({
-  onHud,
-  fpsCount,
-}: {
-  onHud: (h: { fps: number; pos: string }) => void
-  fpsCount: React.MutableRefObject<{ n: number; t: number }>
-}) {
-  const camera = useThree(s => s.camera)
-  useFrame(() => {
-    const c = fpsCount.current
-    c.n++
-    const now = performance.now()
-    if (now - c.t > 500) {
-      const fps = Math.round((c.n * 1000) / (now - c.t))
-      c.t = now
-      c.n = 0
-      onHud({ fps, pos: `${camera.position.x.toFixed(1)}, ${camera.position.z.toFixed(1)}` })
-    }
-  })
-  return null
-}
 
 // ============================================================
 // CHE COSA STIAMO PIAZZANDO
@@ -590,6 +267,8 @@ type PlacingDef =
   | { kind: 'prefab'; prefab: string }
   | { kind: 'light'; lightKind: 'point' | 'spot' }
   | { kind: 'glb'; url: string; name: string }
+  | { kind: 'creature' } // v19: piazza una creatura
+  | { kind: 'spot' } // v19: piazza un punto di interazione
 
 // ============================================================
 // COMPONENTE PRINCIPALE
@@ -610,7 +289,7 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
   const [placing, setPlacing] = useState<PlacingDef | null>(null)
   const [placeRot, setPlaceRot] = useState(0)
   const [gizmo, setGizmo] = useState<GizmoMode>('translate')
-  const [paletteCat, setPaletteCat] = useState<PrefabCat | 'luce' | 'glb'>('ambiente')
+  const [paletteCat, setPaletteCat] = useState<PrefabCat | 'luce' | 'glb' | 'creature' | 'interazioni'>('ambiente')
   const [models, setModels] = useState<{ id: string; name: string; url: string }[]>([])
   const [tplOpen, setTplOpen] = useState(false)
   const [snapOn, setSnapOn] = useState(true)
@@ -751,6 +430,30 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
     })
   }
 
+  // ---------- v19: creature e punti di interazione ----------
+  const patchCreature = (id: string, fn: (c: RCreature) => void) => {
+    mutateWorld(w => {
+      const c = (w.creatures ?? []).find(x => x.id === id)
+      if (c) fn(c)
+    })
+  }
+  const removeCreature = (id: string) => {
+    mutateWorld(w => {
+      w.creatures = (w.creatures ?? []).filter(x => x.id !== id)
+    })
+  }
+  const patchSpot = (id: string, fn: (s: RSpot) => void) => {
+    mutateWorld(w => {
+      const s = (w.spots ?? []).find(x => x.id === id)
+      if (s) fn(s)
+    })
+  }
+  const removeSpot = (id: string) => {
+    mutateWorld(w => {
+      w.spots = (w.spots ?? []).filter(x => x.id !== id)
+    })
+  }
+
   // ---------- piazzamento ----------
   const placeAt = (p: THREE.Vector3) => {
     if (!placing) return
@@ -775,6 +478,38 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
           intensity: placing.lightKind === 'spot' ? 24 : 7,
           distance: 14,
           angle: 0.7,
+        })
+      })
+      sfx.pickup()
+    } else if (placing.kind === 'creature') {
+      // v19: creatura con default sensati (vaga, occhi bianchi)
+      mutateWorld(w => {
+        if (!w.creatures) w.creatures = []
+        w.creatures.push({
+          id: `C${rid()}`,
+          name: `Creatura ${w.creatures.length + 1}`,
+          p: [p.x, 0, p.z],
+          kind: 'vaga',
+          speed: 1.3,
+          aggro: 9,
+          dmg: 6,
+          scale: 1,
+          color: '#14161a',
+        })
+      })
+      sfx.pickup()
+    } else if (placing.kind === 'spot') {
+      // v19: punto di interazione "[E] …"
+      mutateWorld(w => {
+        if (!w.spots) w.spots = []
+        w.spots.push({
+          id: `S${rid()}`,
+          label: 'Interagisci',
+          p: [p.x, 0, p.z],
+          radius: 2.4,
+          action: 'messaggio',
+          msg: 'Fatto.',
+          holdMs: 1200,
         })
       })
       sfx.pickup()
@@ -969,30 +704,16 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
   if (!glOK) return <NoGLCard />
 
   // ---------- PLAY ----------
+  // v19: gioco a SCHIERO INTERO (fixed inset-0, zero chrome attorno):
+  // la stessa esperienza del trailer, con HUD, creature e audio
   if (mode === 'play') {
     return (
-      <div className="flex flex-col gap-3">
-        <div className="cp-panel flex flex-wrap items-center gap-2 p-2.5">
-          <Button size="sm" variant="outline" className="cp-btn" onClick={() => setMode('edit')}>
-            ← Editor
-          </Button>
-          <span className="neon-text truncate font-[family-name:var(--font-display)] text-sm font-bold tracking-widest uppercase">
-            {project.title}
-          </span>
-          <span className="cp-chip">DARPX ENGINE · REALISTICO</span>
-          <div className="ml-auto flex items-center gap-2">
-            <Button size="sm" variant="outline" className="cp-btn" onClick={onBack}>
-              ✕ Chiudi
-            </Button>
-          </div>
-        </div>
-        <PlayView
-          world={world}
-          title={project.title}
-          onEditor={() => setMode('edit')}
-          onExit={onBack}
-        />
-      </div>
+      <RealPlay
+        world={world}
+        title={project.title}
+        onEditor={() => setMode('edit')}
+        onExit={onBack}
+      />
     )
   }
 
@@ -1143,6 +864,131 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
                 </button>
               ))}
             </div>
+          ) : paletteCat === 'creature' ? (
+            /* ---------- v19: CREATURE (mostri con IA, come nel trailer) ---------- */
+            <div className="flex max-h-[420px] flex-col gap-2 overflow-y-auto pr-1">
+              <button
+                className={`rounded-lg border p-3 text-left transition-colors ${placing?.kind === 'creature' ? 'border-[var(--neon)] bg-[var(--primary-soft)]' : 'border-[var(--line)] hover:border-[var(--neon)]'}`}
+                onClick={() => setPlacing(placing?.kind === 'creature' ? null : { kind: 'creature' })}
+              >
+                <span className="text-2xl">👹</span>
+                <p className="mt-1 text-sm font-bold text-[var(--tx)]">Piazza una creatura</p>
+                <p className="text-[11px] text-[var(--tx-dim)]">
+                  Corpo scuro, occhi bianchi luminosi, nametag. Clicca il terreno per piazzarla, poi regola l&apos;IA qui sotto.
+                </p>
+              </button>
+              {(world.creatures ?? []).map(c => (
+                <div key={c.id} className="rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] p-2.5">
+                  <div className="mb-1.5 flex items-center gap-1.5">
+                    <span>👹</span>
+                    <input
+                      value={c.name}
+                      onChange={e => patchCreature(c.id, cr => { cr.name = e.target.value })}
+                      className="h-7 min-w-0 flex-1 rounded-md border border-[var(--line)] bg-[var(--panel)] px-2 text-xs font-semibold text-[var(--tx)] outline-none focus:border-[var(--neon)]"
+                      placeholder="Nome sopra la testa"
+                    />
+                    <button className="cp-chip text-red-400" title="Elimina" onClick={() => removeCreature(c.id)}>✕</button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                    <label className="col-span-2">
+                      <span className="text-[var(--tx-dim)]">Comportamento</span>
+                      <select
+                        value={c.kind}
+                        onChange={e => patchCreature(c.id, cr => { cr.kind = e.target.value as RCreature['kind'] })}
+                        className="mt-0.5 h-7 w-full rounded-md border border-[var(--line)] bg-[var(--panel)] px-1.5 text-xs text-[var(--tx)] outline-none focus:border-[var(--neon)]"
+                      >
+                        <option value="vaga">🚶 Vaga tra gli alberi</option>
+                        <option value="insegue">🏃 Ti insegue se ti vede</option>
+                        <option value="ferma">🗿 Ferma (statua, fantasma)</option>
+                      </select>
+                    </label>
+                    <NumFld label="Velocità" v={c.speed} min={0.3} max={6} step={0.1} on={v => patchCreature(c.id, cr => { cr.speed = v })} />
+                    {c.kind === 'insegue' && (
+                      <NumFld label="Vista (m)" v={c.aggro} min={2} max={40} step={1} on={v => patchCreature(c.id, cr => { cr.aggro = v })} />
+                    )}
+                    <NumFld label="Danni/s" v={c.dmg} min={0} max={40} step={1} on={v => patchCreature(c.id, cr => { cr.dmg = v })} />
+                    <NumFld label="Scala" v={c.scale} min={0.4} max={3} step={0.1} on={v => patchCreature(c.id, cr => { cr.scale = v })} />
+                    <label className="col-span-2">
+                      <span className="text-[var(--tx-dim)]">Posizione X/Z</span>
+                      <div className="mt-0.5 flex gap-1.5">
+                        <input type="number" value={Math.round(c.p[0])} onChange={e => patchCreature(c.id, cr => { cr.p[0] = parseFloat(e.target.value) || 0 })} className="h-7 w-full rounded-md border border-[var(--line)] bg-[var(--panel)] px-1.5 font-mono text-xs text-[var(--tx)] outline-none focus:border-[var(--neon)]" />
+                        <input type="number" value={Math.round(c.p[2])} onChange={e => patchCreature(c.id, cr => { cr.p[2] = parseFloat(e.target.value) || 0 })} className="h-7 w-full rounded-md border border-[var(--line)] bg-[var(--panel)] px-1.5 font-mono text-xs text-[var(--tx)] outline-none focus:border-[var(--neon)]" />
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              ))}
+              {(world.creatures?.length ?? 0) === 0 && (
+                <p className="text-[11px] leading-relaxed text-[var(--tx-dim)]">
+                  Nessuna creatura. Il Bosco Notturno ne include già una: passala a «Ti insegue» per la modalità horror.
+                </p>
+              )}
+            </div>
+          ) : paletteCat === 'interazioni' ? (
+            /* ---------- v19: INTERAZIONI (prompt [E] come nel trailer) ---------- */
+            <div className="flex max-h-[420px] flex-col gap-2 overflow-y-auto pr-1">
+              <button
+                className={`rounded-lg border p-3 text-left transition-colors ${placing?.kind === 'spot' ? 'border-[var(--neon)] bg-[var(--primary-soft)]' : 'border-[var(--line)] hover:border-[var(--neon)]'}`}
+                onClick={() => setPlacing(placing?.kind === 'spot' ? null : { kind: 'spot' })}
+              >
+                <span className="text-2xl">⛺</span>
+                <p className="mt-1 text-sm font-bold text-[var(--tx)]">Piazza un&apos;interazione</p>
+                <p className="text-[11px] text-[var(--tx-dim)]">
+                  Il prompt «[E] …» con barra di avanzamento: riposare al falò, salvare, leggere un messaggio.
+                </p>
+              </button>
+              {(world.spots ?? []).map(s => (
+                <div key={s.id} className="rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] p-2.5">
+                  <div className="mb-1.5 flex items-center gap-1.5">
+                    <span>⛺</span>
+                    <input
+                      value={s.label}
+                      onChange={e => patchSpot(s.id, sp => { sp.label = e.target.value })}
+                      className="h-7 min-w-0 flex-1 rounded-md border border-[var(--line)] bg-[var(--panel)] px-2 text-xs font-semibold text-[var(--tx)] outline-none focus:border-[var(--neon)]"
+                      placeholder="Es. Riposa al falò"
+                    />
+                    <button className="cp-chip text-red-400" title="Elimina" onClick={() => removeSpot(s.id)}>✕</button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                    <label className="col-span-2">
+                      <span className="text-[var(--tx-dim)]">Azione premendo E</span>
+                      <select
+                        value={s.action}
+                        onChange={e => patchSpot(s.id, sp => { sp.action = e.target.value as RSpot['action'] })}
+                        className="mt-0.5 h-7 w-full rounded-md border border-[var(--line)] bg-[var(--panel)] px-1.5 text-xs text-[var(--tx)] outline-none focus:border-[var(--neon)]"
+                      >
+                        <option value="riposa">♨ Riposa (cura + salva)</option>
+                        <option value="salva">💾 Salva il gioco</option>
+                        <option value="messaggio">💬 Mostra un messaggio</option>
+                      </select>
+                    </label>
+                    <NumFld label="Raggio (m)" v={s.radius} min={0.8} max={12} step={0.2} on={v => patchSpot(s.id, sp => { sp.radius = v })} />
+                    <NumFld label="Secondi di E" v={(s.holdMs ?? 1200) / 1000} min={0.2} max={5} step={0.1} on={v => patchSpot(s.id, sp => { sp.holdMs = Math.round(v * 1000) })} fmt={v => `${v.toFixed(1)}s`} />
+                    <label className="col-span-2">
+                      <span className="text-[var(--tx-dim)]">Messaggio</span>
+                      <input
+                        value={s.msg ?? ''}
+                        onChange={e => patchSpot(s.id, sp => { sp.msg = e.target.value })}
+                        className="mt-0.5 h-7 w-full rounded-md border border-[var(--line)] bg-[var(--panel)] px-2 text-xs text-[var(--tx)] outline-none focus:border-[var(--neon)]"
+                        placeholder="Mostrato al termine"
+                      />
+                    </label>
+                    <label className="col-span-2">
+                      <span className="text-[var(--tx-dim)]">Posizione X/Z</span>
+                      <div className="mt-0.5 flex gap-1.5">
+                        <input type="number" value={Math.round(s.p[0])} onChange={e => patchSpot(s.id, sp => { sp.p[0] = parseFloat(e.target.value) || 0 })} className="h-7 w-full rounded-md border border-[var(--line)] bg-[var(--panel)] px-1.5 font-mono text-xs text-[var(--tx)] outline-none focus:border-[var(--neon)]" />
+                        <input type="number" value={Math.round(s.p[2])} onChange={e => patchSpot(s.id, sp => { sp.p[2] = parseFloat(e.target.value) || 0 })} className="h-7 w-full rounded-md border border-[var(--line)] bg-[var(--panel)] px-1.5 font-mono text-xs text-[var(--tx)] outline-none focus:border-[var(--neon)]" />
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              ))}
+              {(world.spots?.length ?? 0) === 0 && (
+                <p className="text-[11px] leading-relaxed text-[var(--tx-dim)]">
+                  Nessuna interazione. Il Bosco Notturno ha già il falò «Riposa al falò» al centro della radura.
+                </p>
+              )}
+            </div>
           ) : (
             <div className="flex max-h-[420px] flex-col gap-1.5 overflow-y-auto">
               {paletteItems.map(d => (
@@ -1235,6 +1081,7 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
               />
             ))}
             <PlacePlane placing={placing} rotDeg={placeRot} snap={snapOn} onPlace={placeAt} />
+            <EditMarkers world={world} onPickC={id => setSelectedId(id)} />
             <Gizmo
               target={selectedId ? groups.current.get(selectedId) ?? null : null}
               mode={gizmo}
@@ -1306,7 +1153,11 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
                 ? `Piazzando: ${PREFABS[placing.prefab]?.name ?? placing.prefab}`
                 : placing.kind === 'light'
                   ? `Piazzando: ${placing.lightKind === 'point' ? 'luce di punto' : 'riflettore'}`
-                  : `Piazzando: ${placing.name}`}
+                  : placing.kind === 'glb'
+                    ? `Piazzando: ${placing.name}`
+                    : placing.kind === 'creature'
+                      ? 'Piazzando: 👹 creatura — clicca il terreno'
+                      : 'Piazzando: ⛺ interazione [E] — clicca il terreno'}
               {' '}· click sulla scena per posare · R ruota ({placeRot}°) · ESC fine
             </div>
           )}
@@ -1499,5 +1350,118 @@ function GlbPlaceholder({ o }: { o: RObject }) {
     <Suspense fallback={null}>
       <GlbView o={o} reg={() => { /* gizmo non collegato ai GLB */ }} />
     </Suspense>
+  )
+}
+
+// ============================================================
+// v19: MARKER EDITOR delle creature e delle interazioni
+// nell'editor si vedono come anelli sulla mappa (con occhi
+// per le creature); in gioco spariscono (gestiti da RealPlay)
+// ============================================================
+
+function EditMarkers({
+  world,
+  onPickC,
+}: {
+  world: RWorld
+  onPickC: (id: string) => void
+}) {
+  const ring = (color: string, r: number) => (
+    <mesh position={[0, 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <ringGeometry args={[r * 0.78, r, 28]} />
+      <meshBasicMaterial color={color} transparent opacity={0.85} depthWrite={false} />
+    </mesh>
+  )
+  return (
+    <>
+      {(world.creatures ?? []).map(c => (
+        <group
+          key={c.id}
+          position={[c.p[0], 0, c.p[2]]}
+          onPointerDown={e => {
+            e.stopPropagation()
+            onPickC(c.id)
+          }}
+        >
+          {ring('#ff4d4d', 0.9 * c.scale)}
+          {/* occhi bianchi flosci, il segnale del trailer */}
+          <mesh position={[-0.09, 1.62 * c.scale, 0.3]}>
+            <sphereGeometry args={[0.05 * c.scale, 8, 8]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+          <mesh position={[0.09, 1.62 * c.scale, 0.3]}>
+            <sphereGeometry args={[0.05 * c.scale, 8, 8]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+          {/* sagoma scura stilizzata */}
+          <mesh position={[0, 0.95 * c.scale, 0]}>
+            <capsuleGeometry args={[0.3 * c.scale, 0.75 * c.scale, 4, 8]} />
+            <meshStandardMaterial color={c.color} roughness={1} />
+          </mesh>
+        </group>
+      ))}
+      {(world.spots ?? []).map(s => (
+        <group key={s.id} position={[s.p[0], 0, s.p[2]]}>
+          {ring(s.action === 'riposa' ? '#ffb347' : s.action === 'salva' ? '#4dc3ff' : '#b8ff4d', s.radius)}
+          {/* icona dell'azione che galleggia */}
+          <Billboard y={1.1}>
+            <mesh>
+              <planeGeometry args={[0.7, 0.7]} />
+              <meshBasicMaterial transparent opacity={0.001} />
+            </mesh>
+          </Billboard>
+        </group>
+      ))}
+    </>
+  )
+}
+
+/** insegua minimale: sempre girata verso la camera */
+function Billboard({ y, children }: { y: number; children?: ReactNode }) {
+  const ref = useRef<THREE.Group>(null)
+  useFrame(({ camera }) => {
+    if (ref.current) ref.current.quaternion.copy(camera.quaternion)
+  })
+  return (
+    <group ref={ref} position={[0, y, 0]}>
+      {children}
+    </group>
+  )
+}
+
+/** campo numerico compatto usato dai pannelli Creature/Interazioni */
+export function NumFld({
+  label,
+  v,
+  min,
+  max,
+  step,
+  on,
+  fmt,
+}: {
+  label: string
+  v: number
+  min: number
+  max: number
+  step: number
+  on: (v: number) => void
+  fmt?: (v: number) => string
+}) {
+  return (
+    <label className="block">
+      <span className="flex justify-between text-[10px] text-[var(--tx-dim)]">
+        {label}
+        <span className="font-mono text-[var(--tx)]">{fmt ? fmt(v) : v.toFixed(1)}</span>
+      </span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={v}
+        onChange={e => on(parseFloat(e.target.value))}
+        className="mt-0.5 h-1 w-full cursor-pointer appearance-none rounded-full bg-[var(--line)] accent-[var(--neon)]"
+      />
+    </label>
   )
 }
