@@ -47,7 +47,7 @@ export type RLightObj = {
   angle?: number // solo spot, radianti
 }
 
-export type RSkyPreset = 'interno' | 'notte' | 'tramonto' | 'giorno' | 'nebbia'
+export type RSkyPreset = 'interno' | 'notte' | 'nottebosco' | 'tramonto' | 'giorno' | 'nebbia'
 
 /** v17: personaggio del GIOCATORE nel mondo realistico */
 export type RPlayerChar = {
@@ -77,6 +77,33 @@ export type RWorld = {
   spawn: RVec3
   spawnYaw: number // radianti
   player?: RPlayerChar // v17: personaggio del giocatore (facoltativo)
+  // v19: CREATURE (mostri/PNG del gioco horror) e INTERAZIONI (falò, oggetti)
+  creatures?: RCreature[]
+  spots?: RSpot[]
+}
+
+/** v19: una creatura del mondo realistico (mostro o PNG) */
+export type RCreature = {
+  id: string
+  name: string // mostrato sopra la testa (nametag, come nel trailer)
+  p: RVec3
+  kind: 'vaga' | 'insegue' | 'ferma' // IA: passeggia / inseguirti se ti vede / statua
+  speed: number // m/s (vaga ~1.2, insegue ~3-4.6)
+  aggro: number // raggio di vista in metri (solo 'insegue')
+  dmg: number // danni al contatto per secondo
+  scale: number // 1 = umanoide ~1.8m
+  color: string // colore del corpo (scuro di default)
+}
+
+/** v19: punto di interazione stile "[E] Start game" del trailer */
+export type RSpot = {
+  id: string
+  label: string // testo del prompt "[E] …"
+  p: RVec3
+  radius: number // raggio di attivazione
+  action: 'riposa' | 'messaggio' | 'salva'
+  msg?: string // messaggio mostrato al termine
+  holdMs?: number // ms di pressione E (default 1200)
 }
 
 // ---------------- preset ambientali ----------------
@@ -99,6 +126,14 @@ export const ENV_PRESETS: Record<
     dir: null,
     fog: '#0b0e14',
     fogDensity: 0,
+  },
+  nottebosco: {
+    label: 'Bosco Notturno (horror)',
+    bg: '#141b21',
+    hemi: ['#3a4a46', '#18201a', 0.58],
+    dir: ['#8ea6c8', 0.8, [-40, 55, -25]],
+    fog: '#11161a',
+    fogDensity: 0.04,
   },
   notte: {
     label: 'Notte (luna)',
@@ -145,6 +180,13 @@ export type RealTemplate = {
 }
 
 export const REAL_TEMPLATES: RealTemplate[] = [
+  {
+    id: 'bosco-notturno',
+    name: 'Bosco Notturno',
+    icon: '🌲',
+    desc: 'Foresta horror di notte: 240 abeti nella nebbia, sentiero di terra, radura con falò di pietra, fossa nel bosco e torce. Prima persona, atmosfera da trailer.',
+    tag: 'esterni',
+  },
   {
     id: 'corridoio-spaziale',
     name: 'Corridoio della Stazione',
@@ -208,6 +250,8 @@ export function rid(): string {
 
 export function defaultEnv(template: string): REnv {
   switch (template) {
+    case 'bosco-notturno':
+      return { sky: 'nottebosco', fog: '#39443f', fogDensity: 0.042, exposure: 0.92, bloom: 0.85, vignette: 0.5 }
     case 'corridoio-spaziale':
       return { sky: 'interno', fog: '#c8d8ec', fogDensity: 0.035, exposure: 1.1, bloom: 0.9, vignette: 0.32 }
     case 'cattedrale':
@@ -228,6 +272,8 @@ export function defaultEnv(template: string): REnv {
 /** spawn consigliato per ogni template */
 function spawnFor(template: string): { spawn: RVec3; yaw: number } {
   switch (template) {
+    case 'bosco-notturno':
+      return { spawn: [0, 0, 4], yaw: Math.PI + 0.4 } // sul sentiero, guarda il falò
     case 'corridoio-spaziale':
       return { spawn: [-11.2, 0, 0], yaw: -Math.PI / 2 } // guarda verso la luce in fondo (+X)
     case 'cattedrale':
@@ -266,6 +312,35 @@ export function newRealWorld(template: string): RWorld {
       s: [1, 1, 1],
     })
   }
+  // v19: il Bosco Notturno nasce PRONTO per giocarci: falò interattivo
+  // ("riposa" = cura e salva, come lo [E] Start game del trailer) e
+  // una creatura con occhi bianchi che vaga tra gli alberi
+  if (template === 'bosco-notturno') {
+    w.spots = [
+      {
+        id: `S${rid()}`,
+        label: 'Riposa al falò',
+        p: [6, 0, 6.79],
+        radius: 2.4,
+        action: 'riposa',
+        msg: 'Ti sei riposato al falò: salute e energie tornate. Il gioco è salvato.',
+        holdMs: 1200,
+      },
+    ]
+    w.creatures = [
+      {
+        id: `C${rid()}`,
+        name: 'Viandante',
+        p: [-14, 0, 16],
+        kind: 'vaga',
+        speed: 1.3,
+        aggro: 9,
+        dmg: 6,
+        scale: 1,
+        color: '#14161a',
+      },
+    ]
+  }
   return w
 }
 
@@ -295,6 +370,35 @@ export function sanitizeRealWorld(v: unknown): RWorld {
     lights: (w.lights ?? []).filter(l => l && (l.kind === 'point' || l.kind === 'spot')),
     spawn: Array.isArray(w.spawn) && w.spawn.length === 3 ? w.spawn : base.spawn,
     spawnYaw: typeof w.spawnYaw === 'number' ? w.spawnYaw : 0,
+    // v19: creature e interazioni (con default sicuri)
+    creatures: Array.isArray(w.creatures)
+      ? w.creatures
+          .filter(c => c && typeof c.p === 'object')
+          .map((c, i) => ({
+            id: typeof c.id === 'string' ? c.id : `C${i}`,
+            name: typeof c.name === 'string' && c.name ? c.name : `Creatura ${i + 1}`,
+            p: (Array.isArray(c.p) && c.p.length === 3 ? c.p : [0, 0, 0]) as RVec3,
+            kind: c.kind === 'insegue' || c.kind === 'ferma' ? c.kind : 'vaga',
+            speed: typeof c.speed === 'number' && c.speed > 0 ? c.speed : 1.3,
+            aggro: typeof c.aggro === 'number' && c.aggro > 0 ? c.aggro : 9,
+            dmg: typeof c.dmg === 'number' ? c.dmg : 6,
+            scale: typeof c.scale === 'number' && c.scale > 0 ? c.scale : 1,
+            color: typeof c.color === 'string' ? c.color : '#14161a',
+          }))
+      : undefined,
+    spots: Array.isArray(w.spots)
+      ? w.spots
+          .filter(s => s && typeof s.p === 'object')
+          .map((s, i) => ({
+            id: typeof s.id === 'string' ? s.id : `S${i}`,
+            label: typeof s.label === 'string' && s.label ? s.label : 'Interagisci',
+            p: (Array.isArray(s.p) && s.p.length === 3 ? s.p : [0, 0, 0]) as RVec3,
+            radius: typeof s.radius === 'number' && s.radius > 0 ? s.radius : 2.4,
+            action: s.action === 'messaggio' || s.action === 'salva' ? s.action : 'riposa',
+            msg: typeof s.msg === 'string' ? s.msg : undefined,
+            holdMs: typeof s.holdMs === 'number' && s.holdMs > 0 ? s.holdMs : 1200,
+          }))
+      : undefined,
     player:
       pl && typeof pl.url === 'string'
         ? {

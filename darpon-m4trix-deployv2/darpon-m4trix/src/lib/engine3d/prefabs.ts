@@ -15,6 +15,11 @@ import {
 } from './materials'
 import { pbrMat } from '@/lib/pbr'
 import type { RObject, RVec3 } from './types'
+import {
+  barkMat, firMat, dirtMat,
+  buildBoscoGroup, buildCampfireParts, buildTorchParts,
+  forestColliders, pitColliders,
+} from './forest'
 
 export type AnimCb = (t: number, dt: number) => void
 
@@ -1128,6 +1133,165 @@ export const PREFAB_DEFS: PrefabDef[] = [
       { c: [0, 0.85, 0], s: [3.2, 1.7, 3.2] },
     ],
     build: buildRuins,
+  }),
+  def({
+    id: 'bosco-notturno',
+    name: 'Bosco Notturno (horror)',
+    cat: 'ambiente',
+    icon: '🌲',
+    desc: 'Foresta horror completa di notte: 240 abeti, sentiero, falò di pietra, fossa e torce. Nebbia grigio-verde e spawn sul sentiero.',
+    size: [150, 12, 150],
+    colliders: forestColliders(),
+    build: anims => buildBoscoGroup(anims),
+  }),
+
+  // ---------- v19: NATURA (alberi e rovine del bosco, per costruire a mano) ----------
+  def({
+    id: 'abete',
+    name: 'Abete',
+    cat: 'prop',
+    icon: '🌲',
+    desc: 'Abete notturno di 9 metri: tronco scuro e tre livelli di chioma. Collider sul tronco.',
+    size: [4.3, 12, 4.3],
+    colliders: [{ c: [0, 3.2, 0], s: [0.55, 6.4, 0.55] }],
+    build: anims => {
+      const g = G()
+      const trunk = cyl(0.16, 0.3, 6.4, barkMat(), 0, 3.2, 0, 7)
+      trunk.castShadow = true
+      g.add(trunk)
+      const h = 0.9 + Math.random() * 0.25
+      const c1 = mesh(new THREE.ConeGeometry(2.15, 4.6, 8), firMat(), 0, 5.0 * h, 0)
+      const c2 = mesh(new THREE.ConeGeometry(1.65, 4.1, 8), firMat(), 0, 7.1 * h, 0)
+      const c3 = mesh(new THREE.ConeGeometry(1.1, 3.4, 8), firMat(), 0, 8.9 * h, 0)
+      for (const c of [c1, c2, c3]) {
+        c.castShadow = true
+        c.receiveShadow = true
+        g.add(c)
+      }
+      void anims
+      return g
+    },
+  }),
+  def({
+    id: 'cespuglio',
+    name: 'Cespuglio',
+    cat: 'prop',
+    icon: '🌿',
+    desc: 'Mata di arbusto scuro: attraversabile, utile per riempire il sottobosco.',
+    size: [1.4, 0.9, 1.4],
+    colliders: [],
+    build: anims => {
+      const g = G()
+      for (let k = 0; k < 3; k++) {
+        const s = sph(0.55, firMat(), (Math.random() - 0.5) * 0.7, 0.32 + k * 0.1, (Math.random() - 0.5) * 0.7, 10)
+        s.scale.set(1 + k * 0.12, 0.7, 1 + k * 0.12)
+        s.castShadow = true
+        g.add(s)
+      }
+      void anims
+      return g
+    },
+  }),
+  def({
+    id: 'ceppaia',
+    name: 'Ceppo',
+    cat: 'prop',
+    icon: '🪵',
+    desc: 'Ceppo d\'albero tagliato, si può anche usare come sedile.',
+    size: [1.1, 1, 1.1],
+    colliders: [{ c: [0, 0.45, 0], s: [1, 0.9, 1] }],
+    build: anims => {
+      const g = G()
+      const st = cyl(0.42, 0.5, 0.9, barkMat(), 0, 0.45, 0, 10)
+      st.castShadow = true
+      st.receiveShadow = true
+      g.add(st)
+      const top = cyl(0.4, 0.4, 0.02, dirtMat(), 0, 0.91, 0, 10)
+      g.add(top)
+      void anims
+      return g
+    },
+  }),
+  def({
+    id: 'tronco-caduto',
+    name: 'Tronco caduto',
+    cat: 'prop',
+    icon: '🪵',
+    desc: 'Tronco d\'abeto caduto per terra: lo si scavalca con un salto.',
+    size: [3.8, 0.8, 0.9],
+    colliders: [{ c: [0, 0.3, 0], s: [3.6, 0.6, 0.72] }],
+    build: anims => {
+      const g = G()
+      const log = cyl(0.26, 0.34, 3.6, barkMat(), 0, 0.3, 0, 9)
+      log.rotation.z = Math.PI / 2
+      log.castShadow = true
+      g.add(log)
+      void anims
+      return g
+    },
+  }),
+  def({
+    id: 'falo',
+    name: 'Falò',
+    cat: 'prop',
+    icon: '🔥',
+    desc: 'Falò vero: cerchio di pietre, legna a tripline, fiamme animate e luce tremolante che proietta ombre.',
+    size: [2.6, 1.3, 2.6],
+    colliders: [{ c: [0, 0.25, 0], s: [1.7, 0.5, 1.7] }],
+    build: anims => {
+      const g = G()
+      for (const part of buildCampfireParts(0, 0, anims, true)) g.add(part)
+      return g
+    },
+  }),
+  def({
+    id: 'paletto-torcia',
+    name: 'Paletto-torcia',
+    cat: 'prop',
+    icon: '🕯',
+    desc: 'Palo di legno con fiamma in cima: segnala i sentieri nel buio (glow senza luce vera).',
+    size: [0.5, 3.2, 0.5],
+    colliders: [{ c: [0, 1.3, 0], s: [0.18, 2.6, 0.18] }],
+    build: anims => {
+      const g = G()
+      for (const part of buildTorchParts(0, 0, anims)) g.add(part)
+      return g
+    },
+  }),
+  def({
+    id: 'buca-tomba',
+    name: 'Fossa rettangolare',
+    cat: 'prop',
+    icon: '🕳',
+    desc: 'Buca scura nel terreno con bordo di terra smossa e assi di legno, come quella del trailer.',
+    size: [4.4, 0.4, 2.8],
+    colliders: pitColliders(),
+    build: anims => {
+      const g = G()
+      const hole = new THREE.Mesh(
+        new THREE.PlaneGeometry(3.4, 2.2),
+        new THREE.MeshBasicMaterial({ color: '#241a10' })
+      )
+      hole.rotation.x = -Math.PI / 2
+      hole.position.y = 0.03
+      g.add(hole)
+      for (let i = 0; i < 12; i++) {
+        const side = i % 4
+        const clump = mesh(new THREE.DodecahedronGeometry(0.28, 0), dirtMat())
+        if (side < 2) clump.position.set((Math.random() - 0.5) * 1.6, 0.14, (side === 0 ? -1 : 1) * 1.35)
+        else clump.position.set((side === 2 ? -1 : 1) * 1.95, 0.14, (Math.random() - 0.5) * 1.1)
+        clump.scale.set(1 + Math.random(), 0.6, 1 + Math.random() * 0.6)
+        clump.castShadow = true
+        g.add(clump)
+      }
+      const plank = box(4.1, 0.09, 0.22, barkMat(), 0, 0.09, -1.16)
+      const plank2 = box(4.1, 0.09, 0.22, barkMat(), 0, 0.09, 1.16)
+      plank.castShadow = true
+      plank2.castShadow = true
+      g.add(plank, plank2)
+      void anims
+      return g
+    },
   }),
 
   // ---------- STRUTTURE ----------
