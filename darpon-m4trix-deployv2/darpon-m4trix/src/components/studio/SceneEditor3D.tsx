@@ -38,11 +38,13 @@ import { fetchAuth } from '@/lib/http'
 import {
   worldToSchematic,
   schematicToWorld,
+  worldSpans,
   eid,
   type EntityKind,
   type GameEntity,
   type GameProject,
 } from '@/lib/game2d/types'
+import AiWorldConsole, { type AiCmd } from './AiWorldConsole'
 import { parseVastConfig, vastHeight } from '@/lib/vastworld'
 import VastWorld from '@/components/vastworld/VastWorld'
 import { NoGLCard, webglSupported } from '../game/GLGuard'
@@ -268,6 +270,8 @@ function EntityMarker({
   groups,
   spin,
   onClips,
+  spanW,
+  spanH,
 }: {
   ent: GameEntity
   selected: boolean
@@ -275,10 +279,13 @@ function EntityMarker({
   groups: React.MutableRefObject<Map<string, THREE.Group>>
   spin: React.MutableRefObject<number>
   onClips?: (id: string, names: string[]) => void
+  spanW: number
+  spanH: number
 }) {
-  const W = 32
-  const H = 32
-  const [wx, wz] = useMemo(() => schematicToWorld(ent.x, ent.y, W, H), [ent.x, ent.y])
+  const [wx, wz] = useMemo(
+    () => schematicToWorld(ent.x, ent.y, 32, 32, spanW, spanH),
+    [ent.x, ent.y, spanW, spanH]
+  )
   const groundY = useGroundY()
   const y = groundY(wx, wz)
 
@@ -363,9 +370,13 @@ function Gizmo({
 function PlacePlane({
   enabled,
   onPlace,
+  spanW = GRID_HALF * 2,
+  spanH = GRID_HALF * 2,
 }: {
   enabled: boolean
   onPlace: (wx: number, wz: number) => void
+  spanW?: number
+  spanH?: number
 }) {
   if (!enabled) return null
   return (
@@ -379,7 +390,7 @@ function PlacePlane({
         onPlace(e.point.x, e.point.z)
       }}
     >
-      <planeGeometry args={[GRID_HALF * 2 + 2, GRID_HALF * 2 + 2]} />
+      <planeGeometry args={[spanW + 2, spanH + 2]} />
       <meshBasicMaterial visible={false} />
     </mesh>
   )
@@ -444,14 +455,14 @@ function CamRig({
 }
 
 // ---------- mondo importato (terreno + oggetti del mondo) ----------
-function EditorWorld() {
+function EditorWorld({ spanW, spanH }: { spanW?: number; spanH?: number }) {
   const objects = useWorld(s => s.objects)
   const customAssets = useWorld(s => s.customAssets)
   const vast = useWorld(s => s.vast)
   const groundY = useGroundY()
   return (
     <group>
-      {vast ? <VastWorld cfg={vast} /> : <SculptedTerrain />}
+      {vast ? <VastWorld cfg={vast} /> : <SculptedTerrain spanW={spanW} spanH={spanH} />}
       {objects.map((o: WO) => {
         const def = getAssetDef(o.asset, customAssets)
         if (!def) return null
@@ -466,6 +477,86 @@ function EditorWorld() {
   )
 }
 
+/** v20: etichetta confrontabile di un'entità (per «elimina tutti gli X») */
+function normEntLabel(e: GameEntity): string {
+  const pr = (e.props ?? {}) as Record<string, unknown>
+  const raw =
+    (typeof pr.name === 'string' && pr.name) ||
+    (typeof pr.glbName === 'string' && pr.glbName) ||
+    (typeof pr.kind === 'string' && pr.kind) ||
+    (e.type === 'npc' ? 'PNG (parla)' : e.type)
+  return String(raw).toLowerCase()
+}
+
+// ---------- v20: MANIGLIE sul bordo del mondo di base ----------
+// 4 barre ciano sui lati del rettangolo: le trascini col mouse
+// e il mondo si allunga in tempo reale (metri, da 20 a 400).
+function WorldEdgeHandles({
+  spanW,
+  spanH,
+  onResize,
+}: {
+  spanW: number
+  spanH: number
+  onResize: (w: number, h: number) => void
+}) {
+  const drag = useRef<{ edge: 'e' | 'w' | 'n' | 's' } | null>(null)
+  const lastCommit = useRef(0)
+  const hw = spanW / 2
+  const hh = spanH / 2
+  const commit = (w: number, h: number) => {
+    const now = performance.now()
+    if (now - lastCommit.current < 90) return // non schiacciare React
+    lastCommit.current = now
+    onResize(w, h)
+  }
+  const barMat = (
+    <meshStandardMaterial color="#19e0ff" emissive={new THREE.Color('#19e0ff')} emissiveIntensity={0.9} roughness={0.4} />
+  )
+  const handlers = (edge: 'e' | 'w' | 'n' | 's') => ({
+    onPointerDown: (e: THREE.Event & { stopPropagation: () => void; point: THREE.Vector3 }) => {
+      e.stopPropagation()
+      drag.current = { edge }
+    },
+    onPointerMove: (e: THREE.Event & { buttons: number; point: THREE.Vector3 }) => {
+      if (!drag.current || drag.current.edge !== edge) return
+      if (edge === 'e' || edge === 'w') commit(Math.abs(e.point.x) * 2, spanH)
+      else commit(spanW, Math.abs(e.point.z) * 2)
+    },
+    onPointerUp: () => { drag.current = null },
+    onPointerMissed: () => { drag.current = null },
+  })
+  return (
+    <group>
+      {/* bordo est (destro) e ovest (sinistro): trascini su X */}
+      <mesh position={[hw, 0.5, 0]} {...handlers('e')}>
+        <boxGeometry args={[0.16, 1.1, spanH + 0.4]} />
+        {barMat}
+      </mesh>
+      <mesh position={[-hw, 0.5, 0]} {...handlers('w')}>
+        <boxGeometry args={[0.16, 1.1, spanH + 0.4]} />
+        {barMat}
+      </mesh>
+      {/* bordo nord e sud: trascini su Z */}
+      <mesh position={[0, 0.5, hh]} {...handlers('s')}>
+        <boxGeometry args={[spanW + 0.4, 1.1, 0.16]} />
+        {barMat}
+      </mesh>
+      <mesh position={[0, 0.5, -hh]} {...handlers('n')}>
+        <boxGeometry args={[spanW + 0.4, 1.1, 0.16]} />
+        {barMat}
+      </mesh>
+      {/* pallini d'angolo, per capire che è interattivo */}
+      {[[hw, hh], [hw, -hh], [-hw, hh], [-hw, -hh]].map(([x, z], i) => (
+        <mesh key={i} position={[x, 0.5, z]}>
+          <sphereGeometry args={[0.22, 10, 8]} />
+          <meshStandardMaterial color="#19e0ff" emissive={new THREE.Color('#19e0ff')} emissiveIntensity={1.4} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
 // ============================================================
 // COMPONENTE PRINCIPALE
 // ============================================================
@@ -473,11 +564,16 @@ export default function SceneEditor3D({
   project,
   mutate,
   onClose,
+  onNavigate,
 }: {
   project: GameProject
   mutate: (fn: (p: GameProject) => void) => void
   onClose: () => void
+  onNavigate?: (s: 'hub' | 'scena' | 'mappa' | 'regole') => void
 }) {
+  // v20: span (metri) del rettangolo di base del mondo —
+  // si allunga col cursore (maniglie sul bordo) o con l'AI
+  const spans = useMemo(() => worldSpans(project.settings), [project.settings.worldSize?.w, project.settings.worldSize?.h, project.settings])
   const scene = project.scenes[0]
   const W = scene?.w ?? 32
   const H = scene?.h ?? 32
@@ -584,7 +680,7 @@ export default function SceneEditor3D({
         if (!sc0) return
         const ent = sc0.entities.find(e => e.id === id)
         if (!ent) return
-        const [sx, sy] = worldToSchematic(wx, wz, sc0.w, sc0.h)
+        const [sx, sy] = worldToSchematic(wx, wz, sc0.w, sc0.h, spans.spanW, spans.spanZ)
         ent.x = sx
         ent.y = sy
         ent.props.rotY = ((rotDeg % 360) + 360) % 360
@@ -599,7 +695,7 @@ export default function SceneEditor3D({
   const placeAt = useCallback(
     (wx: number, wz: number) => {
       if (!placing) return
-      const [sx, sy] = worldToSchematic(wx, wz, W, H)
+      const [sx, sy] = worldToSchematic(wx, wz, W, H, spans.spanW, spans.spanZ)
       const ent = placing.build(sx, sy)
       mutate(p => {
         const sc0 = p.scenes[0]
@@ -620,6 +716,19 @@ export default function SceneEditor3D({
       setPlacing(null)
     },
     [placing, mutate, W, H]
+  )
+
+  // ---------- v20: ridimensiona il mondo di base (maniglie o AI) ----------
+  const resizeWorld = useCallback(
+    (w: number, h: number) => {
+      const nw = Math.max(20, Math.min(400, Math.round(w / 2) * 2))
+      const nh = Math.max(20, Math.min(400, Math.round(h / 2) * 2))
+      if (nw === spans.spanW && nh === spans.spanZ) return
+      mutate(p => {
+        p.settings.worldSize = { w: nw, h: nh }
+      })
+    },
+    [mutate, spans.spanW, spans.spanZ]
   )
 
   // ---------- palette ----------
@@ -715,6 +824,107 @@ export default function SceneEditor3D({
     return items
   }, [customAssets])
 
+  // ---------- v20: esecutore dei comandi dell'AI del Mondo ----------
+  const aiAssets = useMemo(() => palette.map(it => ({ label: it.label })), [palette])
+  const aiExec = useCallback(
+    (cmd: AiCmd): string => {
+      if (cmd.op === 'help') {
+        return 'Comandi: «inserisci un albero in 10,5» · «inserisci 5 alberi in 10,5» · «metti 8 case tra -20,-20 e 20,20» · «elimina in 4,2» · «elimina tutti gli Zombie» · «mondo 120x80». Le coordinate sono in METRI dal centro.'
+      }
+      if (cmd.op === 'resize') {
+        resizeWorld(cmd.w, cmd.h)
+        return `🌍 Mondo ridimensionato a ${Math.max(20, Math.min(400, Math.round(cmd.w / 2) * 2))} × ${Math.max(20, Math.min(400, Math.round(cmd.h / 2) * 2))} metri.`
+      }
+      if (cmd.op === 'place') {
+        const item = palette.find(it => it.label === cmd.asset)
+        if (!item) return `✖ Non trovo «${cmd.asset}» nella paletta.`
+        const jitter = (v: number, amp = 2.5) => v + (Math.random() * 2 - 1) * amp
+        const count = Math.max(1, Math.min(50, cmd.n || 1))
+        mutate(p => {
+          const sc0 = p.scenes[0]
+          if (!sc0) return
+          for (let i = 0; i < count; i++) {
+            const [sx, sy] = worldToSchematic(
+              count > 1 ? jitter(cmd.x) : cmd.x,
+              count > 1 ? jitter(cmd.z) : cmd.z,
+              sc0.w,
+              sc0.h,
+              spans.spanW,
+              spans.spanZ
+            )
+            const ent = item.build(sx, sy)
+            if (ent.type === 'player') {
+              const old = sc0.entities.find(e2 => e2.type === 'player')
+              if (old) { old.x = ent.x; old.y = ent.y; continue }
+            }
+            if (ent.type === 'goal') {
+              const old = sc0.entities.find(e2 => e2.type === 'goal')
+              if (old) { old.x = ent.x; old.y = ent.y; continue }
+            }
+            sc0.entities.push(ent)
+          }
+        })
+        return `${item.icon} ${cmd.asset} piazzato in (${cmd.x}, ${cmd.z})${count > 1 ? ` ×${count}` : ''}. Cliccalo per regolarlo con le frecce.`
+      }
+      if (cmd.op === 'scatter') {
+        const item = palette.find(it => it.label === cmd.asset)
+        if (!item) return `✖ Non trovo «${cmd.asset}» nella paletta.`
+        const x1 = Math.min(cmd.x, cmd.x2), x2 = Math.max(cmd.x, cmd.x2)
+        const z1 = Math.min(cmd.z, cmd.z2), z2 = Math.max(cmd.z, cmd.z2)
+        const n = Math.max(1, Math.min(200, cmd.n || 1))
+        mutate(p => {
+          const sc0 = p.scenes[0]
+          if (!sc0) return
+          for (let i = 0; i < n; i++) {
+            const wx = x1 + Math.random() * (x2 - x1)
+            const wz = z1 + Math.random() * (z2 - z1)
+            const [sx, sy] = worldToSchematic(wx, wz, sc0.w, sc0.h, spans.spanW, spans.spanZ)
+            sc0.entities.push(item.build(sx, sy))
+          }
+        })
+        return `🌳 ${n} × ${cmd.asset} sparsi nell'area (${x1},${z1}) → (${x2},${z2}).`
+      }
+      if (cmd.op === 'delete') {
+        let removed = 0
+        mutate(p => {
+          const sc0 = p.scenes[0]
+          if (!sc0) return
+          // l'entità più vicina alle coordinate (entro 4 metri)
+          let best: { id: string; d: number } | null = null
+          for (const e2 of sc0.entities) {
+            const [wx, wz] = schematicToWorld(e2.x, e2.y, sc0.w, sc0.h, spans.spanW, spans.spanZ)
+            const d = Math.hypot(wx - cmd.x, wz - cmd.z)
+            if (d <= 4 && (!best || d < best.d)) best = { id: e2.id, d }
+          }
+          if (best) {
+            sc0.entities = sc0.entities.filter(e2 => e2.id !== best!.id)
+            removed = 1
+          }
+        })
+        return removed ? '🗑 Eliminata l\'entità più vicina alle coordinate.' : '✖ Nessuna entità entro 4 metri da quelle coordinate.'
+      }
+      if (cmd.op === 'deleteAll') {
+        let n = 0
+        mutate(p => {
+          const sc0 = p.scenes[0]
+          if (!sc0) return
+          const match = (e2: GameEntity): boolean => {
+            if (e2.type === 'player' || e2.type === 'goal') return false
+            const lbl = normEntLabel(e2)
+            return lbl ? lbl.includes(cmd.asset) || cmd.asset.includes(lbl) : false
+          }
+          const before = sc0.entities.length
+          sc0.entities = sc0.entities.filter(e2 => !match(e2))
+          n = before - sc0.entities.length
+        })
+        return n ? `🗑 Eliminate ${n} entità «${cmd.asset}».` : `✖ Nessuna entità «${cmd.asset}» nel mondo.`
+      }
+      return '✖ Comando non gestito.'
+    },
+    [palette, mutate, resizeWorld, spans.spanW, spans.spanZ]
+  )
+
+
   const groupsOrder = ['Strutture & Modelli', 'Nemici', 'PNG & Personaggi', 'Oggetti di gioco', 'Speciali']
   const grouped = useMemo(() => {
     const map = new Map<string, PaletteItem[]>()
@@ -776,6 +986,19 @@ export default function SceneEditor3D({
           🛠 Scena 3D — {project.title}
         </span>
         <span className="cp-chip hidden md:inline-block">clicca un oggetto → frecce rosse/verdi/blu</span>
+        <span className="cp-chip text-[var(--neon)]" title="Trascina le barre ciano sul bordo del mondo per allungarlo (o chiedilo all'AI)">
+          🌍 {spans.spanW} × {spans.spanZ} m
+        </span>
+        {onNavigate && (
+          <>
+            <button className="cp-chip hover:text-[var(--neon)]" onClick={() => onNavigate('mappa')}>
+              🗺 Mappa
+            </button>
+            <button className="cp-chip hover:text-[var(--neon)]" onClick={() => onNavigate('regole')}>
+              ⚙ Regole
+            </button>
+          </>
+        )}
         <div className="ml-auto flex items-center gap-1.5">
           <Button
             size="sm"
@@ -887,8 +1110,8 @@ export default function SceneEditor3D({
                 {useWorld.getState().vast ? null : <fog attach="fog" args={[theme.fogColor, theme.fogNear, theme.fogFar]} />}
                 {useWorld.getState().vast ? null : useWorld.getState().skyboxUrl ? <SkyDome /> : <Sky sunPosition={theme.sunPosition} turbidity={theme.turbidity} rayleigh={theme.rayleigh} />}
                 {useWorld.getState().vast ? null : <SunLight />}
-                {useWorld.getState().vast ? null : <IslandEnvironment />}
-                <EditorWorld />
+                {useWorld.getState().vast ? null : <IslandEnvironment radius={Math.max(spans.spanW, spans.spanZ) / 2 + 120} />}
+                <EditorWorld spanW={spans.spanW} spanH={spans.spanZ} />
                 <SpinLoop spin={spin} />
                 {entities.map(e => (
                   <EntityMarker
@@ -898,10 +1121,13 @@ export default function SceneEditor3D({
                     onSelect={setSelectedId}
                     groups={groups}
                     spin={spin}
+                    spanW={spans.spanW}
+                    spanH={spans.spanZ}
                     onClips={(id, names) => setClips(prev => (prev[id]?.length === names.length ? prev : { ...prev, [id]: names }))}
                   />
                 ))}
-                <PlacePlane enabled={!!placing} onPlace={placeAt} />
+                <WorldEdgeHandles spanW={spans.spanW} spanH={spans.spanZ} onResize={resizeWorld} />
+                <PlacePlane enabled={!!placing} onPlace={placeAt} spanW={spans.spanW} spanH={spans.spanZ} />
                 <Gizmo id={selectedId} groups={groups} mode={mode} onCommit={commitGizmo} />
                 <OrbitControls
                   makeDefault
@@ -1084,6 +1310,16 @@ export default function SceneEditor3D({
                   </p>
                 </div>
               )}
+
+              {/* v20: AI DEL MONDO — reparto AI dentro i mondi che crei */}
+              <div className="mt-4">
+                <AiWorldConsole
+                  assets={aiAssets}
+                  exec={aiExec}
+                  title="🤖 AI del Mondo"
+                  hint="Scrivi cosa piazzare e dove (coordinate in metri): «inserisci un albero in 10,5», «metti 8 case tra -20,-20 e 20,20», «mondo 120x80»."
+                />
+              </div>
 
               {/* PERSONAGGIO PRINCIPALE */}
               <div className="mt-4 border-t border-[var(--line)] pt-3">

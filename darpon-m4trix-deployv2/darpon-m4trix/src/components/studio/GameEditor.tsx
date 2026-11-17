@@ -107,12 +107,15 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
   const [showRpg, setShowRpg] = useState(false) // v13: hub RPG
   const [showWorld, setShowWorld] = useState(false) // v14: stile mondo vasto del gioco
   const [showAnim, setShowAnim] = useState(false) // v15: animazioni & interazioni
-  const [section, setSection] = useState<Section3d>('hub') // v16: sezioni ordinate (3D)
+  const [section, setSection] = useState<Section3d>(is3D ? 'scena' : 'hub') // v20: i giochi 3D aprono SUBITO l'editor del mondo // v16: sezioni ordinate (3D)
   const [showKeys, setShowKeys] = useState(false) // v16: editor tasti azione
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const painting = useRef(false)
-  const viewRef = useRef({ T: 20, ox: 0, oy: 0 })
+  // v20: la mappa RIEMPIE tutto il pannello (zero bordi neri):
+  // Tx e Ty sono le dimensioni in px di una cella
+  const viewRef = useRef({ Tx: 20, Ty: 20 })
+  const resizing = useRef<{ edge: 'e' | 'w' | 'n' | 's'; startW: number; startH: number; rect: DOMRect } | null>(null)
 
   const scene = project.scenes.find(s => s.id === sceneId) ?? project.scenes[0]
   const pal = PALETTES[project.settings.paletteId] ?? PALETTES.cyber
@@ -159,10 +162,11 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
       canvas.height = Math.round(ch * dpr)
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    const T = Math.max(6, Math.floor(Math.min(cw / scene.w, ch / scene.h)))
-    const ox = Math.floor((cw - T * scene.w) / 2)
-    const oy = Math.floor((ch - T * scene.h) / 2)
-    viewRef.current = { T, ox, oy }
+    // v20: STRETCH FILL — le celle si distribuiscono su TUTTO il
+    // pannello: niente barre nere ai lati su nessuno schermo
+    const Tx = cw / scene.w
+    const Ty = ch / scene.h
+    viewRef.current = { Tx, Ty }
 
     ctx.fillStyle = pal.bg
     ctx.fillRect(0, 0, cw, ch)
@@ -171,52 +175,52 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
     for (let y = 0; y < scene.h; y++) {
       for (let x = 0; x < scene.w; x++) {
         const t = scene.tiles[y * scene.w + x]
-        const px = ox + x * T
-        const py = oy + y * T
+        const px = x * Tx
+        const py = y * Ty
         switch (t) {
           case 1:
             ctx.fillStyle = pal.wall
-            ctx.fillRect(px, py, T, T)
+            ctx.fillRect(px, py, Tx, Ty)
             ctx.fillStyle = pal.wallTop
-            ctx.fillRect(px, py, T, Math.max(2, T * 0.3))
+            ctx.fillRect(px, py, Tx, Math.max(2, Ty * 0.3))
             break
           case 2:
             ctx.fillStyle = pal.water
-            ctx.fillRect(px, py, T, T)
+            ctx.fillRect(px, py, Tx, Ty)
             break
           case 3:
             ctx.fillStyle = pal.lava
-            ctx.fillRect(px, py, T, T)
+            ctx.fillRect(px, py, Tx, Ty)
             ctx.globalAlpha = 0.5
             ctx.fillStyle = pal.lavaGlow
-            ctx.fillRect(px + 1, py + 1, T - 2, T - 2)
+            ctx.fillRect(px + 1, py + 1, Tx - 2, Ty - 2)
             ctx.globalAlpha = 1
             break
           case 4:
             ctx.fillStyle = pal.grass
-            ctx.fillRect(px, py, T, T)
+            ctx.fillRect(px, py, Tx, Ty)
             break
           case 5:
             ctx.fillStyle = pal.road
-            ctx.fillRect(px, py, T, T)
+            ctx.fillRect(px, py, Tx, Ty)
             break
           case 6:
             ctx.fillStyle = pal.doorLocked
-            ctx.fillRect(px + 1, py + 1, T - 2, T - 2)
+            ctx.fillRect(px + 1, py + 1, Tx - 2, Ty - 2)
             break
           case 7:
             ctx.fillStyle = pal.road
-            ctx.fillRect(px, py, T, T)
+            ctx.fillRect(px, py, Tx, Ty)
             ctx.strokeStyle = pal.door
-            ctx.strokeRect(px + 1.5, py + 1.5, T - 3, T - 3)
+            ctx.strokeRect(px + 1.5, py + 1.5, Tx - 3, Ty - 3)
             break
           case 8:
             ctx.fillStyle = '#000'
-            ctx.fillRect(px, py, T, T)
+            ctx.fillRect(px, py, Tx, Ty)
             break
           default:
             ctx.fillStyle = (x + y) % 2 === 0 ? pal.floor : pal.floorAlt
-            ctx.fillRect(px, py, T, T)
+            ctx.fillRect(px, py, Tx, Ty)
         }
       }
     }
@@ -226,21 +230,21 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
     ctx.lineWidth = 1
     for (let x = 0; x <= scene.w; x++) {
       ctx.beginPath()
-      ctx.moveTo(ox + x * T, oy)
-      ctx.lineTo(ox + x * T, oy + scene.h * T)
+      ctx.moveTo(x * Tx, 0)
+      ctx.lineTo(x * Tx, ch)
       ctx.stroke()
     }
     for (let y = 0; y <= scene.h; y++) {
       ctx.beginPath()
-      ctx.moveTo(ox, oy + y * T)
-      ctx.lineTo(ox + scene.w * T, oy + y * T)
+      ctx.moveTo(0, y * Ty)
+      ctx.lineTo(cw, y * Ty)
       ctx.stroke()
     }
 
     // entità
     for (const e of scene.entities) {
-      const cx = ox + e.x * T + T / 2
-      const cy = oy + e.y * T + T / 2
+      const cx = e.x * Tx + Tx / 2
+      const cy = e.y * Ty + Ty / 2
       const color =
         e.type === 'player'
           ? e.props.color ?? pal.neon
@@ -251,27 +255,27 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
         ctx.globalAlpha = 0.4
         ctx.fillStyle = e.props.locked ? pal.doorLocked : pal.door
         ctx.beginPath()
-        ctx.ellipse(cx, cy, T * 0.4, T * 0.46, 0, 0, Math.PI * 2)
+        ctx.ellipse(cx, cy, Tx * 0.4, Ty * 0.46, 0, 0, Math.PI * 2)
         ctx.fill()
         ctx.globalAlpha = 1
       } else if (e.type === 'goal') {
         ctx.strokeStyle = pal.goal
         ctx.lineWidth = 2
         ctx.beginPath()
-        ctx.ellipse(cx, cy, T * 0.3, T * 0.4, 0, 0, Math.PI * 2)
+        ctx.ellipse(cx, cy, Tx * 0.3, Ty * 0.4, 0, 0, Math.PI * 2)
         ctx.stroke()
       }
       ctx.save()
       ctx.translate(cx, cy)
       const k: EntityKind | undefined =
         e.props.kind ?? (e.type === 'player' ? 'player' : e.type === 'npc' ? 'npc' : undefined)
-      drawKind(ctx, k, T * 0.72, color, 1.2)
+      drawKind(ctx, k, Math.min(Tx, Ty) * 0.72, color, 1.2)
       ctx.restore()
       if (e.id === selectedId) {
         ctx.strokeStyle = pal.neon
         ctx.lineWidth = 2
         ctx.setLineDash([4, 3])
-        ctx.strokeRect(ox + e.x * T + 1, oy + e.y * T + 1, T - 2, T - 2)
+        ctx.strokeRect(e.x * Tx + 1, e.y * Ty + 1, Tx - 2, Ty - 2)
         ctx.setLineDash([])
       }
     }
@@ -283,13 +287,40 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
       ctx.globalAlpha = 0.9
       ctx.lineWidth = 1.5
       ctx.strokeRect(
-        ox + (hover.x - Math.floor((size - 1) / 2)) * T,
-        oy + (hover.y - Math.floor((size - 1) / 2)) * T,
-        T * size,
-        T * size
+        (hover.x - Math.floor((size - 1) / 2)) * Tx,
+        (hover.y - Math.floor((size - 1) / 2)) * Ty,
+        Tx * size,
+        Ty * size
       )
       ctx.globalAlpha = 1
     }
+
+    // ---------- v20: MANIGLIE per allungare il mondo col cursore ----------
+    // 4 barre luminose sui bordi: trascina e il mondo cresce
+    const grip = 9
+    ctx.globalAlpha = 0.85
+    // destra
+    ctx.fillStyle = 'rgba(25,224,255,0.65)'
+    ctx.fillRect(cw - 2.5, 6, 2.5, ch - 12)
+    // sinistra
+    ctx.fillRect(0, 6, 2.5, ch - 12)
+    // alto
+    ctx.fillRect(6, 0, cw - 12, 2.5)
+    // basso
+    ctx.fillRect(6, ch - 2.5, cw - 12, 2.5)
+    // doppia freccia sui 4 bordi
+    ctx.globalAlpha = 1
+    ctx.fillStyle = '#19e0ff'
+    ctx.font = 'bold 11px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('↔', cw - 9, ch / 2)
+    ctx.fillText('↔', 9, ch / 2)
+    ctx.fillText('↕', cw / 2, 9)
+    ctx.fillText('↕', cw / 2, ch - 9)
+    ctx.textAlign = 'start'
+    ctx.textBaseline = 'alphabetic'
+    void grip
   }, [scene, pal, hover, tool, brush, selectedId])
 
   useEffect(() => {
@@ -307,9 +338,9 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
   const cellFromEvent = (e: React.PointerEvent | React.MouseEvent) => {
     const canvas = canvasRef.current!
     const rect = canvas.getBoundingClientRect()
-    const { T, ox, oy } = viewRef.current
-    const x = Math.floor((e.clientX - rect.left - ox) / T)
-    const y = Math.floor((e.clientY - rect.top - oy) / T)
+    const { Tx, Ty } = viewRef.current
+    const x = Math.floor((e.clientX - rect.left) / Tx)
+    const y = Math.floor((e.clientY - rect.top) / Ty)
     if (x < 0 || y < 0 || x >= scene.w || y >= scene.h) return null
     return { x, y }
   }
@@ -354,7 +385,100 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
     })
   }
 
+  // ---------- v20: ALLUNGA IL MONDO COL CURSORE ----------
+  // trascini il bordo della mappa e il rettangolo di partenza
+  // cresce (o si restringe) al volo, tile e entità si riordinano
+  const clampCells = (v: number) => Math.max(8, Math.min(160, Math.round(v)))
+
+  const resizeScene = (nw: number, nh: number, edge: 'e' | 'w' | 'n' | 's') => {
+    mutate(p => {
+      const sc = p.scenes.find(x => x.id === sceneId)
+      if (!sc) return
+      nw = clampCells(nw)
+      nh = clampCells(nh)
+      if (nw === sc.w && nh === sc.h) return
+      let dx = 0
+      let dy = 0
+      if (edge === 'w') dx = nw - sc.w // bordo sinistro: il contenuto resta agganciato a destra
+      if (edge === 'n') dy = nh - sc.h // bordo superiore: contenuto agganciato in basso
+      const tiles = new Array(nw * nh).fill(0)
+      for (let y = 0; y < sc.h; y++) {
+        for (let x = 0; x < sc.w; x++) {
+          const nx2 = x + dx
+          const ny2 = y + dy
+          if (nx2 < 0 || ny2 < 0 || nx2 >= nw || ny2 >= nh) continue
+          tiles[ny2 * nw + nx2] = sc.tiles[y * sc.w + x]
+        }
+      }
+      sc.tiles = tiles
+      sc.w = nw
+      sc.h = nh
+      for (const e2 of sc.entities) {
+        e2.x = Math.max(0, Math.min(nw - 1, e2.x + dx))
+        e2.y = Math.max(0, Math.min(nh - 1, e2.y + dy))
+      }
+    })
+  }
+
+  const edgeFromEvent = (e: React.PointerEvent | React.MouseEvent) => {
+    const canvas = canvasRef.current
+    if (!canvas) return null
+    const rect = canvas.getBoundingClientRect()
+    const px = e.clientX - rect.left
+    const py = e.clientY - rect.top
+    const zone = 12
+    const nearE = rect.width - px < zone
+    const nearW = px < zone
+    const nearN = py < zone
+    const nearS = rect.height - py < zone
+    if (nearE) return 'e' as const
+    if (nearW) return 'w' as const
+    if (nearN) return 'n' as const
+    if (nearS) return 's' as const
+    return null
+  }
+
+  // spostamento durante il trascinamento (listener globali)
+  useEffect(() => {
+    const mv = (e: PointerEvent) => {
+      const rs = resizing.current
+      if (!rs) return
+      const px = e.clientX
+      const py = e.clientY
+      const r = rs.rect
+      if (rs.edge === 'e') {
+        resizeScene(((px - r.left) * rs.startW) / r.width, rs.startH, 'e')
+      } else if (rs.edge === 'w') {
+        resizeScene(((r.right - px) * rs.startW) / r.width, rs.startH, 'w')
+      } else if (rs.edge === 's') {
+        resizeScene(rs.startW, ((py - r.top) * rs.startH) / r.height, 's')
+      } else if (rs.edge === 'n') {
+        resizeScene(rs.startW, ((r.bottom - py) * rs.startH) / r.height, 'n')
+      }
+    }
+    const up = () => {
+      if (resizing.current) {
+        resizing.current = null
+        const canvas = canvasRef.current
+        if (canvas) canvas.style.cursor = ''
+      }
+    }
+    window.addEventListener('pointermove', mv)
+    window.addEventListener('pointerup', up)
+    return () => {
+      window.removeEventListener('pointermove', mv)
+      window.removeEventListener('pointerup', up)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sceneId])
+
   const handlePointerDown = (e: React.PointerEvent) => {
+    // v20: vicino a un bordo → inizia il ridimensionamento
+    const edge = edgeFromEvent(e)
+    if (edge && canvasRef.current) {
+      resizing.current = { edge, startW: scene.w, startH: scene.h, rect: canvasRef.current.getBoundingClientRect() }
+      return
+    }
     const c = cellFromEvent(e)
     if (!c) return
     if (e.button === 2) {
@@ -732,6 +856,12 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
               ))}
             </>
           )}
+          <span className="cp-chip shrink-0 text-[10px]">
+            📐 {scene.w}×{scene.h}
+          </span>
+          <span className="shrink-0 text-[10px] text-[var(--neon)]" title="Trascina un bordo della mappa per allungare il mondo">
+            ↔ trascina un bordo per allungare il mondo
+          </span>
           <span className="ml-auto text-[10px] text-[var(--tx-faint)]">
             {is3D
               ? 'Piazza nemici e oggetti: compariranno nel mondo 3D'
@@ -791,6 +921,11 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
             className="absolute inset-0 h-full w-full touch-none"
             onPointerDown={handlePointerDown}
             onPointerMove={e => {
+              // v20: cursore di ridimensionamento vicino ai bordi
+              const ed = edgeFromEvent(e)
+              if (ed === 'e' || ed === 'w') e.currentTarget.style.cursor = 'col-resize'
+              else if (ed === 'n' || ed === 's') e.currentTarget.style.cursor = 'row-resize'
+              else e.currentTarget.style.cursor = ''
               const c = cellFromEvent(e)
               setHover(c)
               if (painting.current && c && tool === 'tiles') paintTile(c.x, c.y)
@@ -1130,12 +1265,13 @@ export default function GameEditor({ meta, onBack, onPlay, onSaved }: Props) {
         {section === 'mappa' && mapEditor}
         {section === 'regole' && rulesSection}
 
-        {/* sezione SCENA 3D: a schermo intero */}
+        {/* sezione SCENA 3D: a schermo intero (v20: reparto Mondi 3D dentro lo Studio) */}
         {section === 'scena' && (
           <SceneEditor3D
             project={project}
             mutate={mutate}
             onClose={() => setSection('hub')}
+            onNavigate={sec2 => setSection(sec2)}
           />
         )}
 

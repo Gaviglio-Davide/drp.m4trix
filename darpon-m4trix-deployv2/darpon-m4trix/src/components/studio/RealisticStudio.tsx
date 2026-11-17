@@ -37,6 +37,7 @@ import { PREFABS, PREFAB_DEFS, type PrefabCat } from '@/lib/engine3d/prefabs'
 import { collideAndGround, safeSpawn, worldColliders } from '@/lib/engine3d/builder'
 import { GlbView, LightView, PlayerCharView, PostFXView, PrefabView, RealEnv, WorldObjects } from './RealisticViews'
 import RealPlay from './RealPlay'
+import AiWorldConsole, { type AiCmd } from './AiWorldConsole'
 import { GLB_CATALOG } from '@/lib/glb-catalog-data'
 import StudioDetails from './StudioDetails'
 import StudioOutliner from './StudioOutliner'
@@ -453,6 +454,97 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
       w.spots = (w.spots ?? []).filter(x => x.id !== id)
     })
   }
+
+  // ---------- v20: AI DEL MONDO (Darpx Engine) ----------
+  const aiAssets = useMemo(
+    () => [
+      ...PREFAB_DEFS.map(d => ({ label: d.name })),
+      ...models.map(m => ({ label: m.name })),
+    ],
+    [models]
+  )
+  const aiExec = useCallback(
+    (cmd: AiCmd): string => {
+      if (cmd.op === 'help') {
+        return 'Comandi: «inserisci un Abete in 10,5» · «inserisci 5 Cassa in 10,5» · «metti 8 Abete tra -30,-30 e 30,30» · «elimina in 4,2» · «elimina tutte le Cassa». Coordinate in METRI dal centro.'
+      }
+      if (cmd.op === 'resize') {
+        return 'Nel mondo realistico (Darpx Engine) il terreno è già infinito: non serve allungare nulla. 🌲'
+      }
+      if (cmd.op === 'place') {
+        // trova il prefab (o modello) per nome
+        const def = PREFAB_DEFS.find(d => d.name === cmd.asset)
+        const model = def ? null : models.find(m => m.name === cmd.asset)
+        if (!def && !model) return `✖ Non trovo «${cmd.asset}» nella paletta.`
+        const count = Math.max(1, Math.min(50, cmd.n || 1))
+        mutateWorld(w => {
+          for (let i = 0; i < count; i++) {
+            const j = (v: number, amp = 2.5) => (count > 1 ? v + (Math.random() * 2 - 1) * amp : v)
+            w.objects.push({
+              id: rid(),
+              prefab: def ? def.id : 'glb',
+              p: [j(cmd.x), 0, j(cmd.z)],
+              r: [0, Math.round(Math.random() * 4) * 90, 0],
+              s: [1, 1, 1],
+              ...(model ? { url: model.url, name: model.name, anim: null } : {}),
+            })
+          }
+        })
+        return `${def?.icon ?? '📦'} ${cmd.asset} piazzato in (${cmd.x}, ${cmd.z})${count > 1 ? ` ×${count}` : ''}.`
+      }
+      if (cmd.op === 'scatter') {
+        const def = PREFAB_DEFS.find(d => d.name === cmd.asset)
+        const model = def ? null : models.find(m => m.name === cmd.asset)
+        if (!def && !model) return `✖ Non trovo «${cmd.asset}» nella paletta.`
+        const x1 = Math.min(cmd.x, cmd.x2), x2 = Math.max(cmd.x, cmd.x2)
+        const z1 = Math.min(cmd.z, cmd.z2), z2 = Math.max(cmd.z, cmd.z2)
+        const n = Math.max(1, Math.min(200, cmd.n || 1))
+        mutateWorld(w => {
+          for (let i = 0; i < n; i++) {
+            w.objects.push({
+              id: rid(),
+              prefab: def ? def.id : 'glb',
+              p: [x1 + Math.random() * (x2 - x1), 0, z1 + Math.random() * (z2 - z1)],
+              r: [0, Math.random() * 360, 0],
+              s: [1, 1, 1],
+              ...(model ? { url: model.url, name: model.name, anim: null } : {}),
+            })
+          }
+        })
+        return `🌳 ${n} × ${cmd.asset} sparsi nell'area (${x1},${z1}) → (${x2},${z2}).`
+      }
+      if (cmd.op === 'delete') {
+        let removed = ''
+        mutateWorld(w => {
+          let best: { id: string; d: number } | null = null
+          for (const o of w.objects) {
+            if (o.prefab === 'bosco-notturno') continue // l'ambiente non si tocca per errore
+            const d = Math.hypot(o.p[0] - cmd.x, o.p[2] - cmd.z)
+            if (d <= 4 && (!best || d < best.d)) best = { id: o.id, d }
+          }
+          if (best) {
+            removed = w.objects.find(o => o.id === best!.id)?.prefab ?? ''
+            w.objects = w.objects.filter(o => o.id !== best!.id)
+          }
+        })
+        return removed ? `🗑 Eliminato «${removed}» (il più vicino alle coordinate).` : '✖ Nessun oggetto entro 4 metri.'
+      }
+      if (cmd.op === 'deleteAll') {
+        let n = 0
+        mutateWorld(w => {
+          const before = w.objects.length
+          w.objects = w.objects.filter(o => {
+            const name = PREFABS[o.prefab]?.name ?? o.name ?? ''
+            return !(name && (name.includes(cmd.asset) || cmd.asset.includes(name)))
+          })
+          n = before - w.objects.length
+        })
+        return n ? `🗑 Eliminati ${n} oggetti «${cmd.asset}».` : `✖ Nessun oggetto «${cmd.asset}» nel mondo.`
+      }
+      return '✖ Comando non gestito.'
+    },
+    [models, mutateWorld]
+  )
 
   // ---------- piazzamento ----------
   const placeAt = (p: THREE.Vector3) => {
@@ -1190,6 +1282,16 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
               onDelete={deleteSelected}
               onFocus={focusSelected}
             />
+
+            {/* v20: AI DEL MONDO — il piccolo reparto AI dentro i mondi */}
+            <div className="mt-3 px-3">
+              <AiWorldConsole
+                assets={aiAssets}
+                exec={aiExec}
+                title="🤖 AI del Mondo"
+                hint="Scrivi cosa piazzare e dove (metri): «inserisci un Abete in 10,5», «metti 8 Abete tra -30,-30 e 30,30», «elimina tutte le Cassa»."
+              />
+            </div>
 
             {/* WORLD SETTINGS — ambiente e personaggio, sempre visibili */}
             <div className="mt-2 border-t border-[var(--line)] px-3 pb-3">

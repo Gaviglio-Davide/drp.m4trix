@@ -37,6 +37,7 @@ import {
   defaultActionButtons,
   gameDimension,
   schematicToWorld,
+  worldSpans,
   type ActionButton,
   type EntityKind,
   type GameProject,
@@ -274,11 +275,15 @@ function PlayerController({
   runRef,
   camMode,
   blocked,
+  spanW,
+  spanH,
 }: {
   rt: React.MutableRefObject<Runtime>
   runRef: React.MutableRefObject<boolean>
   camMode: 'terza' | 'prima'
   blocked: Set<string>
+  spanW: number
+  spanH: number
 }) {
   const group = useRef<THREE.Group>(null)
   const sword = useRef<THREE.Mesh>(null)
@@ -409,8 +414,12 @@ function PlayerController({
   const canStand = (x: number, z: number) => {
     // v13: gli interni delle case sono fuori dal mondo: lì niente confini
     if (rt.current.interior != null) return !blocked.has(`${Math.round(x)},${Math.round(z)}`)
-    const half = useWorld.getState().vast ? VAST_HALF : GRID_HALF
-    if (Math.abs(x) > half || Math.abs(z) > half) return false
+    if (useWorld.getState().vast) {
+      if (Math.abs(x) > VAST_HALF || Math.abs(z) > VAST_HALF) return false
+      return !blocked.has(`${Math.round(x)},${Math.round(z)}`)
+    }
+    // v20: confini per-asse dal rettangolo di base ESTENDIBILE
+    if (Math.abs(x) > spanW / 2 || Math.abs(z) > spanH / 2) return false
     return !blocked.has(`${Math.round(x)},${Math.round(z)}`)
   }
 
@@ -1043,6 +1052,8 @@ function Director({
   onDialogue,
   onEnd,
   onFloater,
+  spanW,
+  spanH,
 }: {
   rt: React.MutableRefObject<Runtime>
   runRef: React.MutableRefObject<boolean>
@@ -1050,6 +1061,8 @@ function Director({
   onDialogue: (d: DlgState | null) => void
   onEnd: (r: 'win' | 'lose') => void
   onFloater: (f: FloaterIn) => void
+  spanW: number
+  spanH: number
 }) {
   const { camera, size } = useThree()
   const hudT = useRef(0)
@@ -1267,7 +1280,7 @@ function Director({
         p.ttl = 0
         damagePlayer(R, p.dmg, onFloater, camera, size, null)
       }
-      const far = R.interior != null ? POCKET_BASE + 400 : GRID_HALF + 1
+      const far = R.interior != null ? POCKET_BASE + 400 : Math.max(spanW, spanH) / 2 + 1
       if (Math.abs(p.x) > far || Math.abs(p.z) > far) p.ttl = 0
     }
     if (R.projs.some(p => p.ttl <= 0)) R.projs = R.projs.filter(p => p.ttl > 0)
@@ -1856,7 +1869,7 @@ function DecoGlb({ url, scale, rotY, animIndex }: { url: string; scale: number; 
   )
 }
 
-function GameDecos({ project, W, H }: { project: GameProject; W: number; H: number }) {
+function GameDecos({ project, W, H, spanW = 60, spanH = 60 }: { project: GameProject; W: number; H: number; spanW?: number; spanH?: number }) {
   const customAssets = useWorld(s => s.customAssets)
   const groundY = useMemo(() => (x: number, z: number) => groundHeightAt(x, z), [])
   const decos = (project.scenes[0]?.entities ?? []).filter(
@@ -1865,7 +1878,7 @@ function GameDecos({ project, W, H }: { project: GameProject; W: number; H: numb
   return (
     <group>
       {decos.map(e => {
-        const [wx, wz] = schematicToWorld(e.x, e.y, W, H)
+        const [wx, wz] = schematicToWorld(e.x, e.y, W, H, spanW, spanH)
         const y = groundY(wx, wz)
         const sc = e.props.scale ?? 1
         const rot = e.props.rotY ?? 0
@@ -2254,6 +2267,7 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
     const blocked = blockedCells(objects, customAssets)
     const W = project.scenes[0]?.w ?? 32
     const H = project.scenes[0]?.h ?? 32
+    const { spanW, spanZ } = worldSpans(project.settings)
     const enemies: EnemyRT[] = []
     const items: ItemRT[] = []
     const npcs: NpcRT[] = []
@@ -2273,7 +2287,7 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
     }
 
     for (const e of entities) {
-      const [wx, wz] = schematicToWorld(e.x, e.y, W, H)
+      const [wx, wz] = schematicToWorld(e.x, e.y, W, H, spanW, spanZ)
       if (e.type === 'player') start = { x: wx, z: wz }
       else if (e.type === 'goal') portal = { x: wx, z: wz, active: true }
       else if (e.type === 'npc') {
@@ -2282,7 +2296,7 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
         const char = (rpg.characters ?? []).find(c => c.name.trim().toLowerCase() === name.trim().toLowerCase())
         const dlg = (rpg.dialogues ?? []).find(d => d.characterId === char?.id) ?? null
         const routeCfg = (rpg.routes ?? []).find(rr => rr.characterId === char?.id)
-        const route = (routeCfg?.waypoints ?? []).map(w2 => schematicToWorld(w2.x, w2.y, W, H)).map(([a, b]) => ({ x: a, z: b }))
+        const route = (routeCfg?.waypoints ?? []).map(w2 => schematicToWorld(w2.x, w2.y, W, H, spanW, spanZ)).map(([a, b]) => ({ x: a, z: b }))
         npcs.push({
           id: e.id,
           name,
@@ -2356,7 +2370,7 @@ export default function GamePlayer3D({ project, onExit, onEdit }: Props) {
     for (const d0 of doors) {
       const sc = project.scenes.find(s => s.id === d0.sceneId)
       if (!sc) continue
-      const offX = d0.pocketX - schematicToWorld(Math.floor(sc.w / 2), Math.floor(sc.h / 2), sc.w, sc.h)[0]
+      const offX = d0.pocketX - schematicToWorld(Math.floor(sc.w / 2), Math.floor(sc.h / 2), sc.w, sc.h, spanW, spanZ)[0]
       const offZ = d0.pocketZ - schematicToWorld(Math.floor(sc.w / 2), Math.floor(sc.h / 2), sc.w, sc.h)[1]
       for (const e2 of sc.entities) {
         const [ix, iz] = schematicToWorld(e2.x, e2.y, sc.w, sc.h)
@@ -3282,6 +3296,8 @@ function SceneContent({
   const theme = getTheme(style)
   const playerAsset = useWorld(s => s.playerAsset)
   const customAssets = useWorld(s => s.customAssets)
+  // v20: rettangolo di base del mondo ESTENDIBILE (metri)
+  const spans = worldSpans(project.settings)
   const vast = useWorld(s => s.vast)
   const blocked = useMemo(
     () => blockedCells(useWorld.getState().objects, customAssets),
@@ -3307,18 +3323,18 @@ function SceneContent({
         <Sky sunPosition={theme.sunPosition} turbidity={theme.turbidity} rayleigh={theme.rayleigh} />
       )}
       {vast ? null : <SunLight />}
-      {vast ? null : <IslandEnvironment />}
+      {vast ? null : <IslandEnvironment radius={Math.max(spans.spanW, spans.spanZ) / 2 + 120} />}
       <ImportedWorld />
       <HouseInteriors rt={R} />
       {/* v16: modelli e personaggi piazzati nella Scena 3D */}
-      <GameDecos project={project} W={project.scenes[0]?.w ?? 32} H={project.scenes[0]?.h ?? 32} />
+      <GameDecos project={project} W={project.scenes[0]?.w ?? 32} H={project.scenes[0]?.h ?? 32} spanW={spans.spanW} spanH={spans.spanZ} />
 
       {playerCustom?.url ? (
         <Suspense fallback={null}>
           <PlayerGlb url={playerCustom.url} rt={R} runRef={runRef} camMode={camMode} blocked={blocked} animIndex={project.settings.playerAnimIndex ?? null} />
         </Suspense>
       ) : (
-        <PlayerController rt={R} runRef={runRef} camMode={camMode} blocked={blocked} />
+        <PlayerController rt={R} runRef={runRef} camMode={camMode} blocked={blocked} spanW={spans.spanW} spanH={spans.spanZ} />
       )}
 
       {R.current.enemies.map(e => (
@@ -3343,6 +3359,8 @@ function SceneContent({
         onDialogue={onDialogue}
         onEnd={onEnd}
         onFloater={onFloater}
+        spanW={spans.spanW}
+        spanH={spans.spanZ}
       />
     </>
   )
