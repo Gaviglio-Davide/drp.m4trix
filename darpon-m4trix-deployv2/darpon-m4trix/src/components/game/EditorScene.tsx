@@ -35,26 +35,39 @@ function useGroundY() {
   }, [terrain, version])
 }
 
-export function SculptedTerrain() {
+export function SculptedTerrain({
+  spanW,
+  spanH,
+}: {
+  spanW?: number // v20: larghezza del mondo in metri (default 61 = GRID_HALF*2+1)
+  spanH?: number
+} = {}) {
   const terrain = useWorld(s => s.terrain)
   const version = useWorld(s => s.terrainVersion)
   const style = useWorld(s => s.worldStyle)
   const t = getTheme(style)
+  const SW = spanW ?? T_SIZE
+  const SH = spanH ?? T_SIZE
+  // la heightfield (T_SIZE campioni) si DISTRIBUISCE sul rettangolo
+  // del mondo: allungando il mondo, il terreno si adatta da solo
+  const fx = (T_SIZE - 1) / (SW - 1)
+  const fz = (T_SIZE - 1) / (SH - 1)
 
   const geometry = useMemo(() => {
     void version
-    const g = new THREE.PlaneGeometry(T_SIZE, T_SIZE, T_SIZE - 1, T_SIZE - 1)
+    const g = new THREE.PlaneGeometry(SW, SH, T_SIZE - 1, T_SIZE - 1)
     g.rotateX(-Math.PI / 2)
     const pos = g.attributes.position as THREE.BufferAttribute
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i)
       const z = pos.getZ(i)
-      pos.setY(i, terrainHeightAt(terrain, x, z))
+      pos.setY(i, terrainHeightAt(terrain, x * fx, z * fz))
     }
     pos.needsUpdate = true
     g.computeVertexNormals()
     return g
-  }, [terrain, version])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [terrain, version, SW, SH])
 
   // libera la geometria vecchia quando cambia
   useEffect(() => {
@@ -69,14 +82,21 @@ export function SculptedTerrain() {
           attach="material"
         />
       </mesh>
-      {/* bordo sabbia morbido attorno all'isola */}
-      <mesh position={[0, -0.05, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <ringGeometry args={[GRID_HALF + 0.4, GRID_HALF + 2.6, 64]} />
-        <primitive
-          object={pbrMat('sabbia', t.sand, { roughness: 1, rx: 12, ry: 2 })}
-          attach="material"
-        />
-      </mesh>
+      {/* bordo sabbia morbido attorno al mondo (cornice rettangolare) */}
+      {([
+        [0, -(SH / 2 + 1.1), SW + 6, 2.2],
+        [0, SH / 2 + 1.1, SW + 6, 2.2],
+        [-(SW / 2 + 1.1), 0, 2.2, SH + 6],
+        [SW / 2 + 1.1, 0, 2.2, SH + 6],
+      ] as [number, number, number, number][]).map(([x, z, w, d], i) => (
+        <mesh key={i} position={[x, -0.05, z]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[w, d]} />
+          <primitive
+            object={pbrMat('sabbia', t.sand, { roughness: 1, rx: 12, ry: 2 })}
+            attach="material"
+          />
+        </mesh>
+      ))}
     </group>
   )
 }
@@ -385,14 +405,14 @@ function InputPlane() {
 
 // ---------------- environment ----------------
 
-export function IslandEnvironment() {
+export function IslandEnvironment({ radius = 220 }: { radius?: number } = {}) {
   const style = useWorld(s => s.worldStyle)
   const t = getTheme(style)
   return (
     <group>
       {/* oceano: visibile anche nei laghi scavati sotto -0.28 */}
       <mesh position={[0, -0.28, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <circleGeometry args={[220, 48]} />
+        <circleGeometry args={[radius, 48]} />
         <meshStandardMaterial
           color={t.ocean}
           roughness={0.16}
