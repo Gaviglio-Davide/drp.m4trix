@@ -565,8 +565,8 @@ export function pbrMat(
 /** Pulisce le cache (usato solo nei test) */
 export function clearPbrCaches() {
   for (const t of texCache.values()) {
-    t.map.dispose()
-    t.normalMap.dispose()
+    t.map?.dispose()
+    t.normalMap?.dispose()
   }
   texCache.clear()
   matCache.clear()
