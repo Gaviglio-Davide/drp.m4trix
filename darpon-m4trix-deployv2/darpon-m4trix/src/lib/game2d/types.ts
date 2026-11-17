@@ -141,6 +141,10 @@ export type GameSettings = {
   // ---- v13: HUB RPG (storia, personaggi, dialoghi, oggetti,
   //      albero abilità, magie, percorsi PNG, case) ----
   rpg?: RpgConfig
+  // ---- v20: MONDO DI BASE ESTENDIBILE (metri) ----
+  // Il rettangolo di partenza del mondo 3D: si allunga col cursore
+  // dall'editor (maniglie sul bordo) o con l'AI del mondo.
+  worldSize?: { w: number; h: number }
   // ---- v14: MONDO VASTO del gioco (stile terzapersona) ----
   // Se presente, il gioco 3D genera il suo mondo vasto di natura
   // senza bisogno di importare un mondo dal reparto Mondi 3D.
@@ -394,6 +398,8 @@ export function newGameProject(
             camera: 'terza' as const,
             // v14: il gioco 3D porta con sé un MONDO VASTO di sola natura
             vast: { ...VAST_DEFAULT, seed: Math.floor(Math.random() * 1e9) },
+            // v20: rettangolo di base del mondo, allungabile col cursore
+            worldSize: { w: 60, h: 60 },
           }
         : {}),
       ...(dimension === 'real3d'
@@ -419,14 +425,24 @@ export function gameDimension(g: GameProject): '2d' | '3d' | 'real3d' {
  *  coordinate del mondo 3D [-GRID_HALF..GRID_HALF] */
 export const SCHEMATIC_SIZE = 32
 
-/** cella schematica → coordinate mondo (metri) */
+/** cella schematica → coordinate mondo (metri; span parametrici v20) */
 export function schematicToWorld(
   x: number,
   y: number,
   w = SCHEMATIC_SIZE,
-  h = SCHEMATIC_SIZE
+  h = SCHEMATIC_SIZE,
+  spanW = 60,
+  spanZ = 60
 ): [number, number] {
-  return [(x + 0.5) * (60 / w) - 30, (y + 0.5) * (60 / h) - 30]
+  return [(x + 0.5) * (spanW / w) - spanW / 2, (y + 0.5) * (spanZ / h) - spanZ / 2]
+}
+
+/** v20: span (metri) del mondo di base di un gioco, con default sicuri */
+export function worldSpans(settings: { worldSize?: { w: number; h: number } } | undefined | null): { spanW: number; spanZ: number } {
+  const ws = settings?.worldSize
+  const w = ws && typeof ws.w === 'number' && ws.w >= 20 && ws.w <= 400 ? ws.w : 60
+  const h = ws && typeof ws.h === 'number' && ws.h >= 20 && ws.h <= 400 ? ws.h : 60
+  return { spanW: w, spanZ: h }
 }
 
 /** coordinate mondo (metri) → cella schematica (v16, per l'editor 3D) */
@@ -434,9 +450,11 @@ export function worldToSchematic(
   wx: number,
   wz: number,
   w = SCHEMATIC_SIZE,
-  h = SCHEMATIC_SIZE
+  h = SCHEMATIC_SIZE,
+  spanW = 60,
+  spanZ = 60
 ): [number, number] {
-  const x = Math.round(((wx + 30) * w) / 60 - 0.5)
-  const y = Math.round(((wz + 30) * h) / 60 - 0.5)
+  const x = Math.round(((wx + spanW / 2) * w) / spanW - 0.5)
+  const y = Math.round(((wz + spanZ / 2) * h) / spanZ - 0.5)
   return [Math.max(0, Math.min(w - 1, x)), Math.max(0, Math.min(h - 1, y))]
 }
