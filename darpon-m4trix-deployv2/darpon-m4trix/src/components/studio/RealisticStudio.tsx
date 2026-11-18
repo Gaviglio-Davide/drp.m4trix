@@ -296,10 +296,6 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
   const [snapOn, setSnapOn] = useState(true)
   // v18: dock Details ridimensionabile + guida scorciatoie
   const [detailsW, setDetailsW] = useState(380)
-  // v21: SCHERMO PIENO — i pannelli diventano estrattori sopra il
-  // viewport e si richiudono: il 3D copre TUTTA la finestra
-  const [showLeft, setShowLeft] = useState(true)
-  const [showRight, setShowRight] = useState(true)
   const [showHelp, setShowHelp] = useState(false)
 
   const groups = useRef<Map<string, THREE.Group>>(new Map())
@@ -816,12 +812,9 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
   // ---------- EDIT ----------
   const env = world.env
   return (
-    // v21: EDITOR A SCHERMO PIENO — copre tutto il browser (header e
-    // barra del sito compresi): il viewport 3D è ORIZZONTALE e arriva
-    // bordo a bordo, i pannelli sono estrattori stretti sopra di esso
-    <div className="fixed inset-0 z-50 flex flex-col bg-[var(--site-bg)]">
+    <div className="flex min-h-[calc(100vh-140px)] flex-col gap-3">
       {/* barra superiore */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--line)] bg-[var(--panel)] px-3 py-1.5">
+      <div className="cp-panel flex flex-wrap items-center gap-2 p-2.5">
         <Button size="sm" variant="outline" className="cp-btn" onClick={onBack}>
           ← Giochi
         </Button>
@@ -832,20 +825,6 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
         />
         <span className="cp-chip">{saveState === 'ok' ? '● salvato' : '◌ salvo…'}</span>
         <span className="cp-chip hidden text-[10px] md:inline-flex">DARPX ENGINE · PBR + BLOOM</span>
-        <button
-          className={`cp-chip ${showLeft ? 'cp-chip-active' : 'hover:text-[var(--neon)]'}`}
-          onClick={() => setShowLeft(v => !v)}
-          title="Mostra/nascondi il pannello MATERIALI (sinistro)"
-        >
-          ◧ Materiali
-        </button>
-        <button
-          className={`cp-chip ${showRight ? 'cp-chip-active' : 'hover:text-[var(--neon)]'}`}
-          onClick={() => setShowRight(v => !v)}
-          title="Mostra/nascondi il pannello DETAILS + AI (destro)"
-        >
-          Details ◨
-        </button>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {/* v18: undo/redo + guida scorciatoie, stile editor seri */}
           <button className="cp-chip hover:text-[var(--neon)]" onClick={undo} title="Annulla (CTRL+Z)" disabled={hist.current.undo.length === 0}>
@@ -869,9 +848,9 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
         </div>
       </div>
 
-      {/* menu template a tendina (finestra flottante sopra il viewport) */}
+      {/* menu template a tendina */}
       {tplOpen && (
-        <div className="cp-panel absolute left-1/2 top-14 z-40 w-[min(940px,94vw)] -translate-x-1/2 p-3 shadow-2xl">
+        <div className="cp-panel p-3">
           <p className="mb-2 text-xs font-bold text-[var(--tx-dim)]">
             Carica un ambiente completo (sostituisce gli oggetti del mondo)
           </p>
@@ -891,9 +870,9 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
         </div>
       )}
 
-      {/* v18: GUIDA — finestra flottante sopra il viewport */}
+      {/* v18: GUIDA — tutti i comandi dell'editor (stile Unreal/Godot) */}
       {showHelp && (
-        <div className="cp-panel absolute left-1/2 top-14 z-40 w-[min(880px,94vw)] -translate-x-1/2 p-4 shadow-2xl">
+        <div className="cp-panel p-4">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-bold text-[var(--tx)]">⌨ Comandi dell&apos;editor</p>
             <button className="cp-chip" onClick={() => setShowHelp(false)}>✕ chiudi</button>
@@ -918,15 +897,10 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
         </div>
       )}
 
-      {/* corpo: il viewport 3D occupa TUTTO lo schermo (sfondo pieno,
-          orizzontale, senza bordi neri); i pannelli di controllo sono
-          estrattori stretti che galleggiano sopra e si richiudono */}
-      <div className="relative min-h-0 flex-1">
-        {/* PALETTA — estrattore sinistro */}
-        <div
-          className={`cp-panel absolute bottom-0 left-0 top-0 z-20 flex w-64 flex-col overflow-y-auto p-3 transition-transform duration-200 ${showLeft ? 'translate-x-0' : '-translate-x-full'}`}
-          style={{ background: 'color-mix(in srgb, var(--panel) 88%, transparent)', backdropFilter: 'blur(8px)' }}
-        >
+      {/* corpo: palette | viewport | ispettore */}
+      <div className="flex min-h-[540px] flex-1 flex-col gap-3 lg:flex-row">
+        {/* PALETTA */}
+        <div className="cp-panel flex w-full flex-col p-3 lg:w-64 lg:shrink-0">
           <div className="mb-2 flex flex-wrap gap-1">
             {(Object.keys(CAT_LABEL) as (PrefabCat | 'luce' | 'glb')[]).map(c => (
               <button
@@ -1144,8 +1118,8 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
           </div>
         </div>
 
-        {/* VIEWPORT — a tutto schermo, bordo a bordo (v21) */}
-        <div className="absolute inset-0 overflow-hidden">
+        {/* VIEWPORT */}
+        <div className="relative min-w-0 flex-1 overflow-hidden rounded-xl ring-1 ring-[var(--line)]">
           <Canvas
             shadows
             dpr={[1, 2]}
@@ -1237,8 +1211,8 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
             <PostFXView params={{ bloom: env.bloom, vignette: env.vignette, exposure: env.exposure }} />
           </Canvas>
 
-          {/* barra modalità gizmo (si sposta accanto al pannello sinistro) */}
-          <div className={`absolute top-3 flex gap-1 rounded-xl bg-black/55 p-1 backdrop-blur transition-[left] duration-200 ${showLeft ? 'left-[17.5rem]' : 'left-3'}`}>
+          {/* barra modalità gizmo */}
+          <div className="absolute left-3 top-3 flex gap-1 rounded-xl bg-black/55 p-1 backdrop-blur">
             {(
               [
                 ['translate', '✥ Sposta', '1'],
@@ -1281,25 +1255,23 @@ export default function RealisticStudio({ meta, onBack, onSaved, initialMode = '
           )}
 
           {/* statistiche */}
-          <div className={`absolute bottom-3 rounded-lg bg-black/50 px-2.5 py-1 font-mono text-[10px] text-white/60 backdrop-blur transition-[left] duration-200 ${showLeft ? 'left-[17.5rem]' : 'left-3'}`}>
+          <div className="absolute bottom-3 left-3 rounded-lg bg-black/50 px-2.5 py-1 font-mono text-[10px] text-white/60 backdrop-blur">
             {world.objects.length} oggetti · {world.lights.length} luci · spawn {world.spawn.map(v => v.toFixed(0)).join(', ')}
           </div>
         </div>
 
-        {/* v18+v21: DOCK DESTRO — estrattore flottante Details + AI */}
+        {/* v18: DOCK DESTRO — Details stile Unreal, LARGHEZZA regolabile */}
         <div
-          className={`absolute bottom-0 right-0 top-0 z-20 flex w-[var(--dock-w)] max-w-full flex-col transition-transform duration-200 ${showRight ? 'translate-x-0' : 'translate-x-full'}`}
+          className="flex w-full shrink-0 flex-col lg:w-[var(--dock-w)]"
           style={{ '--dock-w': `${detailsW}px` } as React.CSSProperties}
         >
+          {/* maniglia di ridimensionamento (solo desktop) */}
           <div
-            className="absolute left-0 top-0 z-10 hidden h-full w-1.5 cursor-col-resize bg-[var(--line)] transition-colors hover:bg-[var(--neon)] lg:block"
+            className="mb-2 hidden w-full cursor-row-resize self-stretch rounded-full bg-[var(--line)] transition-colors hover:bg-[var(--neon)] lg:block lg:h-1.5 lg:w-auto"
             title="Trascina per allargare o stringere il Details"
             onPointerDown={startDockResize}
           />
-          <div
-            className="flex min-h-0 flex-1 flex-col overflow-y-auto border-l border-[var(--line)] pl-2"
-            style={{ background: 'color-mix(in srgb, var(--panel) 88%, transparent)', backdropFilter: 'blur(8px)' }}
-          >
+          <div className="cp-panel flex min-h-0 flex-1 flex-col overflow-y-auto">
             {/* v18: DETAILS PANEL in scala 1:1 su Unreal/Godot */}
             <StudioDetails
               obj={selectedObj}
